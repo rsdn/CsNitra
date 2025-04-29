@@ -52,3 +52,17 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+/.vs/
+**/bin/
+**/obj/
+*.user
+$tf/
+*.cache
+*.ipch
+*.sdf
+*.suo
+*.user
+*.VC.db
+*.VC.opendb
+*.VC.VC.opendb

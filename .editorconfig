@@ -1,0 +1,7 @@
+﻿[*.cs]
+
+# CA1050: Declare types in namespaces
+dotnet_diagnostic.CA1050.severity = none
+
+# IDE0305: Simplify collection initialization
+dotnet_style_prefer_collection_expression = never
