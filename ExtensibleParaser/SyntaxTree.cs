@@ -1,45 +1,4 @@
-﻿using System.Diagnostics;
-
-namespace ExtensibleParaser;
-
-public static class D
-{
-    public static string[] Vis(string input, IEnumerable<ISyntaxNode> elements) =>
-        elements.Select(x => x.ToString(input)).ToArray();
-
-    public static string[] Vis(string input, ISyntaxNode element) => element switch
-    {
-        ReqRefNode x => Vis(input, x.Inner),
-        RefNode x => Vis(input, x.Inner),
-        ChoiceNode x => Vis(input, x.Alternatives),
-        SeqNode x => Vis(input, x.Elements),
-        TerminalNode x => [x.ToString(input)],
-        OptionalNode x => [x.ToString(input)],
-        _ => throw new ArgumentOutOfRangeException(paramName: nameof(element), actualValue: element, message: null)
-    };
-}
-
-
-[DebuggerTypeProxy(typeof(TreeDebugView))]
-public sealed record Tree(string Input, ISyntaxNode Element)
-{
-    public override string ToString() => $"«{Element.ToString(Input)}»  {Element}";
-    public Tree[] Elements => Element switch
-    {
-        ReqRefNode x => [],
-        RefNode x => [],
-        ChoiceNode x => x.Alternatives.Select(x => new Tree(Input, x)).ToArray(),
-        SeqNode x => x.Elements.Select(x => new Tree(Input, x)).ToArray(),
-        TerminalNode x => [],
-        _ => throw new ArgumentOutOfRangeException(Element.GetType().Name)
-    };
-
-    // Внутренний класс для отображения в отладчике
-    private sealed class TreeDebugView(Tree Tree)
-    {
-        public Tree[] Elements => Tree.Elements;
-    }
-}
+﻿namespace ExtensibleParaser;
 
 
 public interface ISyntaxNode
