@@ -269,6 +269,10 @@ public partial class MiniCTests
         }
 
         Trace.WriteLine($"Generated AST: {visitor.Result}");
-        Assert.AreEqual(expectedAst, visitor.Result.ToString());
+        Assert.AreEqual(normalizeEol(expectedAst), normalizeEol(visitor.Result.ToString()));
+
+        return;
+
+        static string normalizeEol(string text) => text.Replace("\r\n", "\n").Replace("\r", "\n");
     }
 }
