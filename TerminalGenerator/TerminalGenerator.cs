@@ -189,7 +189,7 @@ namespace TerminalGenerator
             foreach (var state in states)
                 sb.AppendLine($$"""
                     case {{state.Id}}:
-                        {{GenerateStateTransitions(state, indent)}}
+                        {{generateStateTransitions(state, indent)}}
                         break;
             """);
 
@@ -206,15 +206,14 @@ namespace TerminalGenerator
         """);
 
             return indent.Apply(sb).ToString();
-        }
 
-        private string GenerateStateTransitions(DfaState state, IndentHelper indent)
-        {
-            var sb = new StringBuilder();
-            foreach (var transition in state.Transitions)
+            static string generateStateTransitions(DfaState state, IndentHelper indent)
             {
-                var condition = GenerateTransitionCondition(transition.Condition);
-                sb.AppendLine($$"""
+                var sb = new StringBuilder();
+                foreach (var transition in state.Transitions)
+                {
+                    var condition = generateTransitionCondition(transition.Condition);
+                    sb.AppendLine($$"""
             if ({{condition}})
             {
                 currentState = {{transition.Target.Id}};
@@ -224,24 +223,25 @@ namespace TerminalGenerator
                 continue;
             }
             """);
-            }
-            sb.Append("transitionFound = false;");
-            return indent.Apply(sb).ToString();
-        }
+                }
+                sb.Append("transitionFound = false;");
+                return indent.Apply(sb).ToString();
 
-        private string GenerateTransitionCondition(RegexNode node)
-        {
-            return node switch
-            {
-                RegexChar rc => $"""c == '{EscapeChar(rc.Value)}'""",
-                RegexAnyChar => "true",
-                RangesCharClass rcc => GenerateRangeCondition(rcc),
-                WordCharClass wcc => $"""{(wcc.Negated ? "!" : "")}(char.IsLetterOrDigit(c) || c == '_')""",
-                DigitCharClass dcc => $"""{(dcc.Negated ? "!" : "")}char.IsDigit(c)""",
-                WhitespaceCharClass scc => $"""{(scc.Negated ? "!" : "")}char.IsWhiteSpace(c)""",
-                LetterCharClass lcc => $"""{(lcc.Negated ? "!" : "")}char.IsLetter(c)""",
-                _ => "false"
-            };
+                static string generateTransitionCondition(RegexNode node)
+                {
+                    return node switch
+                    {
+                        RegexChar rc => $"""c == '{EscapeChar(rc.Value)}'""",
+                        RegexAnyChar => "true",
+                        RangesCharClass rcc => GenerateRangeCondition(rcc),
+                        WordCharClass wcc => $"""{(wcc.Negated ? "!" : "")}(char.IsLetterOrDigit(c) || c == '_')""",
+                        DigitCharClass dcc => $"""{(dcc.Negated ? "!" : "")}char.IsDigit(c)""",
+                        WhitespaceCharClass scc => $"""{(scc.Negated ? "!" : "")}char.IsWhiteSpace(c)""",
+                        LetterCharClass lcc => $"""{(lcc.Negated ? "!" : "")}char.IsLetter(c)""",
+                        _ => "false"
+                    };
+                }
+            }
         }
 
         private static string GenerateRangeCondition(RangesCharClass rcc)
