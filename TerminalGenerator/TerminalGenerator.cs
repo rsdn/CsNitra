@@ -310,13 +310,9 @@ namespace TerminalGenerator
             public IndentHelper Increase(int count = 1) => new() { _level = _level + count };
             public override string ToString() => new string(' ', _level * SpacesPerLevel);
 
-            public string Apply(string input) =>
-               // string.Join("\n", input.Split('\n').Select(line => ToString() + line));
-               input.Replace("\n", '\n' + ToString());
+            public string Apply(string input) => input.Replace("\n", '\n' + ToString());
 
-            public StringBuilder Apply(StringBuilder input) =>
-               // string.Join("\n", input.Split('\n').Select(line => ToString() + line));
-               input.Replace("\n", '\n' + ToString());
+            public StringBuilder Apply(StringBuilder input) => input.Replace("\n", '\n' + ToString());
         }
     }
 }

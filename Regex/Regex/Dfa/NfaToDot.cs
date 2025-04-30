@@ -24,7 +24,8 @@ public class DfaToDot
 
         VisitState(startState, dot, visited);
 
-        dot.Append("\n}");
+        dot.AppendLine();
+        dot.Append("}");
         return dot.ToString();
     }
 
