@@ -219,16 +219,15 @@ public class Parser
 
                 Log($"  Trying at {newPos} postfix: {postfix.Seq}");
                 var result = TryParsePostfix(postfix, currentResult, newPos, input);
-                if (!result.TryGetSuccess(out var parsedNode, out var parsedPos))
+                if (!result.TryGetSuccess(out var node, out var parsedPos))
                     continue;
 
                 // Выбираем самый длинный или самый левый вариант
-                if (parsedPos > bestPos ||
-                    (parsedPos == bestPos && !postfix.Right && bestPostfix!.Right))
+                if (parsedPos > bestPos || parsedPos == bestPos && !postfix.Right && bestPostfix!.Right)
                 {
                     bestPostfix = postfix;
                     bestPos = parsedPos;
-                    bestNode = parsedNode;
+                    bestNode = node;
                 }
             }
 
@@ -408,13 +407,13 @@ public class Parser
         foreach (var element in seq.Elements)
         {
             var result = ParseAlternative(element, newPos, input);
-            if (!result.TryGetSuccess(out var parsedNode, out var parsedPos))
+            if (!result.TryGetSuccess(out var node, out var parsedPos))
             {
                 Log($"Seq element failed: {element} at {newPos}");
                 return Result.Failure("Sequence element failed");
             }
 
-            elements.Add(parsedNode);
+            elements.Add(node);
             newPos = parsedPos;
         }
 
@@ -433,13 +432,13 @@ public class Parser
         foreach (var alt in choice.Alternatives)
         {
             var result = ParseAlternative(alt, currentPos, input);
-            if (!result.TryGetSuccess(out var parsedNode, out var parsedPos))
+            if (!result.TryGetSuccess(out var node, out var parsedPos))
                 continue;
 
             if (parsedPos > maxPos || (parsedPos == maxPos && bestResult == null))
             {
                 maxPos = parsedPos;
-                bestResult = parsedNode;
+                bestResult = node;
             }
         }
 
