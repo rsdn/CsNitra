@@ -3,6 +3,8 @@
 using ExtensibleParaser;
 using System.Diagnostics;
 
+using Tests.Extensions;
+
 namespace MiniC;
 
 [TestClass]
@@ -269,10 +271,6 @@ public partial class MiniCTests
         }
 
         Trace.WriteLine($"Generated AST: {visitor.Result}");
-        Assert.AreEqual(normalizeEol(expectedAst), normalizeEol(visitor.Result.ToString()));
-
-        return;
-
-        static string normalizeEol(string text) => text.Replace("\r\n", "\n").Replace("\r", "\n");
+        Assert.AreEqual(expectedAst.NormalizeEol(), visitor.Result.ToString().NormalizeEol());
     }
 }

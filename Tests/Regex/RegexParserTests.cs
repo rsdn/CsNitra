@@ -1,5 +1,7 @@
 ﻿using System.Diagnostics;
 
+using Tests.Extensions;
+
 namespace Regex;
 
 [TestClass]
@@ -74,7 +76,7 @@ public class RegexParserTests
         """;
 
         var actual = NfaPrinter.Print(nfa.StartState).Trim();
-        Assert.AreEqual(expected.Trim(), actual);
+        Assert.AreEqual(expected.Trim().NormalizeEol(), actual.NormalizeEol());
     }
 
     [TestMethod]
@@ -93,7 +95,7 @@ public class RegexParserTests
         """;
 
         var actual = DfaPrinter.Print(dfa).Trim();
-        Assert.AreEqual(expected.Trim(), actual);
+        Assert.AreEqual(expected.Trim().NormalizeEol(), actual.NormalizeEol());
     }
 
     [TestMethod]
