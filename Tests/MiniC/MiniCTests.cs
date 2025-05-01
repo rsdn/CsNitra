@@ -119,8 +119,24 @@ public partial class MiniCTests
                 return z * y;
             }
             """,
-        //   012345678901234567890
             "FunctionDecl: func(x, y) { VarDecl: z; ExprStmt: (z = (x + «Error: expected Expr»)); Return((z * y)) }"
+        );
+    }
+
+    [TestMethod]
+    public void Err_UnexpectedTerminalExpression()
+    {
+        TestMiniC(
+            "Function",
+            """
+            int func(x, y)
+            {
+                int z;
+                z = x % 5;
+                return z;
+            }
+            """,
+            "FunctionDecl: func(x, y) { VarDecl: z; ExprStmt: (z = (x * «Error: expected Expr»)); Return(z) }"
         );
     }
 

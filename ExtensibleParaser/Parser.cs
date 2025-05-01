@@ -11,8 +11,10 @@ public class Parser
 {
     public bool EnableLogging { get; set; }
     public int ErrorPos { get; private set; }
-    public bool IsRecoveryMode { get; private set; }
+    private int _recoverySkipPos = -1;
+    private FollowSetCalculator? _followCalculator;
 
+    private readonly Stack<string> _ruleStack = new Stack<string>();
     private readonly HashSet<Terminal> _expected = [];
 
     private void Log(string message, [CallerMemberName] string? memberName = null, [CallerLineNumber] int line = 0)
@@ -40,6 +42,7 @@ public class Parser
                 .ToArray();
 
         BuildTdoppRulesInternal();
+        _followCalculator = new FollowSetCalculator(Rules);
     }
 
     private void BuildTdoppRulesInternal()
@@ -101,7 +104,7 @@ public class Parser
         triviaLength = 0;
         _memo.Clear();
         ErrorPos = startPos;
-        IsRecoveryMode = false;
+        _recoverySkipPos = -1;
 
         if (Trivia != null && input.Length > 0)
         {
@@ -122,13 +125,12 @@ public class Parser
             Log("end of memoization table.");
         }
 
+        // Если парсинг не завершился успешно, активируем восстановление
         if (!result.TryGetSuccess(out _, out var newPos) || newPos != input.Length)
         {
-            //_memo.Clear();
-            //IsRecoveryMode = true;
-            //result = ParseRule(startRule, minPrecedence: 0, currentPos: startPos, input);
-
-            return Result.Failure($"Unexpected characters at position {ErrorPos}. Expected: {string.Join(", ", _expected.OrderBy(x => x.ToString()))}");
+            _memo.Clear();
+            _recoverySkipPos = ErrorPos; // Начинаем с позиции ошибки
+            result = ParseRule(startRule, minPrecedence: 0, currentPos: startPos, input);
         }
 
         return result;
@@ -151,6 +153,7 @@ public class Parser
             return Result.Failure($"Rule {ruleName} not found");
 
         Log($"Processing at {currentPos} rule: {ruleName} Prefixs: [{string.Join<Rule>(", ", tdoppRule.Prefix)}]");
+        _ruleStack.Push(ruleName);
         Result? bestResult = null;
         int maxPos = currentPos;
 
@@ -183,14 +186,12 @@ public class Parser
             }
         }
 
-        if (bestResult != null)
-        {
-            _memo[memoKey] = bestResult.Value;
-            return bestResult.Value;
-        }
+        _ruleStack.Pop();
 
-        _memo[memoKey] = Result.Failure("No alternatives matched");
-        return _memo[memoKey];
+        if (bestResult != null)
+            return _memo[memoKey] = bestResult.Value;
+
+        return _memo[memoKey] = Result.Failure("No alternatives matched");
     }
 
     private Result ProcessPostfix(
@@ -286,9 +287,9 @@ public class Parser
         var result = ParseAlternative(optional.Element, currentPos, input);
 
         if (result.TryGetSuccess(out var node, out var newPos))
-            return Result.Success(new SomeNode(optional.Kind ?? "Optional", node, currentPos, newPos),newPos);
+            return Result.Success(new SomeNode(optional.Kind ?? "Optional", node, currentPos, newPos), newPos);
 
-        return Result.Success(new NoneNode(optional.Kind ?? "Optional", currentPos, currentPos),currentPos);
+        return Result.Success(new NoneNode(optional.Kind ?? "Optional", currentPos, currentPos), currentPos);
     }
 
     private Result ParseOneOrMany(OneOrMany oneOrMany, int currentPos, string input)
@@ -342,13 +343,12 @@ public class Parser
         ? "«»"
         : $"«{input.AsSpan(pos, Math.Min(input.Length - pos, len))}»";
 
-    private Result ParseTerminal(
-        Terminal terminal,
-        int startPos,
-        string input)
+    private Result ParseTerminal(Terminal terminal, int startPos, string input)
     {
-        Log($"Parsing at {startPos} terminal: {terminal}");
+        if (startPos == _recoverySkipPos && _recoverySkipPos >= 0)
+            return recovery(terminal, startPos, input);
 
+        // Стандартная логика парсинга терминала
         var currentPos = startPos;
         var contentLength = terminal.TryMatch(input, startPos);
         if (contentLength < 0)
@@ -360,27 +360,18 @@ public class Parser
                     _expected.Clear();
                     ErrorPos = startPos;
                 }
-
                 _expected.Add(terminal);
             }
-
             Log($"Terminal mismatch: {terminal.Kind} at {startPos}: {Preview(input, startPos)}");
             return Result.Failure("Terminal mismatch");
         }
 
         currentPos += contentLength;
 
-        var triviaLength = 0;
-
         // Skip trailing trivia
-        var trivia = Trivia;
-        if (trivia != null && startPos < input.Length)
-        {
-            triviaLength = trivia.TryMatch(input, currentPos);
-            Guard.IsTrue(triviaLength >= 0);
-            if (triviaLength > 0)
-                currentPos += triviaLength;
-        }
+        var triviaLength = Trivia?.TryMatch(input, currentPos) ?? 0;
+        if (triviaLength > 0)
+            currentPos += triviaLength;
 
         Log($"Matched terminal: {terminal.Kind} at [{startPos}-{startPos + contentLength}) len={contentLength} trivia: [{startPos + contentLength}-{currentPos}) len={triviaLength} «{input.AsSpan(startPos, contentLength)}»");
         return Result.Success(
@@ -392,6 +383,59 @@ public class Parser
             ),
             currentPos
         );
+
+        Result recovery(Terminal terminal, int startPos, string input)
+        {
+            Log($"Starting recovery for terminal {terminal.Kind} at position {startPos}");
+            var currentRule = _ruleStack.Peek();
+            var followSymbols = Guard.AssertIsNonNull(_followCalculator).GetFollowSet(currentRule);
+
+            // Ищем первую подходящую точку восстановления
+            for (int pos = _recoverySkipPos; pos < input.Length; pos++)
+            {
+                // Пропускаем тривиа
+                int triviaSkipped = Trivia?.TryMatch(input, pos) ?? 0;
+                if (triviaSkipped > 0)
+                {
+                    Log($"Skipping trivia at position {pos}, length {triviaSkipped}");
+                    pos += triviaSkipped - 1; // -1 т.к. в цикле будет pos++
+                    continue;
+                }
+
+                // Проверяем текущий терминал
+                if (terminal.TryMatch(input, pos) > 0)
+                {
+                    Log($"Found matching terminal {terminal.Kind} at position {pos}, exiting recovery mode");
+                    _recoverySkipPos = -1;
+                    return ParseTerminal(terminal, pos, input);
+                }
+
+                // Проверяем Follow-символы
+                foreach (var followTerm in followSymbols)
+                {
+                    if (followTerm.TryMatch(input, pos) > 0)
+                    {
+                        Log($"Found follow symbol {followTerm.Kind} at position {pos}, exiting recovery mode");
+                        _recoverySkipPos = -1;
+
+                        // Создаем терминал-ошибку для пропущенной части
+                        int errorLength = pos - startPos;
+                        return Result.Success(
+                            new TerminalNode(
+                                "Error",
+                                startPos,
+                                pos,
+                                errorLength
+                            ),
+                            pos
+                        );
+                    }
+                }
+            }
+
+            Log("Recovery failed: no valid recovery point found");
+            return Result.Failure("Recovery failed: no valid recovery point found");
+        }
     }
 
     private Result ParseSeq(

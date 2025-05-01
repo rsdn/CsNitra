@@ -15,6 +15,12 @@ public sealed partial class Terminals
     [Regex(@"\s*")]
     public static partial Terminal Trivia();
 
-    [Regex(@"֎?")] // Временное решение. Дале нужно написать специальное правило допускающее разбор пустой строки.
-    public static partial Terminal Error();
+    public static Terminal Error() => _error;
+
+    private static Terminal _error = new ErrorTerminal();
+
+    private record ErrorTerminal() : Terminal("Error")
+    {
+        public override int TryMatch(string input, int position) => 0;
+    }
 }
