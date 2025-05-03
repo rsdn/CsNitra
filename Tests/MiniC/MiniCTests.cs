@@ -107,7 +107,24 @@ public partial class MiniCTests
     }
 
     [TestMethod]
-    public void Err_MissingExpression()
+    public void Err_MissingFirstExpression()
+    {
+        TestMiniC(
+            "Function",
+            """
+            int func(x, y)
+            {
+                int z;
+                z =  + x;
+                return z * y;
+            }
+            """,
+            "FunctionDecl: func(x, y) { VarDecl: z; ExprStmt: (z = («Error: expected Expr» + x)); Return((z * y)) }"
+        );
+    }
+
+    [TestMethod]
+    public void Err_MissingSecondExpression()
     {
         TestMiniC(
             "Function",
@@ -133,10 +150,58 @@ public partial class MiniCTests
             {
                 int z;
                 z = x % 5;
+                return z + y;
+            }
+            """,
+            "FunctionDecl: func(x, y) { VarDecl: z; ExprStmt: (z = (x «Unexpected: %» 5)); Return((z + y)) }"
+        );
+    }
+
+    [TestMethod]
+    public void Err_MultipleUnexpectedTerminalExpression()
+    {
+        TestMiniC(
+            "Module",
+            """
+            int func1(x, y)
+            {
+                int z;
+                z = x % 5;
+                return z;
+            }
+
+            int func2(x, y)
+            {
+                int z;
+                z = x $ 5;
                 return z;
             }
             """,
-            "FunctionDecl: func(x, y) { VarDecl: z; ExprStmt: (z = (x * «Error: expected Expr»)); Return(z) }"
+            "FunctionDecl: func1(x, y) { VarDecl: z; ExprStmt: (z = (x «Unexpected: %» 5)); Return(z) }; FunctionDecl: func2(x, y) { VarDecl: z; ExprStmt: (z = (x «Unexpected: $» 5)); Return(z) }"
+        );
+    }
+
+    [TestMethod]
+    public void TwoFunctionsModule()
+    {
+        TestMiniC(
+            "Module",
+            """
+            int func1(x, y)
+            {
+                int z;
+                z = x / 5;
+                return z;
+            }
+
+            int func2(x, y)
+            {
+                int z;
+                z = x + y;
+                return z;
+            }
+            """,
+            "FunctionDecl: func1(x, y) { VarDecl: z; ExprStmt: (z = (x / 5)); Return(z) }; FunctionDecl: func2(x, y) { VarDecl: z; ExprStmt: (z = (x + y)); Return(z) }"
         );
     }
 

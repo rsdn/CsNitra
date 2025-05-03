@@ -14,4 +14,6 @@ public static class Guard
         if (!vale)
             throw new InvalidOperationException($"Assertion failed. Expression [{expr}] bust be true!");
     }
+
+    public static void Fail(string message) => throw new InvalidOperationException(message);
 }

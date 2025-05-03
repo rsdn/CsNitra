@@ -1,14 +1,25 @@
 ﻿#nullable enable
 
+using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 
 namespace ExtensibleParaser;
 
 public class Parser
 {
+#pragma warning disable CA2211 // Non-constant fields should not be visible
+    /// <summary>
+    /// Используется только для отладки. Позволяет отображать разобранный код в наследниках Node не храня в нем входной строки.
+    /// </summary>
+    [ThreadStatic]
+    [Obsolete("This field should be used for debugging purposes only. Do not use it in the visitor parser itself.")]
+    public static string? Input;
+#pragma warning restore CA2211 // Non-constant fields should not be visible
+
     public bool EnableLogging { get; set; }
     public int ErrorPos { get; private set; }
     private int _recoverySkipPos = -1;
@@ -76,7 +87,7 @@ public class Parser
         var vaxNodeLen = _memo.Count == 0 ? 0 : _memo.Max(x => x.Value.TryGetSuccess(out var r) ? r.Node.GetType().Name.Length : 0) + 1;
         var vaxKindLen = _memo.Count == 0 ? 0 : _memo.Max(x => x.Value.TryGetSuccess(out var r) ? r.Node.Kind.Length : 0) + 1;
 
-        foreach (var kv in _memo.OrderBy(x => x.Key.pos).ThenBy(x => x.Value.Length).ThenBy(x => x.Key.precedence).ThenByDescending(x => x.Value.IsSuccess))
+        foreach (var kv in _memo.OrderBy(x => x.Key.pos).ThenBy(x => x.Value.NewPos).ThenBy(x => x.Key.precedence).ThenByDescending(x => x.Value.IsSuccess))
         {
             var builder = new StringBuilder();
             var prec = kv.Key.precedence;
@@ -101,66 +112,95 @@ public class Parser
 
     public Result Parse(string input, string startRule, out int triviaLength, int startPos = 0)
     {
+#pragma warning disable CS0618 // Type or member is obsolete
+        Input = input;
+#pragma warning restore CS0618 // Type or member is obsolete
         triviaLength = 0;
-        _memo.Clear();
         ErrorPos = startPos;
         _recoverySkipPos = -1;
+        var currentStartPos = startPos;
+        _memo.Clear();
 
         if (Trivia != null && input.Length > 0)
         {
-            Log($"Starting at {startPos} parse for trivia ({Trivia})");
-            triviaLength = Trivia.TryMatch(input, startPos);
+            Log($"Starting at {currentStartPos} parse for trivia ({Trivia})");
+            triviaLength = Trivia.TryMatch(input, currentStartPos);
             Guard.IsTrue(triviaLength >= 0);
-            startPos += triviaLength;
+            currentStartPos += triviaLength;
         }
 
-        Log($"Starting at {startPos} parse for rule '{startRule}'");
-        var result = ParseRule(startRule, minPrecedence: 0, currentPos: startPos, input);
 
-        if (EnableLogging)
+        Log($"Starting at {currentStartPos} parse for rule '{startRule}'");
+
+        for (int i = 0; ; i++)
         {
-            Log("Memoization table:");
-            foreach (var entry in MemoizationVisualazer(input))
-                Log("    " + entry.Info);
-            Log("end of memoization table.");
-        }
+            var oldErrorPos = ErrorPos;
 
-        // Если парсинг не завершился успешно, активируем восстановление
-        if (!result.TryGetSuccess(out _, out var newPos) || newPos != input.Length)
-        {
-            _memo.Clear();
-            _recoverySkipPos = ErrorPos; // Начинаем с позиции ошибки
-            result = ParseRule(startRule, minPrecedence: 0, currentPos: startPos, input);
-        }
+            Log($"Starting at {currentStartPos} i={i} parse for rule '{startRule}' _recoverySkipPos={_recoverySkipPos}");
+            var normalResult = ParseRule(startRule, minPrecedence: 0, startPos: currentStartPos, input);
 
-        return result;
+            if (normalResult.TryGetSuccess(out var node, out var newPos) && newPos == input.Length)
+                return normalResult;
+
+
+            if (ErrorPos <= oldErrorPos)
+            {
+                var debugInfos = MemoizationVisualazer(input);
+
+                Log($"Parse failed. Memoization table:");
+                foreach (var info in debugInfos)
+                    Log($"    {info.Info}");
+                Log($"and of memoization table.");
+                Guard.IsTrue(ErrorPos > oldErrorPos);
+            }
+
+            _recoverySkipPos = ErrorPos;
+
+            foreach (var x in _memo.ToArray())
+            {
+                var pos = x.Key.pos;
+
+                if ((36, "Expr", 0) == x.Key)
+                {
+                }
+
+                if (!x.Value.IsSuccess)
+                    _memo.Remove(x.Key);
+
+                if (pos == currentStartPos)
+                    _memo.Remove(x.Key);
+
+                if (x.Value.NewPos == ErrorPos)
+                    _memo.Remove(x.Key);
+            }
+        }
     }
 
     private Result ParseRule(
         string ruleName,
         int minPrecedence,
-        int currentPos,
+        int startPos,
         string input)
     {
-        var memoKey = (currentPos, ruleName, minPrecedence);
+        var memoKey = (startPos, ruleName, minPrecedence);
         if (_memo.TryGetValue(memoKey, out var cached))
         {
-            Log($"Memo hit: {memoKey} => {cached}");
+            Log($"Memo hit: {memoKey} => {cached} _recoverySkipPos={_recoverySkipPos}");
             return cached;
         }
 
         if (!TdoppRules.TryGetValue(ruleName, out var tdoppRule))
             return Result.Failure($"Rule {ruleName} not found");
 
-        Log($"Processing at {currentPos} rule: {ruleName} Prefixs: [{string.Join<Rule>(", ", tdoppRule.Prefix)}]");
+        Log($"Processing at {startPos} rule: {ruleName} Prefixs: [{string.Join<Rule>(", ", tdoppRule.Prefix)}]");
         _ruleStack.Push(ruleName);
         Result? bestResult = null;
-        int maxPos = currentPos;
+        var maxPos = startPos;
 
         foreach (var prefix in tdoppRule.Prefix)
         {
             Log($"  Trying prefix: {prefix}");
-            var prefixResult = ParseAlternative(prefix, currentPos, input);
+            var prefixResult = ParseAlternative(prefix, startPos, input);
             if (!prefixResult.TryGetSuccess(out var node, out var newPos))
                 continue;
 
@@ -169,7 +209,7 @@ public class Parser
 
             if (postfixResult.TryGetSuccess(out var postNode, out var postNewPos))
             {
-                Log($"  Postfix at {newPos} to {postNewPos} success: {postNode.Kind}: «{input[newPos..postNewPos]}» full expr at {currentPos}: «{input[currentPos..postNewPos]}»");
+                Log($"  Postfix at {newPos} to {postNewPos} success: {postNode.Kind}: «{input[newPos..postNewPos]}» full expr at {startPos}: «{input[startPos..postNewPos]}»");
                 if (postNewPos > maxPos)
                 {
                     maxPos = postNewPos;
@@ -191,7 +231,7 @@ public class Parser
         if (bestResult != null)
             return _memo[memoKey] = bestResult.Value;
 
-        return _memo[memoKey] = Result.Failure("No alternatives matched");
+        return _memo[memoKey] = Result.Failure("Rule not matched");
     }
 
     private Result ProcessPostfix(
@@ -224,7 +264,7 @@ public class Parser
                     continue;
 
                 // Выбираем самый длинный или самый левый вариант
-                if (parsedPos > bestPos || parsedPos == bestPos && !postfix.Right && bestPostfix!.Right)
+                if (parsedPos > bestPos || parsedPos == bestPos && (bestPostfix == null || !postfix.Right && bestPostfix!.Right))
                 {
                     bestPostfix = postfix;
                     bestPos = parsedPos;
@@ -246,11 +286,11 @@ public class Parser
     private Result TryParsePostfix(
         RuleWithPrecedence postfix,
         ISyntaxNode lhs,
-        int currentPos,
+        int startPos,
         string input)
     {
         var elements = new List<ISyntaxNode> { lhs };
-        int newPos = currentPos;
+        int newPos = startPos;
 
         foreach (var element in postfix.Seq.Elements)
         {
@@ -263,7 +303,7 @@ public class Parser
             newPos = parsedPos;
         }
 
-        return Result.Success(new SeqNode(postfix.Seq.Kind ?? "Seq", elements, currentPos, newPos), newPos);
+        return Result.Success(new SeqNode(postfix.Seq.Kind ?? "Seq", elements, startPos, newPos), newPos);
     }
 
     private Result ParseAlternative(
@@ -345,8 +385,8 @@ public class Parser
 
     private Result ParseTerminal(Terminal terminal, int startPos, string input)
     {
-        if (startPos == _recoverySkipPos && _recoverySkipPos >= 0)
-            return recovery(terminal, startPos, input);
+        if (startPos == _recoverySkipPos)
+            return panicRecovery(terminal, startPos, input);
 
         // Стандартная логика парсинга терминала
         var currentPos = startPos;
@@ -384,7 +424,7 @@ public class Parser
             currentPos
         );
 
-        Result recovery(Terminal terminal, int startPos, string input)
+        Result panicRecovery(Terminal terminal, int startPos, string input)
         {
             Log($"Starting recovery for terminal {terminal.Kind} at position {startPos}");
             var currentRule = _ruleStack.Peek();
@@ -398,6 +438,18 @@ public class Parser
                 if (triviaSkipped > 0)
                 {
                     Log($"Skipping trivia at position {pos}, length {triviaSkipped}");
+                    if (pos > startPos)
+                    {
+                        var endPos = pos + triviaSkipped;
+                        var contentLength = pos - startPos;
+                        var resultNode = new TerminalNode(
+                                Kind: "Error",
+                                StartPos: startPos,
+                                EndPos: endPos,
+                                ContentLength: contentLength);
+                        return Result.Success(resultNode, endPos);
+                    }
+
                     pos += triviaSkipped - 1; // -1 т.к. в цикле будет pos++
                     continue;
                 }
@@ -422,10 +474,10 @@ public class Parser
                         int errorLength = pos - startPos;
                         return Result.Success(
                             new TerminalNode(
-                                "Error",
-                                startPos,
-                                pos,
-                                errorLength
+                                Kind: "Error",
+                                StartPos: startPos,
+                                EndPos: pos,
+                                ContentLength: errorLength
                             ),
                             pos
                         );

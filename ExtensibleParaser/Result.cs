@@ -1,14 +1,16 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Xml.Linq;
 
 namespace ExtensibleParaser;
 
+[DebuggerTypeProxy(typeof(DebugView))]
 public readonly record struct Result
 {
+    public readonly int NewPos;
     private readonly object NodeOrError;
-    private readonly int NewPos;
 
     public bool IsSuccess => NewPos >= 0;
-    public int Length => NewPos >= 0 ? NewPos : 0;
 
     public readonly bool TryGetSuccess([MaybeNullWhen(false)] out ISyntaxNode node, out int newPos)
     {
@@ -52,8 +54,17 @@ public readonly record struct Result
         return false;
     }
 
-    public override string ToString() => NewPos < 0 ? $"Failure: {NodeOrError}" : $"Success(NewPos={NewPos}, {NodeOrError})";
-    public string ToString(string input) => NewPos < 0 ? $"Failure: {NodeOrError}" : ((ISyntaxNode)NodeOrError).ToString(input);
+#pragma warning disable CS0618 // Type or member is obsolete
+    public override string ToString() => Parser.Input == null
+        ? NewPos < 0 ? $"Failure: {NodeOrError}" : $"Success(NewPos={NewPos}, {NodeOrError})"
+        : ToString(Parser.Input);
+#pragma warning disable CS0618 // Type or member is obsolete
+
+    public string ToString(string input)
+    {
+        return NewPos < 0 ? $"Failure: {NodeOrError}" : success((Node)NodeOrError);
+        string success(Node node) => $"Success([{node.StartPos}-{node.EndPos}), {node.Debug()})";
+    }
 
     public static Result Success(ISyntaxNode result, int newPos) => new(result, newPos);
     public static Result Failure(string error) => new(error, -1);
@@ -62,5 +73,13 @@ public readonly record struct Result
     {
         NodeOrError = nodeOrError.AssertIsNonNull();
         NewPos = newPos;
+    }
+
+    private sealed class DebugView(Result result)
+    {
+        [DebuggerBrowsable(DebuggerBrowsableState.RootHidden)]
+        public Tree[] Elements => Parser.Input == null || !result.IsSuccess
+            ? []
+            : new Tree(Parser.Input, ((ISyntaxNode)result.NodeOrError) ).Elements;
     }
 }

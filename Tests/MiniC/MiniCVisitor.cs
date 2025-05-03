@@ -87,18 +87,18 @@ public partial class MiniCTests
                 "SimplBlock" => wrapInBlockIfNeeded(children[0]!),
                 "ZeroOrMany" => new Block(children.SelectMany(c =>
                     c is Block b ? b.Statements : new List<Ast> { c! }).ToList()),
-                "Add" => new BinaryExpr("+", (Expr)children[0]!, (Expr)children[2]!),
-                "Sub" => new BinaryExpr("-", (Expr)children[0]!, (Expr)children[2]!),
-                "Mul" => new BinaryExpr("*", (Expr)children[0]!, (Expr)children[2]!),
-                "Div" => new BinaryExpr("/", (Expr)children[0]!, (Expr)children[2]!),
-                "Eq" => new BinaryExpr("==", (Expr)children[0]!, (Expr)children[2]!),
-                "Neq" => new BinaryExpr("!=", (Expr)children[0]!, (Expr)children[2]!),
-                "Lt" => new BinaryExpr("<", (Expr)children[0]!, (Expr)children[2]!),
-                "Gt" => new BinaryExpr(">", (Expr)children[0]!, (Expr)children[2]!),
-                "Le" => new BinaryExpr("<=", (Expr)children[0]!, (Expr)children[2]!),
-                "Ge" => new BinaryExpr(">=", (Expr)children[0]!, (Expr)children[2]!),
-                "And" => new BinaryExpr("&&", (Expr)children[0]!, (Expr)children[2]!),
-                "Or" => new BinaryExpr("||", (Expr)children[0]!, (Expr)children[2]!),
+                "Add" => makeBinaryOperator("+", children),
+                "Sub" => makeBinaryOperator("-", children),
+                "Mul" => makeBinaryOperator("*", children),
+                "Div" => makeBinaryOperator("/", children),
+                "Eq"  => makeBinaryOperator("==", children),
+                "Neq" => makeBinaryOperator("!=", children),
+                "Lt"  => makeBinaryOperator("<", children),
+                "Gt"  => makeBinaryOperator(">", children),
+                "Le"  => makeBinaryOperator("<=", children),
+                "Ge"  => makeBinaryOperator(">=", children),
+                "And" => makeBinaryOperator("&&", children),
+                "Or"  => makeBinaryOperator("||", children),
                 "Neg" => new UnaryExpr("-", (Expr)children[1]!),
                 "AssignmentExpr" => new BinaryExpr("=", (Expr)children[0]!, (Expr)children[2]!),
                 "ArgsRest" => children[1]!, // Just return the expression part (skip the comma)
@@ -109,6 +109,16 @@ public partial class MiniCTests
             Trace.WriteLine($"Created {Result?.GetType().Name}: {Result}");
 
             return;
+
+            Expr makeBinaryOperator(string Op, Ast?[] children)
+            {
+                Guard.IsTrue(children.Length == 3);
+
+                if (children[1] is Error error)
+                    return new BinaryExpr($"«Unexpected: {error.ErrorNode.ToString(Input)}»", (Expr)children[0]!, (Expr)children[2]!);
+
+                return new BinaryExpr(Op, (Expr)children[0]!, (Expr)children[2]!);
+            }
 
             static Block wrapInBlockIfNeeded(Ast ast) => ast is Block block ? block : new Block(new List<Ast> { ast }, HasBraces: ast is not ExprStmt);
             static Params handleParamsList(Ast?[] children)
