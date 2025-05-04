@@ -47,6 +47,16 @@ public abstract record Node(string Kind, int StartPos, int EndPos) : ISyntaxNode
         return $"«{input[start..StartPos]}»  «{input[StartPos..EndPos]}»  «{input[EndPos..end]}»";
     }
 
+    public string? DebugContent()
+    {
+        var input = Parser.Input;
+
+        if (input == null)
+            return null;
+
+        return input[StartPos..EndPos];
+    }
+
     private sealed class DebugView(Node node)
     {
         [DebuggerBrowsable(DebuggerBrowsableState.RootHidden)]
@@ -60,7 +70,7 @@ public record TerminalNode(string Kind, int StartPos, int EndPos, int ContentLen
     public override ReadOnlySpan<char> AsSpan(string input) => input.AsSpan(StartPos, ContentLength);
     public override string ToString(string input) => input.Substring(StartPos, ContentLength);
     public override void Accept(ISyntaxVisitor visitor) => visitor.Visit(this);
-    public override string ToString() => $"TerminalNode([{StartPos},{StartPos + ContentLength}), «{Kind}»)";
+    public override string ToString() => $"{Kind}Terminal([{StartPos},{StartPos + ContentLength}), «{DebugContent() ?? Kind}»)";
 }
 
 public record SeqNode(string Kind, IReadOnlyList<ISyntaxNode> Elements, int StartPos, int EndPos) : Node(Kind, StartPos, EndPos)
