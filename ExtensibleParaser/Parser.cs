@@ -465,20 +465,21 @@ public class Parser
                 // Проверяем Follow-символы
                 foreach (var followTerm in followSymbols)
                 {
-                    if (followTerm.TryMatch(input, pos) > 0)
+                    if (followTerm.TryMatch(input, pos) > 0 && pos > startPos)
                     {
                         Log($"Found follow symbol {followTerm.Kind} at position {pos}, exiting recovery mode");
                         _recoverySkipPos = -1;
 
                         // Создаем терминал-ошибку для пропущенной части
                         int errorLength = pos - startPos;
-                        return Result.Success(
-                            new TerminalNode(
+                        var resultNode = new TerminalNode(
                                 Kind: "Error",
                                 StartPos: startPos,
                                 EndPos: pos,
                                 ContentLength: errorLength
-                            ),
+                            );
+                        return Result.Success(
+                            resultNode,
                             pos
                         );
                     }
