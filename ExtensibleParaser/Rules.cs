@@ -82,10 +82,58 @@ public record TdoppRule(
     Ref Name,
     string Kind,
     Rule[] Prefix,
-    RuleWithPrecedence[] Postfix
+    RuleWithPrecedence[] Postfix,
+    Rule[] RecoveryPrefix,
+    RuleWithPrecedence[] RecoveryPostfix
 ) : Rule(Kind)
 {
     public override string ToString() =>
         $"{Name} = Prefix: {string.Join<Rule>(" | ", Prefix)}" +
         $" Postfix: {string.Join("", Postfix.Select(x => $" {{{x.Precedence}{(x.Right ? "" : " right")}}} {x.Seq}"))}";
 }
+
+public abstract record RecoveryTerminal(string Kind) : Terminal(Kind);
+
+public record SkipNonTriviaTerminal(string Kind, Terminal Trivia) : RecoveryTerminal(Kind)
+{
+    public override int TryMatch(string input, int position)
+    {
+        if (position >= input.Length)
+            return -1;
+
+        var currentPos = position;
+        var nonTriviaCount = 0;
+
+        while (currentPos < input.Length)
+        {
+            // Проверяем, является ли текущий символ тривиальным
+            var triviaLength = Trivia.TryMatch(input, currentPos);
+            
+            if (triviaLength > 0)
+            {
+                // Если уже нашли нетривиальные символы, завершаем
+                if (nonTriviaCount > 0)
+                    break;
+                
+                currentPos += triviaLength;
+                continue;
+            }
+
+            // Нашли нетривиальный символ
+            nonTriviaCount++;
+            currentPos++;
+        }
+
+        // Возвращаем длину только если нашли хотя бы один нетривиальный символ
+        return nonTriviaCount > 0 ? currentPos - position : -1;
+    }
+
+    public override string ToString() => Kind;
+}
+
+public record EmptyTerminal(string Kind) : RecoveryTerminal(Kind)
+{
+    public override int TryMatch(string input, int position) => 0;
+    public override string ToString() => Kind;
+}
+

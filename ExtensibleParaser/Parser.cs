@@ -64,19 +64,39 @@ public class Parser
             var alternatives = kvp.Value;
             var prefix = new List<Rule>();
             var postfix = new List<RuleWithPrecedence>();
+            var recoveryPrefix = new List<Rule>();
+            var recoveryPostfix = new List<RuleWithPrecedence>();
 
             foreach (var alt in alternatives)
             {
+                // Проверяем, является ли правило правилом восстановления
+                bool isRecoveryRule = alt is Seq seq && seq.Elements.Any(e => e is RecoveryTerminal);
+
                 if (alt is Seq { Elements: [Ref rule, .. var rest] } && rule.RuleName == ruleName)
                 {
                     var reqRef = rest.OfType<ReqRef>().First();
-                    postfix.Add(new RuleWithPrecedence(Kind: alt.Kind, new Seq(rest, alt.Kind), reqRef.Precedence, reqRef.Right));
+                    if (isRecoveryRule)
+                        recoveryPostfix.Add(new RuleWithPrecedence(Kind: alt.Kind, new Seq(rest, alt.Kind), reqRef.Precedence, reqRef.Right));
+                    else
+                        postfix.Add(new RuleWithPrecedence(Kind: alt.Kind, new Seq(rest, alt.Kind), reqRef.Precedence, reqRef.Right));
                 }
                 else
-                    prefix.Add(alt);
+                {
+                    if (isRecoveryRule)
+                        recoveryPrefix.Add(alt);
+                    else
+                        prefix.Add(alt);
+                }
             }
 
-            TdoppRules[ruleName] = new TdoppRule(new Ref(ruleName), Kind: ruleName, prefix.ToArray(), postfix.ToArray());
+            TdoppRules[ruleName] = new TdoppRule(
+                new Ref(ruleName), 
+                Kind: ruleName, 
+                prefix.ToArray(), 
+                postfix.ToArray(),
+                recoveryPrefix.ToArray(),
+                recoveryPostfix.ToArray()
+            );
         }
     }
 
@@ -197,7 +217,10 @@ public class Parser
         Result? bestResult = null;
         var maxPos = startPos;
 
-        foreach (var prefix in tdoppRule.Prefix)
+        var prefixRules = startPos == _recoverySkipPos ? tdoppRule.RecoveryPrefix : tdoppRule.Prefix;
+
+
+        foreach (var prefix in prefixRules)
         {
             Log($"  Trying prefix: {prefix}");
             var prefixResult = ParseAlternative(prefix, startPos, input);
@@ -250,7 +273,9 @@ public class Parser
             int bestPos = newPos;
             ISyntaxNode? bestNode = null;
 
-            foreach (var postfix in rule.Postfix)
+            var postfixRules = newPos == _recoverySkipPos ? rule.RecoveryPostfix : rule.Postfix;
+
+            foreach (var postfix in postfixRules)
             {
                 // Проверяем, что постфикс применим с учетом приоритета и ассоциативности
                 bool isApplicable = postfix.Precedence > minPrecedence || postfix.Precedence == minPrecedence && postfix.Right;
@@ -408,8 +433,8 @@ public class Parser
 
     private Result ParseTerminal(Terminal terminal, int startPos, string input)
     {
-        if (startPos == _recoverySkipPos)
-            return panicRecovery(terminal, startPos, input);
+        //if (startPos == _recoverySkipPos)
+        //    return panicRecovery(terminal, startPos, input);
 
         // Стандартная логика парсинга терминала
         var currentPos = startPos;
@@ -442,7 +467,8 @@ public class Parser
                 terminal.Kind,
                 startPos,
                 EndPos: currentPos,
-                contentLength
+                contentLength,
+                IsRecovery: terminal is RecoveryTerminal
             ),
             currentPos
         );
@@ -465,12 +491,13 @@ public class Parser
                     {
                         var endPos = pos + triviaSkipped;
                         var contentLength = pos - startPos;
-                        var resultNode = new TerminalNode(
-                                Kind: "Error",
-                                StartPos: startPos,
-                                EndPos: endPos,
-                                ContentLength: contentLength);
-                        return Result.Success(resultNode, endPos);
+                        //var resultNode = new TerminalNode(
+                        //        Kind: "Error",
+                        //        StartPos: startPos,
+                        //        EndPos: endPos,
+                        //        ContentLength: contentLength,
+                        //        IsRecovery: true);
+                        //return Result.Success(resultNode, endPos);
                     }
 
                     pos += triviaSkipped - 1; // -1 т.к. в цикле будет pos++
@@ -499,7 +526,8 @@ public class Parser
                                 Kind: "Error",
                                 StartPos: startPos,
                                 EndPos: pos,
-                                ContentLength: errorLength
+                                ContentLength: errorLength,
+                                IsRecovery: true
                             );
                         return Result.Success(
                             resultNode,

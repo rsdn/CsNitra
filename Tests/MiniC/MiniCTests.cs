@@ -38,6 +38,7 @@ public partial class MiniCTests
             new Seq([new Ref("Expr"), new Literal("&&"), new ReqRef("Expr",  30)], "And"),
             new Seq([new Ref("Expr"), new Literal("||"), new ReqRef("Expr",  20)], "Or"),
             new Seq([new Ref("Expr"), new Literal("="),  new ReqRef("Expr",  10, Right: true)], "AssignmentExpr"),
+            new Seq([new Ref("Expr"), new SkipNonTriviaTerminal("Error", _parser.Trivia!), new ReqRef("Expr",  200)], "RecoveryOperator"),
             Terminals.Error(), // правило разбирающее пустую строку
         };
 
@@ -178,6 +179,29 @@ public partial class MiniCTests
             }
             """,
             "FunctionDecl: func1(x, y) { VarDecl: z; ExprStmt: (z = (x «Unexpected: %» 5)); Return(z) }; FunctionDecl: func2(x, y) { VarDecl: z; ExprStmt: (z = (x «Unexpected: $» 5)); Return(z) }"
+        );
+    }
+
+    //[TestMethod]
+    public void Err_MissingClosingBraceWithFunctionInside()
+    {
+        TestMiniC(
+            "Module", """
+            int func1(x, y)
+            {
+                int z;
+                z = x + 5;
+                return z;
+            
+            
+            int func2(x, y)
+            {
+                int z;
+                z = x - 5;
+                return z;
+            }
+            """,
+            "FunctionDecl: func() { VarDecl: x; ExprStmt: (x = 5); IfStmt: x then { ExprStmt: (x = 1) }; «Error: expected }» }"
         );
     }
 
