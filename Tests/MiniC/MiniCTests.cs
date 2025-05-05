@@ -38,7 +38,6 @@ public partial class MiniCTests
             new Seq([new Ref("Expr"), new Literal("&&"), new ReqRef("Expr",  30)], "And"),
             new Seq([new Ref("Expr"), new Literal("||"), new ReqRef("Expr",  20)], "Or"),
             new Seq([new Ref("Expr"), new Literal("="),  new ReqRef("Expr",  10, Right: true)], "AssignmentExpr"),
-            new Seq([new Ref("Expr"), new RecoveryTerminal("Error", _parser.Trivia!), new ReqRef("Expr",  200)], "RecoveryOperator"),
             Terminals.Error(), // правило разбирающее пустую строку
         };
 
