@@ -308,34 +308,57 @@ public class Parser
 
     private Result ParseAlternative(
         Rule rule,
-        int currentPos,
+        int startPos,
         string input) => rule switch
         {
-            Terminal t => ParseTerminal(t, currentPos, input),
-            Seq s => ParseSeq(s, currentPos, input),
-            Choice c => ParseChoice(c, currentPos, input),
-            OneOrMany o => ParseOneOrMany(o, currentPos, input),
-            ZeroOrMany z => ParseZeroOrMany(z, currentPos, input),
-            Ref r => ParseRule(r.RuleName, 0, currentPos, input),
-            ReqRef r => ParseRule(r.RuleName, r.Precedence, currentPos, input),
-            Optional o => ParseOptional(o, currentPos, input),
+            Terminal t => ParseTerminal(t, startPos, input),
+            Seq s => ParseSeq(s, startPos, input),
+            Choice c => ParseChoice(c, startPos, input),
+            OneOrMany o => ParseOneOrMany(o, startPos, input),
+            ZeroOrMany z => ParseZeroOrMany(z, startPos, input),
+            Ref r => ParseRule(r.RuleName, 0, startPos, input),
+            ReqRef r => ParseRule(r.RuleName, r.Precedence, startPos, input),
+            Optional o => ParseOptional(o, startPos, input),
+            AndPredicate a => ParseAndPredicate(a, startPos, input),
+            NotPredicate n => ParseNotPredicate(n, startPos, input),
             _ => throw new IndexOutOfRangeException($"Unsupported rule type: {rule.GetType().Name}: {rule}")
         };
 
-    private Result ParseOptional(Optional optional, int currentPos, string input)
+    private Result ParseAndPredicate(AndPredicate a, int startPos, string input)
     {
-        var result = ParseAlternative(optional.Element, currentPos, input);
-
-        if (result.TryGetSuccess(out var node, out var newPos))
-            return Result.Success(new SomeNode(optional.Kind ?? "Optional", node, currentPos, newPos), newPos);
-
-        return Result.Success(new NoneNode(optional.Kind ?? "Optional", currentPos, currentPos), currentPos);
+        var errorPos = ErrorPos;
+        var predicateResult = ParseAlternative(a.PredicateRule, startPos, input);
+        ErrorPos = errorPos;
+        return predicateResult.IsSuccess
+            ? ParseAlternative(a.MainRule, startPos, input)
+            : Result.Failure("And predicate failed");
     }
 
-    private Result ParseOneOrMany(OneOrMany oneOrMany, int currentPos, string input)
+    private Result ParseNotPredicate(NotPredicate predicate, int startPos, string input)
     {
-        Log($"Parsing at {currentPos} OneOrMany: {oneOrMany}");
-        var startPos = currentPos;
+        var errorPos = ErrorPos;
+        var predicateResult = ParseAlternative(predicate.PredicateRule, startPos, input);
+        ErrorPos = errorPos;
+        if (!predicateResult.IsSuccess)
+            return ParseAlternative(predicate.MainRule, startPos, input);
+        else
+            return Result.Failure($"Not predicate ({predicate.PredicateRule}) failed");
+    }
+
+    private Result ParseOptional(Optional optional, int startPos, string input)
+    {
+        var result = ParseAlternative(optional.Element, startPos, input);
+
+        if (result.TryGetSuccess(out var node, out var newPos))
+            return Result.Success(new SomeNode(optional.Kind ?? "Optional", node, startPos, newPos), newPos);
+
+        return Result.Success(new NoneNode(optional.Kind ?? "Optional", startPos, startPos), startPos);
+    }
+
+    private Result ParseOneOrMany(OneOrMany oneOrMany, int startPos, string input)
+    {
+        Log($"Parsing at {startPos} OneOrMany: {oneOrMany}");
+        var currentPos = startPos;
         var elements = new List<ISyntaxNode>();
 
         // Parse at least one element
@@ -360,10 +383,10 @@ public class Parser
         return Result.Success(new SeqNode(oneOrMany.Kind ?? "OneOrMany", elements, startPos, currentPos), currentPos);
     }
 
-    private Result ParseZeroOrMany(ZeroOrMany zeroOrMany, int currentPos, string input)
+    private Result ParseZeroOrMany(ZeroOrMany zeroOrMany, int startPos, string input)
     {
-        Log($"Parsing at {currentPos} ZeroOrMany: {zeroOrMany}");
-        var startPos = currentPos;
+        Log($"Parsing at {startPos} ZeroOrMany: {zeroOrMany}");
+        var currentPos = startPos;
         var elements = new List<ISyntaxNode>();
 
         while (true)
@@ -493,16 +516,21 @@ public class Parser
 
     private Result ParseSeq(
         Seq seq,
-        int currentPos,
+        int startPos,
         string input)
     {
-        Log($"Parsing at {currentPos} Seq: {seq}");
-        var startPos = currentPos;
+        Log($"Parsing at {startPos} Seq: {seq}");
+        var currentPos = startPos;
         var elements = new List<ISyntaxNode>();
         var newPos = currentPos;
 
         foreach (var element in seq.Elements)
         {
+            if (_recoverySkipPos == newPos)
+            {
+                var xs =_memo.Where(x => x.Key.pos == newPos && x.Value.IsSuccess).ToArray();
+            }
+
             var result = ParseAlternative(element, newPos, input);
             if (!result.TryGetSuccess(out var node, out var parsedPos))
             {

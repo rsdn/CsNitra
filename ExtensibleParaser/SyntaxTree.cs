@@ -106,3 +106,7 @@ public record ReqRefNode(string Kind, string RuleName, int Precedence, bool Left
 {
     public override void Accept(ISyntaxVisitor visitor) => visitor.Visit(this);
 }
+
+public record AndPredicate(Rule PredicateRule, Rule MainRule, string? Kind = null) : Rule(Kind);
+
+public record NotPredicate(Rule PredicateRule, Rule MainRule, string? Kind = null) : Rule(Kind);
