@@ -10,7 +10,7 @@ namespace MiniC;
 [TestClass]
 public partial class MiniCTests
 {
-    private readonly Parser _parser = new() { EnableLogging = false, Trivia = Terminals.Trivia() };
+    private readonly Parser _parser = new() { EnableLogging = true, Trivia = Terminals.Trivia() };
 
     [TestInitialize]
     public void Initialize()
@@ -38,7 +38,8 @@ public partial class MiniCTests
             new Seq([new Ref("Expr"), new Literal("&&"), new ReqRef("Expr",  30)], "And"),
             new Seq([new Ref("Expr"), new Literal("||"), new ReqRef("Expr",  20)], "Or"),
             new Seq([new Ref("Expr"), new Literal("="),  new ReqRef("Expr",  10, Right: true)], "AssignmentExpr"),
-            Terminals.Error(), // правило разбирающее пустую строк. Нужно для восстановления. Должно быть последним. В будщем нужн отличать такие правила в парсере.
+            new Seq([new Ref("Expr"), new RecoveryTerminal("Error", _parser.Trivia!), new ReqRef("Expr",  200)], "RecoveryOperator"),
+            Terminals.Error(), // правило разбирающее пустую строку
         };
 
         // Statement rules
@@ -56,7 +57,7 @@ public partial class MiniCTests
         // Block rules
         _parser.Rules["Block"] =
         [
-            new Seq([new Literal("{"), new ZeroOrMany(new Ref("Statement")), new Literal("}")], "MultiBlock"),
+            new Seq([new Literal("{"), new ZeroOrMany(new NotPredicate(new Ref("Function"), new Ref("Statement"))), new Literal("}")], "MultiBlock"),
             new Ref("Statement", "SimplBlock")
         ];
 

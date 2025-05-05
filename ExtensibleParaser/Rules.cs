@@ -17,7 +17,7 @@ public abstract record Terminal(string Kind) : Rule(Kind)
     /// <param name="startPos">Позиция с которой производится распознование (сопоставление).</param>
     /// <returns>-1 - если распознование (сопоставление) не неудалось. Больше нуля, если распознавание удалось.
     /// 0 возвращается для регулярных выражений допускающих пусту строку, наприимер для "a*".</returns>
-    public abstract int TryMatch(string input, int position);
+    public abstract int TryMatch(string input, int startPos);
 }
 
 public sealed record Literal(string Value, string? Kind = null) : Terminal(Kind ?? Value)
