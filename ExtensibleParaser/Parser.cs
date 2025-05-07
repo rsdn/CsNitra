@@ -72,7 +72,7 @@ public class Parser(Terminal trivia, Log? log = null)
             foreach (var alt in alternatives)
             {
                 // Проверяем, является ли правило правилом восстановления
-                bool isRecoveryRule = alt is Seq seq && seq.Elements.Any(e => e is RecoveryTerminal);
+                bool isRecoveryRule = alt is Seq && alt.GetSubRules<RecoveryTerminal>().Any();
 
                 if (alt is Seq { Elements: [Ref rule, .. var rest] } && rule.RuleName == ruleName)
                 {
