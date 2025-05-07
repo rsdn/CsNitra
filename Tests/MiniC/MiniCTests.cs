@@ -1,5 +1,6 @@
 ﻿#nullable enable
 
+using Diagnostics;
 using ExtensibleParaser;
 using System.Diagnostics;
 
@@ -10,11 +11,14 @@ namespace MiniC;
 [TestClass]
 public partial class MiniCTests
 {
-    private readonly Parser _parser = new() { EnableLogging = true, Trivia = Terminals.Trivia() };
+    private readonly Parser _parser = new(Terminals.Trivia(), new Log(LogImportance.High));
 
     [TestInitialize]
     public void Initialize()
     {
+        var errorOp = new SkipNonTriviaTerminal("Error", _parser.Trivia);
+        var closingParenthesis = new OptionalInRecovery(new Literal("}"));
+
         // Expression rules
         _parser.Rules["Expr"] = new Rule[]
         {
@@ -38,26 +42,26 @@ public partial class MiniCTests
             new Seq([new Ref("Expr"), new Literal("&&"), new ReqRef("Expr",  30)], "And"),
             new Seq([new Ref("Expr"), new Literal("||"), new ReqRef("Expr",  20)], "Or"),
             new Seq([new Ref("Expr"), new Literal("="),  new ReqRef("Expr",  10, Right: true)], "AssignmentExpr"),
-            new Seq([new Ref("Expr"), new SkipNonTriviaTerminal("Error", _parser.Trivia!), new ReqRef("Expr",  200)], "RecoveryOperator"),
-            Terminals.Error(), // правило разбирающее пустую строку
+            new Seq([new Ref("Expr"), errorOp, new ReqRef("Expr",  200)], "RecoveryOperator"),
+            Terminals.ErrorEmpty(),
         };
 
         // Statement rules
         _parser.Rules["Statement"] = new Rule[]
         {
-            new Seq([new Literal("int"), Terminals.Ident(), new Literal(";")], "VarDecl"),
-            new Seq([new Ref("Expr"), new Literal(";")], "ExprStmt"),
+            new Seq([new Literal("int"), Terminals.Ident(), new OptionalInRecovery(new Literal(";"))], "VarDecl"),
+            new Seq([new Ref("Expr"), new OptionalInRecovery(new Literal(";"))], "ExprStmt"),
             new Seq([new Literal("if"), new Literal("("), new Ref("Expr"), new Literal(")"),
                     new Ref("Block")], "IfStmt"),
             new Seq([new Literal("if"), new Literal("("), new Ref("Expr"), new Literal(")"),
                     new Ref("Block"), new Literal("else"), new Ref("Block")], "IfElseStmt"),
-            new Seq([new Literal("return"), new Ref("Expr"), new Literal(";")], "Return")
+            new Seq([new Literal("return"), new Ref("Expr"), new OptionalInRecovery(new Literal(";"))], "Return")
         };
 
         // Block rules
         _parser.Rules["Block"] =
         [
-            new Seq([new Literal("{"), new ZeroOrMany(new NotPredicate(new Ref("Function"), new Ref("Statement"))), new Literal("}")], "MultiBlock"),
+            new Seq([new Literal("{"), new ZeroOrMany(new NotPredicate(new Ref("Function"), new Ref("Statement"))), closingParenthesis], "MultiBlock"),
             new Ref("Statement", "SimplBlock")
         ];
 
@@ -182,28 +186,88 @@ public partial class MiniCTests
         );
     }
 
-    //[TestMethod]
+    [TestMethod]
     public void Err_MissingClosingBraceWithFunctionInside()
     {
         TestMiniC(
-            "Module", """
+            "Module",
+            """
             int func1(x, y)
             {
                 int z;
-                z = x + 5;
+                z = x / 5;
                 return z;
             
+
+            int func2(x, y)
+            {
+                int z;
+                z = x + y;
+                return z;
+            }
+            """,
+            "FunctionDecl: func1(x, y) { VarDecl: z; ExprStmt: (z = (x / 5)); Return(z) }; FunctionDecl: func2(x, y) { VarDecl: z; ExprStmt: (z = (x + y)); Return(z) }"
+        );
+    }
+
+    [TestMethod]
+    public void Err_Missing2ClosingBraceWithFunctionInside()
+    {
+        TestMiniC(
+            "Module",
+            """
+            int func1(x, y)
+            {
+                int z;
+                z = x / 5;
+                if (z)
+                {
+                    return x;
+                
+
+                return z;
+            
+
+            int func2(x, y)
+            {
+                int z;
+                z = x + y;
+                return z;
+            }
+            """,
+            "FunctionDecl: func1(x, y) { VarDecl: z; ExprStmt: (z = (x / 5)); IfStmt: z then { Return(x); Return(z) } }; FunctionDecl: func2(x, y) { VarDecl: z; ExprStmt: (z = (x + y)); Return(z) }"
+        );
+    }
+
+    [TestMethod]
+    public void Err_Multiple()
+    {
+        TestMiniC(
+            "Module",
+            """
+            int func1(x, y)
+            {
+                int z;
+                z = x $^ 5;
+                if (z)
+                {
+                    return x;
+                
+
+                return z;
+
             
             int func2(x, y)
             {
                 int z;
-                z = x - 5;
+                z = x + y;
                 return z;
             }
             """,
-            "FunctionDecl: func() { VarDecl: x; ExprStmt: (x = 5); IfStmt: x then { ExprStmt: (x = 1) }; «Error: expected }» }"
+            "FunctionDecl: func1(x, y) { VarDecl: z; ExprStmt: (z = (x «Unexpected: $^» 5)); IfStmt: z then { Return(x); Return(z) } }; FunctionDecl: func2(x, y) { VarDecl: z; ExprStmt: (z = (x + y)); Return(z) }"
         );
     }
+
 
     [TestMethod]
     public void TwoFunctionsModule()

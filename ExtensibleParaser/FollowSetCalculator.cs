@@ -166,6 +166,7 @@ public class FollowSetCalculator
             OneOrMany oom => FlattenRule(oom.Element),
             ZeroOrMany zom => FlattenRule(zom.Element),
             Optional opt => FlattenRule(opt.Element),
+            OptionalInRecovery x => FlattenRule(x.Element),
             _ => new List<Rule> { rule }
         };
     }

@@ -2,6 +2,7 @@
 
 namespace CalcTest;
 
+using Diagnostics;
 using ExtensibleParaser;
 
 using System.Diagnostics;
@@ -53,7 +54,7 @@ public class ParserTests
         public void Visit(ReqRefNode node) => node.Inner.Accept(this);
     }
 
-    private readonly Parser _parser = new() { EnableLogging = true, Trivia = Terminals.Trivia() };
+    private readonly Parser _parser = new(Terminals.Trivia(), new Log(LogImportance.Non));
 
     [TestInitialize]
     public void Initialize()

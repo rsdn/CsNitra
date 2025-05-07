@@ -6,4 +6,8 @@
     <Nullable>enable</Nullable>
     <LangVersion>preview</LangVersion>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Regex\Regex\Regex.csproj" />
+  </ItemGroup>
 </Project>

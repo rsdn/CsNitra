@@ -63,6 +63,13 @@ public record Optional(Rule Element, string? Kind = null) : Rule(Kind ?? nameof(
         new Optional(Element.InlineReferences(inlineableRules), Kind);
 }
 
+public record OptionalInRecovery(Rule Element) : Rule("Error")
+{
+    public override string ToString() => $"{Element}?";
+    public override Rule InlineReferences(Dictionary<string, Rule> inlineableRules) =>
+        new OptionalInRecovery(Element.InlineReferences(inlineableRules));
+}
+
 public record Ref(string RuleName, string? Kind = null) : Rule(Kind ?? nameof(RuleName))
 {
     public override string ToString() => RuleName;

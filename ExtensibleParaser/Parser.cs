@@ -6,10 +6,11 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using Diagnostics;
 
 namespace ExtensibleParaser;
 
-public class Parser
+public class Parser(Terminal trivia, Log? log = null)
 {
 #pragma warning disable CA2211 // Non-constant fields should not be visible
     /// <summary>
@@ -20,21 +21,22 @@ public class Parser
     public static string? Input;
 #pragma warning restore CA2211 // Non-constant fields should not be visible
 
-    public bool EnableLogging { get; set; }
     public int ErrorPos { get; private set; }
     private int _recoverySkipPos = -1;
     private FollowSetCalculator? _followCalculator;
 
-    private readonly Stack<string> _ruleStack = new Stack<string>();
-    private readonly HashSet<Terminal> _expected = [];
 
-    private void Log(string message, [CallerMemberName] string? memberName = null, [CallerLineNumber] int line = 0)
+    private readonly Stack<string> _ruleStack = new();
+    private readonly HashSet<Terminal> _expected = [];
+    public Terminal Trivia { get; private set; } = trivia;
+    public Log? Logger { get; set; } = log;
+
+    private void Log(string message, LogImportance importance = LogImportance.Normal, [CallerMemberName] string? memberName = null, [CallerLineNumber] int line = 0)
     {
-        if (EnableLogging)
-            Trace.WriteLine($"{memberName} ({line}): {message}");
+        if (Logger is { } log)
+            log.Info($"{memberName} ({line}): {message}", importance);
     }
 
-    public Terminal? Trivia { get; set; }
 
     public Dictionary<string, Rule[]> Rules { get; } = new();
     public Dictionary<string, TdoppRule> TdoppRules { get; } = new();
@@ -119,7 +121,7 @@ public class Parser
             if (kv.Value.TryGetSuccess(out var node, out var newPos))
             {
                 int len = newPos - startPos;
-                item = $"[{startPos}..{newPos}) {len} {$"«{input.Substring(startPos, len)}»".PadRight(input.Length + 3)} Node: {node.GetType().Name.PadRight(vaxNodeLen)} Kind: {node.Kind.PadRight(vaxKindLen)} Rule: {ruleName}";
+                item = $"[{startPos}..{newPos}) {len} {ruleName} {$"«{input.Substring(startPos, len)}»".PadRight(input.Length + 3)} Node: {node.GetType().Name.PadRight(vaxNodeLen)} Kind: {node.Kind.PadRight(vaxKindLen)} Rule: {ruleName}";
             }
             else
                 item = $"Failed {ruleName} at {startPos}{precStr}: {kv.Value.GetError()}";
@@ -141,9 +143,9 @@ public class Parser
         var currentStartPos = startPos;
         _memo.Clear();
 
-        if (Trivia != null && input.Length > 0)
+        if (input.Length > 0)
         {
-            Log($"Starting at {currentStartPos} parse for trivia ({Trivia})");
+            Log($"Starting at {currentStartPos} parse for trivia");
             triviaLength = Trivia.TryMatch(input, currentStartPos);
             Guard.IsTrue(triviaLength >= 0);
             currentStartPos += triviaLength;
@@ -171,7 +173,7 @@ public class Parser
                 foreach (var info in debugInfos)
                     Log($"    {info.Info}");
                 Log($"and of memoization table.");
-                Guard.IsTrue(ErrorPos > oldErrorPos);
+                Guard.IsTrue(ErrorPos > oldErrorPos, $"ErrorPos ({ErrorPos}) > oldErrorPos ({oldErrorPos})");
             }
 
             _recoverySkipPos = ErrorPos;
@@ -212,12 +214,17 @@ public class Parser
         if (!TdoppRules.TryGetValue(ruleName, out var tdoppRule))
             return Result.Failure($"Rule {ruleName} not found");
 
-        Log($"Processing at {startPos} rule: {ruleName} Prefixs: [{string.Join<Rule>(", ", tdoppRule.Prefix)}]");
+        var isRecoveryPos = startPos == _recoverySkipPos;
+        if (isRecoveryPos)
+            Log($"Recover at {startPos} rule: {ruleName} Prefixs: [{string.Join<Rule>(", ", tdoppRule.Prefix)}]", LogImportance.High);
+        else
+            Log($"Processing at {startPos} rule: {ruleName} Prefixs: [{string.Join<Rule>(", ", tdoppRule.Prefix)}]");
+
         _ruleStack.Push(ruleName);
         Result? bestResult = null;
         var maxPos = startPos;
 
-        var prefixRules = startPos == _recoverySkipPos ? tdoppRule.RecoveryPrefix : tdoppRule.Prefix;
+        var prefixRules = isRecoveryPos ? tdoppRule.RecoveryPrefix : tdoppRule.Prefix;
 
 
         foreach (var prefix in prefixRules)
@@ -273,7 +280,8 @@ public class Parser
             int bestPos = newPos;
             ISyntaxNode? bestNode = null;
 
-            var postfixRules = newPos == _recoverySkipPos ? rule.RecoveryPostfix : rule.Postfix;
+            var isRecoveryPos = newPos == _recoverySkipPos;
+            var postfixRules = isRecoveryPos ? rule.RecoveryPostfix : rule.Postfix;
 
             foreach (var postfix in postfixRules)
             {
@@ -283,7 +291,11 @@ public class Parser
                 if (!isApplicable)
                     continue;
 
-                Log($"  Trying at {newPos} postfix: {postfix.Seq}");
+                if (isRecoveryPos)
+                    Log($"  Trying recovery at {newPos} postfix: {postfix.Seq}", LogImportance.High);
+                else
+                    Log($"  Trying at {newPos} postfix: {postfix.Seq}");
+
                 var result = TryParsePostfix(postfix, currentResult, newPos, input);
                 if (!result.TryGetSuccess(out var node, out var parsedPos))
                     continue;
@@ -294,6 +306,9 @@ public class Parser
                     bestPostfix = postfix;
                     bestPos = parsedPos;
                     bestNode = node;
+                }
+                else if (parsedPos == bestPos && bestPostfix == null)
+                {
                 }
             }
 
@@ -344,6 +359,7 @@ public class Parser
             Ref r => ParseRule(r.RuleName, 0, startPos, input),
             ReqRef r => ParseRule(r.RuleName, r.Precedence, startPos, input),
             Optional o => ParseOptional(o, startPos, input),
+            OptionalInRecovery o => ParseOptionalInRecovery(o, startPos, input),
             AndPredicate a => ParseAndPredicate(a, startPos, input),
             NotPredicate n => ParseNotPredicate(n, startPos, input),
             _ => throw new IndexOutOfRangeException($"Unsupported rule type: {rule.GetType().Name}: {rule}")
@@ -378,6 +394,14 @@ public class Parser
             return Result.Success(new SomeNode(optional.Kind ?? "Optional", node, startPos, newPos), newPos);
 
         return Result.Success(new NoneNode(optional.Kind ?? "Optional", startPos, startPos), startPos);
+    }
+
+    private Result ParseOptionalInRecovery(OptionalInRecovery optional, int startPos, string input)
+    {
+        if (startPos == _recoverySkipPos)
+            return Result.Success(new TerminalNode("Error", startPos, startPos, ContentLength: 0, IsRecovery: true), startPos);
+
+        return ParseAlternative(optional.Element, startPos, input);
     }
 
     private Result ParseOneOrMany(OneOrMany oneOrMany, int startPos, string input)
@@ -457,7 +481,7 @@ public class Parser
         currentPos += contentLength;
 
         // Skip trailing trivia
-        var triviaLength = Trivia?.TryMatch(input, currentPos) ?? 0;
+        var triviaLength = Trivia.TryMatch(input, currentPos);
         if (triviaLength > 0)
             currentPos += triviaLength;
 
@@ -483,7 +507,7 @@ public class Parser
             for (int pos = _recoverySkipPos; pos < input.Length; pos++)
             {
                 // Пропускаем тривиа
-                int triviaSkipped = Trivia?.TryMatch(input, pos) ?? 0;
+                int triviaSkipped = Trivia.TryMatch(input, pos);
                 if (triviaSkipped > 0)
                 {
                     Log($"Skipping trivia at position {pos}, length {triviaSkipped}");

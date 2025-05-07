@@ -1,4 +1,6 @@
-﻿namespace Regex;
+﻿using Diagnostics;
+
+namespace Regex;
 
 public static class DfaInterpreter
 {

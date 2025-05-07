@@ -1,5 +1,6 @@
 ﻿#nullable enable 
 
+using Diagnostics;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;

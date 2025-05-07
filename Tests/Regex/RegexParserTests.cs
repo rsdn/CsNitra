@@ -1,5 +1,5 @@
 ﻿using System.Diagnostics;
-
+using Diagnostics;
 using Tests.Extensions;
 
 namespace Regex;

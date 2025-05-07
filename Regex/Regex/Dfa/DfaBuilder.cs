@@ -2,6 +2,8 @@
 
 namespace Regex;
 
+using Diagnostics;
+
 public class DfaBuilder(Log? log = null)
 {
     public DfaState Build(NfaState start)
