@@ -42,7 +42,11 @@ public partial class MiniCTests
             new Seq([new Ref("Expr"), new Literal("&&"), new ReqRef("Expr",  30)], "And"),
             new Seq([new Ref("Expr"), new Literal("||"), new ReqRef("Expr",  20)], "Or"),
             new Seq([new Ref("Expr"), new Literal("="),  new ReqRef("Expr",  10, Right: true)], "AssignmentExpr"),
+            //new Seq([new Ref("Expr"), new NotPredicate(new ReqRef("Expr", 200), errorOp), new ReqRef("Expr",  200)], "RecoveryOperator"),
+            
             new Seq([new Ref("Expr"), errorOp, new ReqRef("Expr",  200)], "RecoveryOperator"),
+            
+            new Seq([new Ref("Expr"), Terminals.ErrorEmpty(), new ReqRef("Expr",  200)], "RecoveryEmptyOperator"),
             Terminals.ErrorEmpty(),
         };
 
@@ -108,6 +112,23 @@ public partial class MiniCTests
         }
         """,
             "FunctionDecl: func1() { Return(1) }; FunctionDecl: func2(x) { Return(x) }; FunctionDecl: main() { Return(0) }"
+        );
+    }
+
+    [TestMethod]
+    public void Err_MissingOperatorExpression()
+    {
+        TestMiniC(
+            "Function",
+            """
+            int func(x, y)
+            {
+                int z;
+                z = y  x;
+                return z * y;
+            }
+            """,
+            "FunctionDecl: func(x, y) { VarDecl: z; ExprStmt: (z = («Error: expected Expr» + x)); Return((z * y)) }"
         );
     }
 

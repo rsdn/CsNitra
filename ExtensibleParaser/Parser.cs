@@ -71,22 +71,26 @@ public class Parser(Terminal trivia, Log? log = null)
 
             foreach (var alt in alternatives)
             {
+                if (alt is EmptyTerminal)
+                {
+                }
+
                 // Проверяем, является ли правило правилом восстановления
-                bool isRecoveryRule = alt is Seq && alt.GetSubRules<RecoveryTerminal>().Any();
+                bool isRecoveryRule = alt.GetSubRules<RecoveryTerminal>().Any();
 
                 if (alt is Seq { Elements: [Ref rule, .. var rest] } && rule.RuleName == ruleName)
                 {
                     var reqRef = rest.OfType<ReqRef>().First();
-                    if (isRecoveryRule)
-                        recoveryPostfix.Add(new RuleWithPrecedence(Kind: alt.Kind, new Seq(rest, alt.Kind), reqRef.Precedence, reqRef.Right));
-                    else
+                    recoveryPostfix.Add(new RuleWithPrecedence(Kind: alt.Kind, new Seq(rest, alt.Kind), reqRef.Precedence, reqRef.Right));
+
+                    if (!isRecoveryRule)
                         postfix.Add(new RuleWithPrecedence(Kind: alt.Kind, new Seq(rest, alt.Kind), reqRef.Precedence, reqRef.Right));
                 }
                 else
                 {
-                    if (isRecoveryRule)
-                        recoveryPrefix.Add(alt);
-                    else
+                    recoveryPrefix.Add(alt);
+
+                    if (!isRecoveryRule)
                         prefix.Add(alt);
                 }
             }
@@ -303,6 +307,10 @@ public class Parser(Terminal trivia, Log? log = null)
                 // Выбираем самый длинный или самый левый вариант
                 if (parsedPos > bestPos || parsedPos == bestPos && (bestPostfix == null || !postfix.Right && bestPostfix!.Right))
                 {
+                    if (isRecoveryPos)
+
+                    {
+                    }
                     bestPostfix = postfix;
                     bestPos = parsedPos;
                     bestNode = node;
