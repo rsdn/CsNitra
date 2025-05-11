@@ -8,7 +8,7 @@ namespace ExtensibleParaser;
 public readonly record struct Result
 {
     public readonly int NewPos;
-    private readonly object NodeOrError;
+    private readonly ISyntaxNode? Node;
 
     public bool IsSuccess => NewPos >= 0;
 
@@ -16,7 +16,7 @@ public readonly record struct Result
     {
         if (NewPos >= 0)
         {
-            node = (ISyntaxNode)NodeOrError;
+            node = Node!;
             newPos = NewPos;
             return true;
         }
@@ -30,7 +30,7 @@ public readonly record struct Result
     {
         if (NewPos >= 0)
         {
-            success = ((ISyntaxNode)NodeOrError, NewPos);
+            success = (Node!, NewPos);
             return true;
         }
 
@@ -38,15 +38,15 @@ public readonly record struct Result
         return false;
     }
 
-    public readonly string? GetErrorOrDefault() => NewPos >= 0 ? null : (string)NodeOrError;
+    public readonly string? GetErrorOrDefault() => NewPos >= 0 ? null : "Error";
 
-    public readonly string GetError() => NewPos >= 0 ? throw new InvalidCastException("Result is Success") : (string)NodeOrError;
+    public readonly string GetError() => NewPos >= 0 ? throw new InvalidCastException("Result is Success") : "Error";
 
     public readonly bool TryGetFailed([MaybeNullWhen(false)] out string error)
     {
         if (NewPos < 0)
         {
-            error = (string)NodeOrError;
+            error = "Error";
             return true;
         }
 
@@ -56,22 +56,22 @@ public readonly record struct Result
 
 #pragma warning disable CS0618 // Type or member is obsolete
     public override string ToString() => Parser.Input == null
-        ? NewPos < 0 ? $"Failure: {NodeOrError}" : $"Success(NewPos={NewPos}, {NodeOrError})"
+        ? NewPos < 0 ? "Failure" : $"Success(NewPos={NewPos}, {Node})"
         : ToString(Parser.Input);
 #pragma warning disable CS0618 // Type or member is obsolete
 
     public string ToString(string input)
     {
-        return NewPos < 0 ? $"Failure: {NodeOrError}" : success((Node)NodeOrError);
+        return NewPos < 0 ? "Failure" : success((Node)Node!);
         string success(Node node) => $"Success([{node.StartPos}-{node.EndPos}), {node.Debug()})";
     }
 
     public static Result Success(ISyntaxNode result, int newPos) => new(result, newPos);
-    public static Result Failure(string error) => new(error, -1);
+    public static Result Failure() => new(null, -1);
 
-    private Result(object nodeOrError, int newPos)
+    private Result(ISyntaxNode? node, int newPos)
     {
-        NodeOrError = nodeOrError.AssertIsNonNull();
+        Node = node;
         NewPos = newPos;
     }
 
@@ -80,6 +80,6 @@ public readonly record struct Result
         [DebuggerBrowsable(DebuggerBrowsableState.RootHidden)]
         public Tree[] Elements => Parser.Input == null || !result.IsSuccess
             ? []
-            : new Tree(Parser.Input, ((ISyntaxNode)result.NodeOrError) ).Elements;
+            : new Tree(Parser.Input, result.Node!).Elements;
     }
 }

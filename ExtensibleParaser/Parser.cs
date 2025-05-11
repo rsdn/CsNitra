@@ -216,7 +216,7 @@ public class Parser(Terminal trivia, Log? log = null)
         }
 
         if (!TdoppRules.TryGetValue(ruleName, out var tdoppRule))
-            return Result.Failure($"Rule {ruleName} not found");
+            return Result.Failure();
 
         var isRecoveryPos = startPos == _recoverySkipPos;
         if (isRecoveryPos)
@@ -265,7 +265,7 @@ public class Parser(Terminal trivia, Log? log = null)
         if (bestResult != null)
             return _memo[memoKey] = bestResult.Value;
 
-        return _memo[memoKey] = Result.Failure("Rule not matched");
+        return _memo[memoKey] = Result.Failure();
     }
 
     private Result ProcessPostfix(
@@ -345,7 +345,7 @@ public class Parser(Terminal trivia, Log? log = null)
             Log($"    Parsing at {newPos} postfix element: {element}");
             var result = ParseAlternative(element, newPos, input);
             if (!result.TryGetSuccess(out var node, out var parsedPos))
-                return Result.Failure("Postfix element failed");
+                return Result.Failure();
 
             elements.Add(node);
             newPos = parsedPos;
@@ -380,7 +380,7 @@ public class Parser(Terminal trivia, Log? log = null)
         ErrorPos = errorPos;
         return predicateResult.IsSuccess
             ? ParseAlternative(a.MainRule, startPos, input)
-            : Result.Failure("And predicate failed");
+            : Result.Failure();
     }
 
     private Result ParseNotPredicate(NotPredicate predicate, int startPos, string input)
@@ -391,7 +391,7 @@ public class Parser(Terminal trivia, Log? log = null)
         if (!predicateResult.IsSuccess)
             return ParseAlternative(predicate.MainRule, startPos, input);
         else
-            return Result.Failure($"Not predicate ({predicate.PredicateRule}) failed");
+            return Result.Failure();
     }
 
     private Result ParseOptional(Optional optional, int startPos, string input)
@@ -422,7 +422,7 @@ public class Parser(Terminal trivia, Log? log = null)
         // Parse at least one element
         var firstResult = ParseAlternative(oneOrMany.Element, currentPos, input);
         if (!firstResult.TryGetSuccess(out var firstNode, out var newPos))
-            return Result.Failure("OneOrMany: first element failed");
+            return Result.Failure();
 
         elements.Add(firstNode);
         currentPos = newPos;
@@ -484,7 +484,7 @@ public class Parser(Terminal trivia, Log? log = null)
                 _expected.Add(terminal);
             }
             Log($"Terminal mismatch: {terminal.Kind} at {startPos}: {Preview(input, startPos)}");
-            return Result.Failure("Terminal mismatch");
+            return Result.Failure();
         }
 
         currentPos += contentLength;
@@ -571,7 +571,7 @@ public class Parser(Terminal trivia, Log? log = null)
             }
 
             Log("Recovery failed: no valid recovery point found");
-            return Result.Failure("Recovery failed: no valid recovery point found");
+            return Result.Failure();
         }
     }
 
@@ -596,7 +596,7 @@ public class Parser(Terminal trivia, Log? log = null)
             if (!result.TryGetSuccess(out var node, out var parsedPos))
             {
                 Log($"Seq element failed: {element} at {newPos}");
-                return Result.Failure("Sequence element failed");
+                return Result.Failure();
             }
 
             elements.Add(node);
@@ -630,6 +630,6 @@ public class Parser(Terminal trivia, Log? log = null)
 
         return bestResult != null
             ? Result.Success(bestResult, maxPos)
-            : Result.Failure("All alternatives failed");
+            : Result.Failure();
     }
 }
