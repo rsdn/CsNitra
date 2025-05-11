@@ -270,13 +270,13 @@ public class Parser(Terminal trivia, Log? log = null)
 
     private Result ProcessPostfix(
         TdoppRule rule,
-        ISyntaxNode lhs,
+        ISyntaxNode prefixNode,
         int minPrecedence,
-        int currentPos,
+        int startPos,
         string input)
     {
-        var newPos = currentPos;
-        var currentResult = lhs;
+        var newPos = startPos;
+        var currentResult = prefixNode;
 
         while (true)
         {
@@ -406,10 +406,11 @@ public class Parser(Terminal trivia, Log? log = null)
 
     private Result ParseOptionalInRecovery(OptionalInRecovery optional, int startPos, string input)
     {
-        if (startPos == _recoverySkipPos)
-            return Result.Success(new TerminalNode("Error", startPos, startPos, ContentLength: 0, IsRecovery: true), startPos);
+        var result = ParseAlternative(optional.Element, startPos, input);
 
-        return ParseAlternative(optional.Element, startPos, input);
+        if (!result.IsSuccess && startPos == _recoverySkipPos)
+            return Result.Success(new TerminalNode("Error", startPos, startPos, ContentLength: 0, IsRecovery: true), startPos);
+        return result;
     }
 
     private Result ParseOneOrMany(OneOrMany oneOrMany, int startPos, string input)
@@ -607,16 +608,16 @@ public class Parser(Terminal trivia, Log? log = null)
 
     private Result ParseChoice(
         Choice choice,
-        int currentPos,
+        int startPos,
         string input)
     {
-        Log($"Parsing at {currentPos} choice: {choice}");
-        var maxPos = currentPos;
+        Log($"Parsing at {startPos} choice: {choice}");
+        var maxPos = startPos;
         ISyntaxNode? bestResult = null;
 
         foreach (var alt in choice.Alternatives)
         {
-            var result = ParseAlternative(alt, currentPos, input);
+            var result = ParseAlternative(alt, startPos, input);
             if (!result.TryGetSuccess(out var node, out var parsedPos))
                 continue;
 
