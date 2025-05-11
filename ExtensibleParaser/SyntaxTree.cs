@@ -1,5 +1,4 @@
 ﻿using System.Diagnostics;
-using System.Collections.Generic;
 
 namespace ExtensibleParaser;
 
@@ -14,14 +13,10 @@ public interface ISyntaxNode
     string ToString(string input);
 }
 
-
 public interface ISyntaxVisitor
 {
     void Visit(TerminalNode node);
     void Visit(SeqNode node);
-    void Visit(ChoiceNode node);
-    void Visit(RefNode node);
-    void Visit(ReqRefNode node);
     void Visit(SomeNode node);
     void Visit(NoneNode node);
 }
@@ -80,11 +75,6 @@ public record SeqNode(string Kind, IReadOnlyList<ISyntaxNode> Elements, int Star
     public override void Accept(ISyntaxVisitor visitor) => visitor.Visit(this);
 }
 
-public record ChoiceNode(string Kind, IReadOnlyList<ISyntaxNode> Alternatives, int StartPos, int EndPos) : Node(Kind, StartPos, EndPos)
-{
-    public override void Accept(ISyntaxVisitor visitor) => visitor.Visit(this);
-}
-
 public abstract record OptionalNode(string Kind, int StartPos, int EndPos) : Node(Kind, StartPos, EndPos);
 
 public record SomeNode(string Kind, ISyntaxNode Value, int StartPos, int EndPos)
@@ -99,12 +89,3 @@ public record NoneNode(string Kind, int StartPos, int EndPos)
     public override void Accept(ISyntaxVisitor visitor) { }
 }
 
-public record RefNode(string Kind, string RuleName, ISyntaxNode Inner, int StartPos, int EndPos) : Node(Kind, StartPos, EndPos)
-{
-    public override void Accept(ISyntaxVisitor visitor) => visitor.Visit(this);
-}
-
-public record ReqRefNode(string Kind, string RuleName, int Precedence, bool LeftAssoc, ISyntaxNode Inner, int StartPos, int EndPos) : Node(Kind, StartPos, EndPos)
-{
-    public override void Accept(ISyntaxVisitor visitor) => visitor.Visit(this);
-}

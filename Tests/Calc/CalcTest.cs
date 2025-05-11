@@ -49,9 +49,6 @@ public class ParserTests
 
         public void Visit(SomeNode node) => node.Value.Accept(this);
         public void Visit(NoneNode node) => Result = null;
-        public void Visit(ChoiceNode node) => node.Alternatives[0].Accept(this);
-        public void Visit(RefNode node) => node.Inner.Accept(this);
-        public void Visit(ReqRefNode node) => node.Inner.Accept(this);
     }
 
     private readonly Parser _parser = new(Terminals.Trivia(), new Log(LogImportance.Non));

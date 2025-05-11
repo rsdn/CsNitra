@@ -6,12 +6,10 @@ namespace ExtensibleParaser;
 public sealed record Tree(string Input, object Element)
 {
     public override string ToString() => $"«{((ISyntaxNode)Element).ToString(Input)}»  {Element}";
-    public Tree[] Elements => Element switch
+    public Tree[] Elements => (ISyntaxNode)Element switch
     {
-        ReqRefNode x => [],
-        RefNode x => [],
-        ChoiceNode x => x.Alternatives.Select(x => new Tree(Input, x)).ToArray(),
         SeqNode x => x.Elements.Select(x => new Tree(Input, x)).ToArray(),
+        SomeNode x => new Tree(Input, x.Value).Elements,
         TerminalNode x => [],
         _ => throw new ArgumentOutOfRangeException(Element.GetType().Name)
     };
