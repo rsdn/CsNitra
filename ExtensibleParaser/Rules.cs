@@ -199,7 +199,7 @@ public record AndPredicate(Rule PredicateRule, Rule MainRule) : Rule("AndPredica
 
 public record NotPredicate(Rule PredicateRule, Rule MainRule) : Rule("NotPredicate")
 {
-    public override string ToString() => $"!{PredicateRule} {MainRule}";
+    public override string ToString() => $"(!{PredicateRule} {MainRule})";
     public override Rule InlineReferences(Dictionary<string, Rule> inlineableRules) =>
         new NotPredicate(
             PredicateRule.InlineReferences(inlineableRules),
