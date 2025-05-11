@@ -281,7 +281,7 @@ public class Parser(Terminal trivia, Log? log = null)
         while (true)
         {
             RuleWithPrecedence? bestPostfix = null;
-            int bestPos = newPos;
+            var bestPos = newPos;
             ISyntaxNode? bestNode = null;
 
             var isRecoveryPos = newPos == _recoverySkipPos;
