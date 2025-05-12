@@ -208,28 +208,34 @@ public class Parser(Terminal trivia, Log? log = null)
         int startPos,
         string input)
     {
+        var isRecoveryPos = startPos == _recoverySkipPos;
         var memoKey = (startPos, ruleName, minPrecedence);
+
         if (_memo.TryGetValue(memoKey, out var cached))
         {
-            Log($"Memo hit: {memoKey} => {cached} _recoverySkipPos={_recoverySkipPos}");
-            return cached;
+            if (_recoverySkipPos >= 0 && cached.IsPrefixOnly)
+                Log($"Ignoring prefix-only memo in recovery mode: {memoKey} => {cached}");
+            else
+            {
+                Log($"Memo hit: {memoKey} => {cached} _recoverySkipPos={_recoverySkipPos}");
+                return cached;
+            }
         }
 
         if (!TdoppRules.TryGetValue(ruleName, out var tdoppRule))
             return Result.Failure();
 
-        var isRecoveryPos = startPos == _recoverySkipPos;
         if (isRecoveryPos)
             Log($"Recover at {startPos} rule: {ruleName} Prefixs: [{string.Join<Rule>(", ", tdoppRule.Prefix)}]", LogImportance.High);
         else
             Log($"Processing at {startPos} rule: {ruleName} Prefixs: [{string.Join<Rule>(", ", tdoppRule.Prefix)}]");
 
-        _ruleStack.Push(ruleName);
-        Result? bestResult = null;
+        var bestResult = (Result?)null;
         var maxPos = startPos;
-
         var prefixRules = isRecoveryPos ? tdoppRule.RecoveryPrefix : tdoppRule.Prefix;
+        var isPrefixOnly = true;
 
+        _ruleStack.Push(ruleName);
 
         foreach (var prefix in prefixRules)
         {
@@ -246,6 +252,9 @@ public class Parser(Terminal trivia, Log? log = null)
                 Log($"  Postfix at {newPos} to {postNewPos} success: {postNode.Kind}: «{input[newPos..postNewPos]}» full expr at {startPos}: «{input[startPos..postNewPos]}»");
                 if (postNewPos > maxPos)
                 {
+                    if (postNewPos > newPos)
+                        isPrefixOnly = false;
+
                     maxPos = postNewPos;
                     bestResult = postfixResult;
                 }
@@ -262,8 +271,11 @@ public class Parser(Terminal trivia, Log? log = null)
 
         _ruleStack.Pop();
 
-        if (bestResult != null)
-            return _memo[memoKey] = bestResult.Value;
+        if (bestResult is { } result)
+            if (isPrefixOnly)
+                return _memo[memoKey] = result.WithPrefixOnly(result);
+            else
+                return _memo[memoKey] = result;
 
         return _memo[memoKey] = Result.Failure();
     }
@@ -308,7 +320,6 @@ public class Parser(Terminal trivia, Log? log = null)
                 if (parsedPos > bestPos || parsedPos == bestPos && (bestPostfix == null || !postfix.Right && bestPostfix!.Right))
                 {
                     if (isRecoveryPos)
-
                     {
                     }
                     bestPostfix = postfix;

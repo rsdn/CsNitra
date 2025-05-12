@@ -100,6 +100,7 @@ public partial class MiniCTests
                 "And" => makeBinaryOperator("&&", children),
                 "Or"  => makeBinaryOperator("||", children),
                 "RecoveryOperator" => makeRecoveryBinaryOperator(children),
+                "RecoveryEmptyOperator" => makeMissingBinaryOperator(children),
                 "Neg" => new UnaryExpr("-", (Expr)children[1]!),
                 "AssignmentExpr" => new BinaryExpr("=", (Expr)children[0]!, (Expr)children[2]!),
                 "ArgsRest" => children[1]!, // Just return the expression part (skip the comma)
@@ -115,6 +116,12 @@ public partial class MiniCTests
             {
                 Guard.IsTrue(children.Length == 3);
                 return new BinaryExpr($"«Unexpected: {((Error)children[1]!).ErrorNode.ToString(Input)}»", (Expr)children[0]!, (Expr)children[2]!);
+            }
+
+            Expr makeMissingBinaryOperator(Ast?[] children)
+            {
+                Guard.IsTrue(children.Length == 3);
+                return new BinaryExpr($"«Missing operator»", (Expr)children[0]!, (Expr)children[2]!);
             }
 
             Expr makeBinaryOperator(string Op, Ast?[] children)

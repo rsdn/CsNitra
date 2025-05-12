@@ -16,7 +16,6 @@ public partial class MiniCTests
     [TestInitialize]
     public void Initialize()
     {
-        var errorOp = new SkipNonTriviaTerminal("Error", _parser.Trivia);
         var closingParenthesis = new OptionalInRecovery(new Literal("}"));
 
         // Expression rules
@@ -44,7 +43,7 @@ public partial class MiniCTests
             new Seq([new Ref("Expr"), new Literal("="),  new ReqRef("Expr",  10, Right: true)], "AssignmentExpr"),
             //new Seq([new Ref("Expr"), new NotPredicate(new ReqRef("Expr", 200), errorOp), new ReqRef("Expr",  200)], "RecoveryOperator"),
             
-            new Seq([new Ref("Expr"), errorOp, new ReqRef("Expr",  200)], "RecoveryOperator"),
+            new Seq([new Ref("Expr"), (Terminals.ErrorOperator()), new ReqRef("Expr",  200)], "RecoveryOperator"),
             
             new Seq([new Ref("Expr"), Terminals.ErrorEmpty(), new ReqRef("Expr",  200)], "RecoveryEmptyOperator"),
             Terminals.ErrorEmpty(),
@@ -128,7 +127,7 @@ public partial class MiniCTests
                 return z * y;
             }
             """,
-            "FunctionDecl: func(x, y) { VarDecl: z; ExprStmt: (z = («Error: expected Expr» + x)); Return((z * y)) }"
+            "FunctionDecl: func(x, y) { VarDecl: z; ExprStmt: (z = (y «Missing operator» x)); Return((z * y)) }"
         );
     }
 

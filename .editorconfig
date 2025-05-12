@@ -5,3 +5,10 @@ dotnet_diagnostic.CA1050.severity = none
 
 # IDE0305: Simplify collection initialization
 dotnet_style_prefer_collection_expression = never
+
+[*]
+indent_style = space
+indent_size = 4
+trim_trailing_whitespace = true
+insert_final_newline = true
+end_of_line = crlf

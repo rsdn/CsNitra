@@ -84,6 +84,7 @@ namespace TerminalGenerator
                         Log? log = null;// new Log();
                         var methodName = methodSyntax.Identifier.Text;
                         var methodModifiers = methodSyntax.Modifiers.ToString(); // "public" и т.д.
+                        var returnType = methodSyntax.ReturnType;
                         //Debugger.Launch();
                         var parser = new RegexParser(regexPattern);
                         var regexNode = parser.Parse();
@@ -94,7 +95,7 @@ namespace TerminalGenerator
 
                         // Генерируем реализацию для одного метода
                         methodImplementations.AppendLine($$"""
-                                private sealed record {{methodName}}Matcher() : Terminal(Kind: "{{methodName}}")
+                                private sealed record {{methodName}}Matcher() : {{returnType}}(Kind: "{{methodName}}")
                                 {
                                     public override int TryMatch(string input, int startPos)
                                     {
@@ -105,9 +106,9 @@ namespace TerminalGenerator
                                     public override string ToString() => @"{{methodName}}";
                                 }
 
-                                private static readonly Terminal {{ToFieldName(methodName)}} = new {{methodName}}Matcher();
+                                private static readonly {{returnType}} {{ToFieldName(methodName)}} = new {{methodName}}Matcher();
                                 
-                                {{methodModifiers}} Terminal {{methodName}}() => {{ToFieldName(methodName)}};
+                                {{methodModifiers}} {{returnType}} {{methodName}}() => {{ToFieldName(methodName)}};
                             """);
                     }
 

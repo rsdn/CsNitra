@@ -9,6 +9,7 @@ public readonly record struct Result
 {
     public readonly int NewPos;
     private readonly ISyntaxNode? Node;
+    public readonly bool IsPrefixOnly;
 
     public bool IsSuccess => NewPos >= 0;
 
@@ -54,6 +55,9 @@ public readonly record struct Result
         return false;
     }
 
+    public Result WithPrefixOnly(Result result) =>
+        new(result.Node, result.NewPos, isPrefixOnly: true);
+
 #pragma warning disable CS0618 // Type or member is obsolete
     public override string ToString() => Parser.Input == null
         ? NewPos < 0 ? "Failure" : $"Success(NewPos={NewPos}, {Node})"
@@ -66,13 +70,14 @@ public readonly record struct Result
         string success(Node node) => $"Success([{node.StartPos}-{node.EndPos}), {node.Debug()})";
     }
 
-    public static Result Success(ISyntaxNode result, int newPos) => new(result, newPos);
-    public static Result Failure() => new(null, -1);
+    public static Result Success(ISyntaxNode result, int newPos, bool isPrefixOnly = false) => new(result, newPos, isPrefixOnly);
+    public static Result Failure() => new(null, -1, isPrefixOnly: false);
 
-    private Result(ISyntaxNode? node, int newPos)
+    private Result(ISyntaxNode? node, int newPos, bool isPrefixOnly)
     {
         Node = node;
         NewPos = newPos;
+        IsPrefixOnly = isPrefixOnly;
     }
 
     private sealed class DebugView(Result result)

@@ -8,12 +8,7 @@ public class TerminalMatcherAttribute : Attribute
 }
 
 [AttributeUsage(AttributeTargets.Method)]
-public class RegexAttribute : Attribute
+public class RegexAttribute(string pattern) : Attribute
 {
-    public string Pattern { get; }
-
-    public RegexAttribute(string pattern)
-    {
-        Pattern = pattern;
-    }
+    public string Pattern { get; } = pattern;
 }

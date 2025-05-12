@@ -18,7 +18,4 @@
     <ProjectReference Include="..\Regex\Regex\Regex.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Regex\" />
-  </ItemGroup>
 </Project>
