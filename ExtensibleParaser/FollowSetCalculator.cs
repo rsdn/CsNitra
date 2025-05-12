@@ -149,25 +149,18 @@ public class FollowSetCalculator
         return productions;
     }
 
-    private List<List<Rule>> ExpandRule(Rule rule)
+    private List<List<Rule>> ExpandRule(Rule rule) => rule switch
     {
-        return rule switch
-        {
-            Seq seq => new List<List<Rule>> { seq.Elements.SelectMany(FlattenRule).ToList() },
-            Choice choice => choice.Alternatives.SelectMany(ExpandRule).ToList(),
-            _ => new List<List<Rule>> { FlattenRule(rule).ToList() }
-        };
-    }
+        Seq seq => new List<List<Rule>> { seq.Elements.SelectMany(FlattenRule).ToList() },
+        _ => new List<List<Rule>> { FlattenRule(rule).ToList() }
+    };
 
-    private List<Rule> FlattenRule(Rule rule)
+    private List<Rule> FlattenRule(Rule rule) => rule switch
     {
-        return rule switch
-        {
-            OneOrMany oom => FlattenRule(oom.Element),
-            ZeroOrMany zom => FlattenRule(zom.Element),
-            Optional opt => FlattenRule(opt.Element),
-            OptionalInRecovery x => FlattenRule(x.Element),
-            _ => new List<Rule> { rule }
-        };
-    }
+        OneOrMany oom => FlattenRule(oom.Element),
+        ZeroOrMany zom => FlattenRule(zom.Element),
+        Optional opt => FlattenRule(opt.Element),
+        OftenMissed x => FlattenRule(x.Element),
+        _ => new List<Rule> { rule }
+    };
 }

@@ -45,6 +45,11 @@ public record Error(TerminalNode ErrorNode) : Expr
     public override string ToString() => $"«Error: expected Expr»";
 }
 
+public record UnexpectedOperator(TerminalNode ErrorNode) : Expr
+{
+    public override string ToString() => $"«Error: unexpected operator»";
+}
+
 public record ExprStmt(Expr Expr) : Ast
 {
     public override string ToString() => $"ExprStmt: {Expr}";

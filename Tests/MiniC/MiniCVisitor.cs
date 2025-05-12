@@ -17,6 +17,7 @@ public partial class MiniCTests
         {
             Result = node.Kind switch
             {
+                "ErrorOperator" => new UnexpectedOperator(node),
                 "Error" => new Error(node),
                 "Number" => new Number(int.Parse(node.ToString(Input))),
                 "Ident" => new Identifier(node.ToString(Input)),
@@ -115,7 +116,7 @@ public partial class MiniCTests
             Expr makeRecoveryBinaryOperator(Ast?[] children)
             {
                 Guard.IsTrue(children.Length == 3);
-                return new BinaryExpr($"«Unexpected: {((Error)children[1]!).ErrorNode.ToString(Input)}»", (Expr)children[0]!, (Expr)children[2]!);
+                return new BinaryExpr($"«Unexpected: {((UnexpectedOperator)children[1]!).ErrorNode.ToString(Input)}»", (Expr)children[0]!, (Expr)children[2]!);
             }
 
             Expr makeMissingBinaryOperator(Ast?[] children)

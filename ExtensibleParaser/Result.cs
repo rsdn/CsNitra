@@ -8,8 +8,8 @@ namespace ExtensibleParaser;
 public readonly record struct Result
 {
     public readonly int NewPos;
+    public readonly int MaxFailPos;
     private readonly ISyntaxNode? Node;
-    public readonly bool IsPrefixOnly;
 
     public bool IsSuccess => NewPos >= 0;
 
@@ -55,29 +55,28 @@ public readonly record struct Result
         return false;
     }
 
-    public Result WithPrefixOnly(Result result) =>
-        new(result.Node, result.NewPos, isPrefixOnly: true);
+    public Result WithPrefixOnly(Result result) => new(result.Node, result.NewPos, result.MaxFailPos);
 
 #pragma warning disable CS0618 // Type or member is obsolete
     public override string ToString() => Parser.Input == null
-        ? NewPos < 0 ? "Failure" : $"Success(NewPos={NewPos}, {Node})"
+        ? NewPos < 0 ? $"Failure({~NewPos})" : $"Success(NewPos={NewPos}, {Node})"
         : ToString(Parser.Input);
 #pragma warning disable CS0618 // Type or member is obsolete
 
     public string ToString(string input)
     {
-        return NewPos < 0 ? "Failure" : success((Node)Node!);
+        return NewPos < 0 ? $"Failure({~NewPos})" : success((Node)Node!);
         string success(Node node) => $"Success([{node.StartPos}-{node.EndPos}), {node.Debug()})";
     }
 
-    public static Result Success(ISyntaxNode result, int newPos, bool isPrefixOnly = false) => new(result, newPos, isPrefixOnly);
-    public static Result Failure() => new(null, -1, isPrefixOnly: false);
+    public static Result Success(ISyntaxNode result, int newPos, int maxFailPos) => new(result, newPos, maxFailPos);
+    public static Result Failure(int failPos) => new(null, newPos: -1, maxFailPos: failPos);
 
-    private Result(ISyntaxNode? node, int newPos, bool isPrefixOnly)
+    private Result(ISyntaxNode? node, int newPos, int maxFailPos)
     {
         Node = node;
         NewPos = newPos;
-        IsPrefixOnly = isPrefixOnly;
+        MaxFailPos = maxFailPos;
     }
 
     private sealed class DebugView(Result result)

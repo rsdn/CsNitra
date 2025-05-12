@@ -41,7 +41,7 @@ public sealed record Literal(string Value, string? Kind = null) : Terminal(Kind 
 
 public record Seq(Rule[] Elements, string Kind) : Rule(Kind)
 {
-    public override string ToString() => string.Join(" ", Elements.Select(e => e is Choice ? $"({e})" : e.ToString()));
+    public override string ToString() => string.Join<Rule>(" ", Elements);
     public override Rule InlineReferences(Dictionary<string, Rule> inlineableRules) =>
         new Seq(Elements.Select(e => e.InlineReferences(inlineableRules)).ToArray(), Kind);
     public override IEnumerable<Rule> GetSubRules<T>()
@@ -50,21 +50,6 @@ public record Seq(Rule[] Elements, string Kind) : Rule(Kind)
             yield return this;
         foreach (var element in Elements)
             foreach (var subRule in element.GetSubRules<T>())
-                yield return subRule;
-    }
-}
-
-public record Choice(Rule[] Alternatives, string? Kind = null) : Rule(Kind ?? nameof(Choice))
-{
-    public override string ToString() => string.Join<Rule>(" | ", Alternatives);
-    public override Rule InlineReferences(Dictionary<string, Rule> inlineableRules) =>
-        new Choice(Alternatives.Select(a => a.InlineReferences(inlineableRules)).ToArray(), Kind);
-    public override IEnumerable<Rule> GetSubRules<T>()
-    {
-        if (this is T)
-            yield return this;
-        foreach (var alternative in Alternatives)
-            foreach (var subRule in alternative.GetSubRules<T>())
                 yield return subRule;
     }
 }
@@ -111,11 +96,11 @@ public record Optional(Rule Element, string? Kind = null) : Rule(Kind ?? nameof(
     }
 }
 
-public record OptionalInRecovery(Rule Element) : Rule("Error")
+public record OftenMissed(Rule Element, string Kind = "Error") : Rule(Kind)
 {
     public override string ToString() => $"{Element}?";
     public override Rule InlineReferences(Dictionary<string, Rule> inlineableRules) =>
-        new OptionalInRecovery(Element.InlineReferences(inlineableRules));
+        new OftenMissed(Element.InlineReferences(inlineableRules));
     public override IEnumerable<Rule> GetSubRules<T>()
     {
         if (this is T)
@@ -181,7 +166,7 @@ public record TdoppRule(
     }
 }
 
-public record AndPredicate(Rule PredicateRule, Rule MainRule) : Rule("AndPredicate")
+public record AndPredicate(Rule PredicateRule, Rule MainRule) : Rule("&")
 {
     public override string ToString() => $"&{PredicateRule} {MainRule}";
     public override Rule InlineReferences(Dictionary<string, Rule> inlineableRules) =>
@@ -197,7 +182,7 @@ public record AndPredicate(Rule PredicateRule, Rule MainRule) : Rule("AndPredica
     }
 }
 
-public record NotPredicate(Rule PredicateRule, Rule MainRule) : Rule("NotPredicate")
+public record NotPredicate(Rule PredicateRule, Rule MainRule) : Rule("!")
 {
     public override string ToString() => $"(!{PredicateRule} {MainRule})";
     public override Rule InlineReferences(Dictionary<string, Rule> inlineableRules) =>
@@ -216,43 +201,6 @@ public record NotPredicate(Rule PredicateRule, Rule MainRule) : Rule("NotPredica
 }
 
 public abstract record RecoveryTerminal(string Kind) : Terminal(Kind);
-
-public record SkipNonTriviaTerminal(string Kind, Terminal Trivia) : RecoveryTerminal(Kind)
-{
-    public override int TryMatch(string input, int position)
-    {
-        if (position >= input.Length)
-            return -1;
-
-        var currentPos = position;
-        var nonTriviaCount = 0;
-
-        while (currentPos < input.Length)
-        {
-            // Проверяем, является ли текущий символ тривиальным
-            var triviaLength = Trivia.TryMatch(input, currentPos);
-            
-            if (triviaLength > 0)
-            {
-                // Если уже нашли нетривиальные символы, завершаем
-                if (nonTriviaCount > 0)
-                    break;
-                
-                currentPos += triviaLength;
-                continue;
-            }
-
-            // Нашли нетривиальный символ
-            nonTriviaCount++;
-            currentPos++;
-        }
-
-        // Возвращаем длину только если нашли хотя бы один нетривиальный символ
-        return nonTriviaCount > 0 ? currentPos - position : -1;
-    }
-
-    public override string ToString() => Kind;
-}
 
 public record EmptyTerminal(string Kind) : RecoveryTerminal(Kind)
 {
