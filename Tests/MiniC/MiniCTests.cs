@@ -3,7 +3,6 @@
 using Diagnostics;
 using ExtensibleParaser;
 using System.Diagnostics;
-
 using Tests.Extensions;
 
 namespace MiniC;
@@ -16,17 +15,17 @@ public partial class MiniCTests
     [TestInitialize]
     public void Initialize()
     {
-        var errorOp = new SkipNonTriviaTerminal("Error", _parser.Trivia);
-        var closingParenthesis = new OptionalInRecovery(new Literal("}"));
+        var closingParenthesis = new OftenMissed(new Literal("}"));
+        var closingBracket = new OftenMissed(new Literal(")"));
 
         // Expression rules
         _parser.Rules["Expr"] = new Rule[]
         {
             Terminals.Number(),
             Terminals.Ident(),
-            new Seq([new Literal("("), new Ref("Expr"), new Literal(")")], "Parens"),
-            new Seq([Terminals.Ident(), new Literal("("), new Literal(")")], "CallNoArgs"),
-            new Seq([Terminals.Ident(), new Literal("("), new Ref("Expr"), new ZeroOrMany(new Seq([new Literal(","), new Ref("Expr")], Kind: "ArgsRest")), new Literal(")")], "Call"),
+            new Seq([new Literal("("), new Ref("Expr"), ], "Parens"),
+            new Seq([Terminals.Ident(), new Literal("("), closingBracket], "CallNoArgs"),
+            new Seq([Terminals.Ident(), new Literal("("), new Ref("Expr"), new ZeroOrMany(new Seq([new Literal(","), new Ref("Expr")], Kind: "ArgsRest")), closingBracket], "Call"),
             new Seq([new Literal("-"), new ReqRef("Expr", 300)], "Neg"),
 
             new Seq([new Ref("Expr"), new Literal("*"),  new ReqRef("Expr", 200)], "Mul"),
@@ -42,20 +41,23 @@ public partial class MiniCTests
             new Seq([new Ref("Expr"), new Literal("&&"), new ReqRef("Expr",  30)], "And"),
             new Seq([new Ref("Expr"), new Literal("||"), new ReqRef("Expr",  20)], "Or"),
             new Seq([new Ref("Expr"), new Literal("="),  new ReqRef("Expr",  10, Right: true)], "AssignmentExpr"),
-            new Seq([new Ref("Expr"), errorOp, new ReqRef("Expr",  200)], "RecoveryOperator"),
+
+            // Recovery rules:
+            new Seq([new Ref("Expr"), (Terminals.ErrorOperator()), new ReqRef("Expr",  200)], "RecoveryOperator"),
+            new Seq([new Ref("Expr"), Terminals.ErrorEmpty(), new ReqRef("Expr",  200)], "RecoveryEmptyOperator"),
             Terminals.ErrorEmpty(),
         };
 
         // Statement rules
         _parser.Rules["Statement"] = new Rule[]
         {
-            new Seq([new Literal("int"), Terminals.Ident(), new OptionalInRecovery(new Literal(";"))], "VarDecl"),
-            new Seq([new Ref("Expr"), new OptionalInRecovery(new Literal(";"))], "ExprStmt"),
-            new Seq([new Literal("if"), new Literal("("), new Ref("Expr"), new Literal(")"),
+            new Seq([new Literal("int"), Terminals.Ident(), new OftenMissed(new Literal(";"))], "VarDecl"),
+            new Seq([new Ref("Expr"), new OftenMissed(new Literal(";"))], "ExprStmt"),
+            new Seq([new Literal("if"), new Literal("("), new Ref("Expr"), closingBracket,
                     new Ref("Block")], "IfStmt"),
-            new Seq([new Literal("if"), new Literal("("), new Ref("Expr"), new Literal(")"),
+            new Seq([new Literal("if"), new Literal("("), new Ref("Expr"), closingBracket,
                     new Ref("Block"), new Literal("else"), new Ref("Block")], "IfElseStmt"),
-            new Seq([new Literal("return"), new Ref("Expr"), new OptionalInRecovery(new Literal(";"))], "Return")
+            new Seq([new Literal("return"), new Ref("Expr"), new OftenMissed(new Literal(";"))], "Return")
         };
 
         // Block rules
@@ -66,10 +68,8 @@ public partial class MiniCTests
         ];
 
         _parser.Rules["Params"] = [
-            new Choice([
-                new Seq([Terminals.Ident(), new ZeroOrMany(new Seq([new Literal(","), Terminals.Ident()], Kind: "ParamsRest"))], "ParamsList"),
-                new Literal("void", "VoidParams"),
-            ], "Params")
+            new Seq([Terminals.Ident(), new ZeroOrMany(new Seq([new Literal(","), Terminals.Ident()], Kind: "ParamsRest"))], "ParamsList"),
+            new Literal("void", "VoidParams"),
         ];
 
         // Function declaration
@@ -79,7 +79,7 @@ public partial class MiniCTests
                 Terminals.Ident(),
                 new Literal("("),
                 new Optional(new Ref("Params")), // Используем новый Optional
-                new Literal(")"),
+                closingBracket,
                 new Ref("Block")
             ], "FunctionDecl")
         ];
@@ -108,6 +108,23 @@ public partial class MiniCTests
         }
         """,
             "FunctionDecl: func1() { Return(1) }; FunctionDecl: func2(x) { Return(x) }; FunctionDecl: main() { Return(0) }"
+        );
+    }
+
+    [TestMethod]
+    public void Err_MissingOperatorExpression()
+    {
+        TestMiniC(
+            "Function",
+            """
+            int func(x, y)
+            {
+                int z;
+                z = y  x;
+                return z * y;
+            }
+            """,
+            "FunctionDecl: func(x, y) { VarDecl: z; ExprStmt: (z = (y «Missing operator» x)); Return((z * y)) }"
         );
     }
 

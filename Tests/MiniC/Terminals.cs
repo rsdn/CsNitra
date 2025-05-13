@@ -14,6 +14,9 @@ public sealed partial class Terminals
     [Regex(@"\s*")]
     public static partial Terminal Trivia();
 
+    [Regex(@"[\\\/*+\-<=>!@#$%^&]+")]
+    public static partial RecoveryTerminal ErrorOperator();
+
     public static Terminal ErrorEmpty() => _error;
 
     private static Terminal _error = new EmptyTerminal("Error");

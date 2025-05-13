@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Diagnostics;
+using System.Text;
 
 namespace Regex;
 
@@ -11,8 +12,10 @@ public class NfaToDot
 
         try
         {
+            var fullOutputPath = Path.GetFullPath(outputPath);
             File.WriteAllText(tempDotFile, dotContent);
-            Dot.GenerateSvg(tempDotFile, outputPath);
+            Dot.GenerateSvg(tempDotFile, fullOutputPath);
+            Trace.TraceInformation($"DFA diagram writen into: {fullOutputPath}");
         }
         finally
         {

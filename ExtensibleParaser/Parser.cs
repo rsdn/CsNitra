@@ -1,11 +1,8 @@
 ﻿#nullable enable
 
-using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
-using System.Text.RegularExpressions;
-using System.Xml.Linq;
 using Diagnostics;
 
 namespace ExtensibleParaser;
@@ -31,12 +28,9 @@ public class Parser(Terminal trivia, Log? log = null)
     public Terminal Trivia { get; private set; } = trivia;
     public Log? Logger { get; set; } = log;
 
-    private void Log(string message, LogImportance importance = LogImportance.Normal, [CallerMemberName] string? memberName = null, [CallerLineNumber] int line = 0)
-    {
-        if (Logger is { } log)
-            log.Info($"{memberName} ({line}): {message}", importance);
-    }
-
+    [Conditional("TRACE")]
+    private void Log(string message, LogImportance importance = LogImportance.Normal, [CallerMemberName] string? memberName = null, [CallerLineNumber] int line = 0) =>
+        Logger?.Info($"{memberName} ({line}): {message}", importance);
 
     public Dictionary<string, Rule[]> Rules { get; } = new();
     public Dictionary<string, TdoppRule> TdoppRules { get; } = new();
@@ -71,22 +65,21 @@ public class Parser(Terminal trivia, Log? log = null)
 
             foreach (var alt in alternatives)
             {
-                // Проверяем, является ли правило правилом восстановления
-                bool isRecoveryRule = alt is Seq seq && seq.Elements.Any(e => e is RecoveryTerminal);
+                bool isRecoveryRule = alt.GetSubRules<RecoveryTerminal>().Any();
 
                 if (alt is Seq { Elements: [Ref rule, .. var rest] } && rule.RuleName == ruleName)
                 {
                     var reqRef = rest.OfType<ReqRef>().First();
-                    if (isRecoveryRule)
-                        recoveryPostfix.Add(new RuleWithPrecedence(Kind: alt.Kind, new Seq(rest, alt.Kind), reqRef.Precedence, reqRef.Right));
-                    else
+                    recoveryPostfix.Add(new RuleWithPrecedence(Kind: alt.Kind, new Seq(rest, alt.Kind), reqRef.Precedence, reqRef.Right));
+
+                    if (!isRecoveryRule)
                         postfix.Add(new RuleWithPrecedence(Kind: alt.Kind, new Seq(rest, alt.Kind), reqRef.Precedence, reqRef.Right));
                 }
                 else
                 {
-                    if (isRecoveryRule)
-                        recoveryPrefix.Add(alt);
-                    else
+                    recoveryPrefix.Add(alt);
+
+                    if (!isRecoveryRule)
                         prefix.Add(alt);
                 }
             }
@@ -167,6 +160,9 @@ public class Parser(Terminal trivia, Log? log = null)
 
             if (ErrorPos <= oldErrorPos)
             {
+                // Recovery in recovery rules mode failed.
+                // TODO: Implement panic mode recovery for this case.
+
                 var debugInfos = MemoizationVisualazer(input);
 
                 Log($"Parse failed. Memoization table:");
@@ -181,10 +177,6 @@ public class Parser(Terminal trivia, Log? log = null)
             foreach (var x in _memo.ToArray())
             {
                 var pos = x.Key.pos;
-
-                if ((36, "Expr", 0) == x.Key)
-                {
-                }
 
                 if (!x.Value.IsSuccess)
                     _memo.Remove(x.Key);
@@ -204,33 +196,43 @@ public class Parser(Terminal trivia, Log? log = null)
         int startPos,
         string input)
     {
+        var isRecoveryPos = startPos == _recoverySkipPos;
         var memoKey = (startPos, ruleName, minPrecedence);
+
         if (_memo.TryGetValue(memoKey, out var cached))
         {
-            Log($"Memo hit: {memoKey} => {cached} _recoverySkipPos={_recoverySkipPos}");
-            return cached;
+            if (_recoverySkipPos == cached.MaxFailPos)
+                Log($"Ignoring posible failed memo in recovery mode: {memoKey} => {cached}");
+            else
+            {
+                Log($"Memo hit: {memoKey} => {cached}");
+                return cached;
+            }
         }
 
         if (!TdoppRules.TryGetValue(ruleName, out var tdoppRule))
-            return Result.Failure($"Rule {ruleName} not found");
+            throw new InvalidDataException($"The rule '{ruleName}' does not exist. Existing rules: [{TdoppRules.Keys.OrderBy(x => x)}].");
 
-        var isRecoveryPos = startPos == _recoverySkipPos;
         if (isRecoveryPos)
             Log($"Recover at {startPos} rule: {ruleName} Prefixs: [{string.Join<Rule>(", ", tdoppRule.Prefix)}]", LogImportance.High);
         else
             Log($"Processing at {startPos} rule: {ruleName} Prefixs: [{string.Join<Rule>(", ", tdoppRule.Prefix)}]");
 
-        _ruleStack.Push(ruleName);
-        Result? bestResult = null;
+        var bestResult = (Result?)null;
         var maxPos = startPos;
-
         var prefixRules = isRecoveryPos ? tdoppRule.RecoveryPrefix : tdoppRule.Prefix;
+        var maxFailPos = startPos;
 
+        _ruleStack.Push(ruleName);
 
         foreach (var prefix in prefixRules)
         {
             Log($"  Trying prefix: {prefix}");
             var prefixResult = ParseAlternative(prefix, startPos, input);
+
+            if (prefixResult.MaxFailPos > maxFailPos)
+                maxFailPos = prefixResult.MaxFailPos;
+
             if (!prefixResult.TryGetSuccess(out var node, out var newPos))
                 continue;
 
@@ -245,7 +247,7 @@ public class Parser(Terminal trivia, Log? log = null)
                     maxPos = postNewPos;
                     bestResult = postfixResult;
                 }
-                else if (postNewPos == maxPos && bestResult == null)
+                else if (postNewPos == maxPos && bestResult == null && isRecoveryPos)
                 {
                     // Это if нужен для обработки Error-правил восстанавливающих парсинг в случае недописанных конструкаций
                     // (в которых пропущен терминал). Например, в случае пропущенного подврыважния в "1 + ".
@@ -258,28 +260,28 @@ public class Parser(Terminal trivia, Log? log = null)
 
         _ruleStack.Pop();
 
-        if (bestResult != null)
-            return _memo[memoKey] = bestResult.Value;
+        if (bestResult is { } result)
+            return _memo[memoKey] = result;
 
-        return _memo[memoKey] = Result.Failure("Rule not matched");
+        return _memo[memoKey] = Result.Failure(maxFailPos);
     }
 
     private Result ProcessPostfix(
         TdoppRule rule,
-        ISyntaxNode lhs,
+        ISyntaxNode prefixNode,
         int minPrecedence,
-        int currentPos,
+        int startPos,
         string input)
     {
-        var newPos = currentPos;
-        var currentResult = lhs;
+        var newPos = startPos;
+        var currentResult = prefixNode;
+        var maxFailPos = startPos;
 
         while (true)
         {
-            RuleWithPrecedence? bestPostfix = null;
-            int bestPos = newPos;
-            ISyntaxNode? bestNode = null;
-
+            var bestPostfix = (RuleWithPrecedence?)null;
+            var bestNode = (ISyntaxNode?)null;
+            var bestPos = newPos;
             var isRecoveryPos = newPos == _recoverySkipPos;
             var postfixRules = isRecoveryPos ? rule.RecoveryPostfix : rule.Postfix;
 
@@ -297,6 +299,10 @@ public class Parser(Terminal trivia, Log? log = null)
                     Log($"  Trying at {newPos} postfix: {postfix.Seq}");
 
                 var result = TryParsePostfix(postfix, currentResult, newPos, input);
+
+                if (result.MaxFailPos > maxFailPos)
+                    maxFailPos = result.MaxFailPos;
+
                 if (!result.TryGetSuccess(out var node, out var parsedPos))
                     continue;
 
@@ -307,43 +313,52 @@ public class Parser(Terminal trivia, Log? log = null)
                     bestPos = parsedPos;
                     bestNode = node;
                 }
-                else if (parsedPos == bestPos && bestPostfix == null)
-                {
-                }
             }
 
             if (bestPostfix == null)
                 break;
+
+            if (bestPos == _recoverySkipPos)
+            {
+                _recoverySkipPos = -1;
+                Log($"Rule recovery finished {currentResult}. New pos: {bestPos}");
+                break;
+            }
 
             Log($"Postfix at {newPos} [{bestNode}] is preferred. New pos: {bestPos}");
             currentResult = bestNode!;
             newPos = bestPos;
         }
 
-        return Result.Success(currentResult, newPos);
+        return Result.Success(currentResult, newPos, maxFailPos);
     }
 
     private Result TryParsePostfix(
         RuleWithPrecedence postfix,
-        ISyntaxNode lhs,
+        ISyntaxNode currentResult,
         int startPos,
         string input)
     {
-        var elements = new List<ISyntaxNode> { lhs };
-        int newPos = startPos;
+        var elements = new List<ISyntaxNode> { currentResult };
+        var newPos = startPos;
+        var maxFailPos = startPos;
 
         foreach (var element in postfix.Seq.Elements)
         {
             Log($"    Parsing at {newPos} postfix element: {element}");
             var result = ParseAlternative(element, newPos, input);
+
+            if (result.MaxFailPos > maxFailPos)
+                maxFailPos = result.MaxFailPos;
+
             if (!result.TryGetSuccess(out var node, out var parsedPos))
-                return Result.Failure("Postfix element failed");
+                return result;
 
             elements.Add(node);
             newPos = parsedPos;
         }
 
-        return Result.Success(new SeqNode(postfix.Seq.Kind ?? "Seq", elements, startPos, newPos), newPos);
+        return Result.Success(new SeqNode(postfix.Seq.Kind ?? "Seq", elements, startPos, newPos), newPos, maxFailPos);
     }
 
     private Result ParseAlternative(
@@ -353,13 +368,12 @@ public class Parser(Terminal trivia, Log? log = null)
         {
             Terminal t => ParseTerminal(t, startPos, input),
             Seq s => ParseSeq(s, startPos, input),
-            Choice c => ParseChoice(c, startPos, input),
             OneOrMany o => ParseOneOrMany(o, startPos, input),
             ZeroOrMany z => ParseZeroOrMany(z, startPos, input),
             Ref r => ParseRule(r.RuleName, 0, startPos, input),
             ReqRef r => ParseRule(r.RuleName, r.Precedence, startPos, input),
             Optional o => ParseOptional(o, startPos, input),
-            OptionalInRecovery o => ParseOptionalInRecovery(o, startPos, input),
+            OftenMissed o => ParseOftenMissed(o, startPos, input),
             AndPredicate a => ParseAndPredicate(a, startPos, input),
             NotPredicate n => ParseNotPredicate(n, startPos, input),
             _ => throw new IndexOutOfRangeException($"Unsupported rule type: {rule.GetType().Name}: {rule}")
@@ -372,7 +386,7 @@ public class Parser(Terminal trivia, Log? log = null)
         ErrorPos = errorPos;
         return predicateResult.IsSuccess
             ? ParseAlternative(a.MainRule, startPos, input)
-            : Result.Failure("And predicate failed");
+            : Result.Failure(startPos);
     }
 
     private Result ParseNotPredicate(NotPredicate predicate, int startPos, string input)
@@ -383,7 +397,7 @@ public class Parser(Terminal trivia, Log? log = null)
         if (!predicateResult.IsSuccess)
             return ParseAlternative(predicate.MainRule, startPos, input);
         else
-            return Result.Failure($"Not predicate ({predicate.PredicateRule}) failed");
+            return Result.Failure(startPos);
     }
 
     private Result ParseOptional(Optional optional, int startPos, string input)
@@ -391,17 +405,18 @@ public class Parser(Terminal trivia, Log? log = null)
         var result = ParseAlternative(optional.Element, startPos, input);
 
         if (result.TryGetSuccess(out var node, out var newPos))
-            return Result.Success(new SomeNode(optional.Kind ?? "Optional", node, startPos, newPos), newPos);
+            return Result.Success(new SomeNode(optional.Kind ?? "Optional", node, startPos, newPos), newPos, result.MaxFailPos);
 
-        return Result.Success(new NoneNode(optional.Kind ?? "Optional", startPos, startPos), startPos);
+        return Result.Success(new NoneNode(optional.Kind ?? "Optional", startPos, startPos), startPos, result.MaxFailPos);
     }
 
-    private Result ParseOptionalInRecovery(OptionalInRecovery optional, int startPos, string input)
+    private Result ParseOftenMissed(OftenMissed oftenMissed, int startPos, string input)
     {
-        if (startPos == _recoverySkipPos)
-            return Result.Success(new TerminalNode("Error", startPos, startPos, ContentLength: 0, IsRecovery: true), startPos);
+        var result = ParseAlternative(oftenMissed.Element, startPos, input);
 
-        return ParseAlternative(optional.Element, startPos, input);
+        if (!result.IsSuccess && startPos == _recoverySkipPos)
+            return Result.Success(new TerminalNode(oftenMissed.Kind, startPos, startPos, ContentLength: 0, IsRecovery: true), startPos, result.MaxFailPos);
+        return result;
     }
 
     private Result ParseOneOrMany(OneOrMany oneOrMany, int startPos, string input)
@@ -413,7 +428,9 @@ public class Parser(Terminal trivia, Log? log = null)
         // Parse at least one element
         var firstResult = ParseAlternative(oneOrMany.Element, currentPos, input);
         if (!firstResult.TryGetSuccess(out var firstNode, out var newPos))
-            return Result.Failure("OneOrMany: first element failed");
+            return Result.Failure(firstResult.MaxFailPos);
+
+        var maxFailPos = firstResult.MaxFailPos;
 
         elements.Add(firstNode);
         currentPos = newPos;
@@ -422,6 +439,10 @@ public class Parser(Terminal trivia, Log? log = null)
         while (true)
         {
             var result = ParseAlternative(oneOrMany.Element, currentPos, input);
+
+            if (result.MaxFailPos > maxFailPos)
+                maxFailPos = result.MaxFailPos;
+
             if (!result.TryGetSuccess(out var node, out newPos))
                 break;
 
@@ -429,7 +450,7 @@ public class Parser(Terminal trivia, Log? log = null)
             currentPos = newPos;
         }
 
-        return Result.Success(new SeqNode(oneOrMany.Kind ?? "OneOrMany", elements, startPos, currentPos), currentPos);
+        return Result.Success(new SeqNode(oneOrMany.Kind ?? "OneOrMany", elements, startPos, currentPos), currentPos, maxFailPos);
     }
 
     private Result ParseZeroOrMany(ZeroOrMany zeroOrMany, int startPos, string input)
@@ -437,10 +458,15 @@ public class Parser(Terminal trivia, Log? log = null)
         Log($"Parsing at {startPos} ZeroOrMany: {zeroOrMany}");
         var currentPos = startPos;
         var elements = new List<ISyntaxNode>();
+        var maxFailPos = startPos;
 
         while (true)
         {
             var result = ParseAlternative(zeroOrMany.Element, currentPos, input);
+
+            if (result.MaxFailPos > maxFailPos)
+                maxFailPos = result.MaxFailPos;
+
             if (!result.TryGetSuccess(out var node, out var newPos))
                 break;
 
@@ -448,7 +474,7 @@ public class Parser(Terminal trivia, Log? log = null)
             currentPos = newPos;
         }
 
-        return Result.Success(new SeqNode(zeroOrMany.Kind ?? "ZeroOrMany", elements, startPos, currentPos), currentPos);
+        return Result.Success(new SeqNode(zeroOrMany.Kind ?? "ZeroOrMany", elements, startPos, currentPos), currentPos, maxFailPos);
     }
 
     private static ReadOnlySpan<char> Preview(string input, int pos, int len = 5) => pos >= input.Length
@@ -475,7 +501,7 @@ public class Parser(Terminal trivia, Log? log = null)
                 _expected.Add(terminal);
             }
             Log($"Terminal mismatch: {terminal.Kind} at {startPos}: {Preview(input, startPos)}");
-            return Result.Failure("Terminal mismatch");
+            return Result.Failure(startPos);
         }
 
         currentPos += contentLength;
@@ -494,7 +520,8 @@ public class Parser(Terminal trivia, Log? log = null)
                 contentLength,
                 IsRecovery: terminal is RecoveryTerminal
             ),
-            currentPos
+            currentPos,
+            maxFailPos: currentPos // ???
         );
 
         Result panicRecovery(Terminal terminal, int startPos, string input)
@@ -555,14 +582,15 @@ public class Parser(Terminal trivia, Log? log = null)
                             );
                         return Result.Success(
                             resultNode,
-                            pos
+                            pos,
+                            maxFailPos: startPos
                         );
                     }
                 }
             }
 
             Log("Recovery failed: no valid recovery point found");
-            return Result.Failure("Recovery failed: no valid recovery point found");
+            return Result.Failure(startPos);
         }
     }
 
@@ -575,52 +603,25 @@ public class Parser(Terminal trivia, Log? log = null)
         var currentPos = startPos;
         var elements = new List<ISyntaxNode>();
         var newPos = currentPos;
+        var maxFailPos = startPos;
 
         foreach (var element in seq.Elements)
         {
-            if (_recoverySkipPos == newPos)
-            {
-                var xs =_memo.Where(x => x.Key.pos == newPos && x.Value.IsSuccess).ToArray();
-            }
-
             var result = ParseAlternative(element, newPos, input);
+
+            if (result.MaxFailPos > maxFailPos)
+                maxFailPos = result.MaxFailPos;
+
             if (!result.TryGetSuccess(out var node, out var parsedPos))
             {
                 Log($"Seq element failed: {element} at {newPos}");
-                return Result.Failure("Sequence element failed");
+                return result;
             }
 
             elements.Add(node);
             newPos = parsedPos;
         }
 
-        return Result.Success(new SeqNode(seq.Kind ?? "Seq", elements, startPos, newPos), newPos);
-    }
-
-    private Result ParseChoice(
-        Choice choice,
-        int currentPos,
-        string input)
-    {
-        Log($"Parsing at {currentPos} choice: {choice}");
-        var maxPos = currentPos;
-        ISyntaxNode? bestResult = null;
-
-        foreach (var alt in choice.Alternatives)
-        {
-            var result = ParseAlternative(alt, currentPos, input);
-            if (!result.TryGetSuccess(out var node, out var parsedPos))
-                continue;
-
-            if (parsedPos > maxPos || (parsedPos == maxPos && bestResult == null))
-            {
-                maxPos = parsedPos;
-                bestResult = node;
-            }
-        }
-
-        return bestResult != null
-            ? Result.Success(bestResult, maxPos)
-            : Result.Failure("All alternatives failed");
+        return Result.Success(new SeqNode(seq.Kind ?? "Seq", elements, startPos, newPos), newPos, maxFailPos);
     }
 }

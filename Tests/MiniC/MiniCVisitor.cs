@@ -17,6 +17,7 @@ public partial class MiniCTests
         {
             Result = node.Kind switch
             {
+                "ErrorOperator" => new UnexpectedOperator(node),
                 "Error" => new Error(node),
                 "Number" => new Number(int.Parse(node.ToString(Input))),
                 "Ident" => new Identifier(node.ToString(Input)),
@@ -100,6 +101,7 @@ public partial class MiniCTests
                 "And" => makeBinaryOperator("&&", children),
                 "Or"  => makeBinaryOperator("||", children),
                 "RecoveryOperator" => makeRecoveryBinaryOperator(children),
+                "RecoveryEmptyOperator" => makeMissingBinaryOperator(children),
                 "Neg" => new UnaryExpr("-", (Expr)children[1]!),
                 "AssignmentExpr" => new BinaryExpr("=", (Expr)children[0]!, (Expr)children[2]!),
                 "ArgsRest" => children[1]!, // Just return the expression part (skip the comma)
@@ -114,7 +116,13 @@ public partial class MiniCTests
             Expr makeRecoveryBinaryOperator(Ast?[] children)
             {
                 Guard.IsTrue(children.Length == 3);
-                return new BinaryExpr($"«Unexpected: {((Error)children[1]!).ErrorNode.ToString(Input)}»", (Expr)children[0]!, (Expr)children[2]!);
+                return new BinaryExpr($"«Unexpected: {((UnexpectedOperator)children[1]!).ErrorNode.ToString(Input)}»", (Expr)children[0]!, (Expr)children[2]!);
+            }
+
+            Expr makeMissingBinaryOperator(Ast?[] children)
+            {
+                Guard.IsTrue(children.Length == 3);
+                return new BinaryExpr($"«Missing operator»", (Expr)children[0]!, (Expr)children[2]!);
             }
 
             Expr makeBinaryOperator(string Op, Ast?[] children)
@@ -176,8 +184,5 @@ public partial class MiniCTests
 
         public void Visit(SomeNode node) => node.Value.Accept(this);
         public void Visit(NoneNode node) => Result = null;
-        public void Visit(ChoiceNode node) => node.Alternatives[0].Accept(this);
-        public void Visit(RefNode node) => node.Inner.Accept(this);
-        public void Visit(ReqRefNode node) => node.Inner.Accept(this);
     }
 }
