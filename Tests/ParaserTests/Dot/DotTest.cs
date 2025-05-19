@@ -188,7 +188,7 @@ public class DotParser
     {
         public DotGraph? Result { get; private set; }
 
-        public void Visit(TerminalNode node)
+        public void Visit(TerminalNode _)
         {
             // Terminal nodes are handled in SeqNode visitor
         }
@@ -258,10 +258,10 @@ public class DotParser
         public void Visit(SomeNode node)
         {
             node.Value.Accept(this);
-            CurrentResult = CurrentResult ?? new DotValue("null");
+            CurrentResult ??= new DotValue("null");
         }
 
-        public void Visit(NoneNode node)
+        public void Visit(NoneNode _)
         {
             CurrentResult = null;
         }
