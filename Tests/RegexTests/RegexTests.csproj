@@ -8,10 +8,18 @@
     <UseVSTest>true</UseVSTest>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Compile Include="..\Extensions\StringExtensions.cs" Link="Extensions\StringExtensions.cs" />
+  </ItemGroup>
+
     <ItemGroup>
 
-        <ProjectReference Include="..\Regex\Regex\Regex.csproj" OutputItemType="Analyzer" />
+        <ProjectReference Include="..\..\Regex\Regex\Regex.csproj" OutputItemType="Analyzer" />
 
+    </ItemGroup>
+
+    <ItemGroup>
+      <Folder Include="Extensions\" />
     </ItemGroup>
 
 </Project>

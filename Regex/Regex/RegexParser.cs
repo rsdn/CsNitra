@@ -23,7 +23,7 @@ public class RegexParser
         var nodes = new List<RegexNode> { ParseConcat() };
         while (Peek() == '|')
         {
-            Expect('|');
+            Accept('|');
             nodes.Add(ParseConcat());
         }
         return nodes.Count == 1 ? nodes[0] : new RegexAlternation(nodes);
@@ -42,9 +42,9 @@ public class RegexParser
         var node = ParseFactor();
         while (true) switch (Peek())
             {
-                case '*': Expect('*'); node = new RegexStar(node); break;
-                case '+': Expect('+'); node = new RegexPlus(node); break;
-                case '?': Expect('?'); node = new RegexOptional(node); break;
+                case '*': Accept('*'); node = new RegexStar(node); break;
+                case '+': Accept('+'); node = new RegexPlus(node); break;
+                case '?': Accept('?'); node = new RegexOptional(node); break;
                 default: return node;
             }
     }
@@ -62,7 +62,6 @@ public class RegexParser
 
         RegexNode parseEscape()
         {
-            Expect('\\');
             return parseEscapedChar() switch
             {
                 'w' => new WordCharClass(Negated: false),
@@ -78,32 +77,32 @@ public class RegexParser
         }
         RegexGroup parseGroup()
         {
-            Expect('(');
+            Accept('(');
             var node = ParseAlternation();
-            Expect(')');
+            Accept(')');
             return new RegexGroup(node);
         }
         RegexAnyChar parseRegexAnyChar()
         {
-            Expect('.');
+            Accept('.');
             return new RegexAnyChar();
         }
         RegexNode parseCharClass()
         {
-            Expect('[');
+            Accept('[');
             var negated = Peek() == '^' && Consume() == '^';
             var classNodes = new List<RegexCharClass>();
 
             while (Peek() != ']')
                 classNodes.Add(parseRangeCharClass());
 
-            Expect(']');
+            Accept(']');
             return CombineCharClasses(classNodes, negated);
 
             RegexCharClass toCharClass(RegexNode node) => node switch
             {
                 RegexChar x => new RangesCharClass([new CharRange(x.Value, x.Value)], Negated: false),
-                RangesCharClass x => x,
+                RegexCharClass x => x,
                 var x => throw new InvalidCastException($"Unsupported type {x.GetType().Name}. Expected {nameof(RegexCharClass)}.")
             };
 
@@ -114,7 +113,7 @@ public class RegexParser
 
                 if (Peek() == '-' && _pos + 1 < _pattern.Length && _pattern[_pos + 1] != ']')
                 {
-                    Expect('-');
+                    Accept('-');
                     var secodPos = _pos;
                     var secod = parse();
 
@@ -134,8 +133,8 @@ public class RegexParser
         }
         char parseEscapedChar()
         {
-            Expect('\\');
-            return ExpectChar() switch
+            Accept('\\');
+            return AceptChar() switch
             {
                 'n' => '\n',
                 'r' => '\r',
@@ -160,24 +159,17 @@ public class RegexParser
     private char? Peek() => _pos < _pattern.Length ? _pattern[_pos] : null;
     private char Consume()
     {
-        Guard.IsTrue(_pos > 0);
+        Guard.IsTrue(_pos >= 0);
         Guard.IsTrue(_pos < _pattern.Length);
         return _pattern[_pos++];
     }
 
-    private char ExpectChar()
+    private char AceptChar()
     {
         if (_pos >= _pattern.Length)
             throw new FormatException("Unexpected end of pattern");
         return _pattern[_pos++];
     }
 
-    private char ExpectChar(char expected)
-    {
-        var actual = Consume();
-        Guard.AreEqual(expected: expected, actual: actual);
-        return _pattern[_pos++];
-    }
-
-    private void Expect(char expected) => Guard.AreEqual(expected: expected, actual: Consume());
+    private void Accept(char expected) => Guard.AreEqual(expected: expected, actual: Consume());
 }
