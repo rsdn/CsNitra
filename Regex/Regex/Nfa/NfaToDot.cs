@@ -5,24 +5,8 @@ namespace Regex;
 
 public class NfaToDot
 {
-    public static void GenerateSvg(NfaState startState, string regexPattern, string outputPath)
-    {
-        var dotContent = GenerateDot(startState, regexPattern);
-        var tempDotFile = Path.GetTempFileName();
-
-        try
-        {
-            var fullOutputPath = Path.GetFullPath(outputPath);
-            File.WriteAllText(tempDotFile, dotContent);
-            Dot.GenerateSvg(tempDotFile, fullOutputPath);
-            Trace.TraceInformation($"DFA diagram writen into: {fullOutputPath}");
-        }
-        finally
-        {
-            if (File.Exists(tempDotFile))
-                File.Delete(tempDotFile);
-        }
-    }
+    public static void GenerateSvg(NfaState startState, string regexPattern, string outputPath) =>
+        Dot.Dot2Svg("NFA", GenerateDot(startState, regexPattern), outputPath);
 
     public static string GenerateDot(NfaState startState, string regexPattern)
     {

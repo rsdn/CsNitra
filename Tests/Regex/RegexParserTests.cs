@@ -103,6 +103,11 @@ public class RegexParserTests
     {
         var testCases = new[]
         {
+            (Start: 0, Pattern: @"(\s|//[^\n]*\n?)*",     Input: "  // Top to Bottom\r\n/ ", Expected: 20),
+                                                                //012345678901234567 8 901234567890
+            (Start: 0, Pattern: @"(\s|//[^\n]*\n?)*",     Input: "  // Top to Bottom",       Expected: 18),
+            (Start: 0, Pattern: @"(\s|//[^\n]*\n?)*",     Input: "  // Top to Bottom\r\n ",  Expected: 21),
+            (Start: 0, Pattern: @"(\s|//[^\n]*\n?)*",     Input: "  // Top to Bottom\n ",    Expected: 20),
             (Start: 0, Pattern: @"[\\\/*+\-<=>!@#$%^&]+", Input: ";",         Expected: -1),
             (Start: 0, Pattern: @"[\\\/*+\-<=>!@#$%^&]+", Input: @"\/-",      Expected: 3),
             (Start: 0, Pattern: @"[\\\/*+\-<=>!@#$%^&]+", Input: @"\/-;",     Expected: 3),

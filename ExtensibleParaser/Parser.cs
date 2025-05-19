@@ -1,5 +1,6 @@
 ﻿#nullable enable
 
+using System.Data.Common;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -19,6 +20,8 @@ public class Parser(Terminal trivia, Log? log = null)
 #pragma warning restore CA2211 // Non-constant fields should not be visible
 
     public int ErrorPos { get; private set; }
+    public FatalError ErrorInfo { get; private set; }
+
     private int _recoverySkipPos = -1;
     private FollowSetCalculator? _followCalculator;
 
@@ -157,19 +160,19 @@ public class Parser(Terminal trivia, Log? log = null)
             if (normalResult.TryGetSuccess(out var node, out var newPos) && newPos == input.Length)
                 return normalResult;
 
+            ErrorInfo = (input, ErrorPos, Location: input.PositionToLineCol(ErrorPos), _expected.ToArray());
 
             if (ErrorPos <= oldErrorPos)
             {
                 // Recovery in recovery rules mode failed.
                 // TODO: Implement panic mode recovery for this case.
-
                 var debugInfos = MemoizationVisualazer(input);
 
                 Log($"Parse failed. Memoization table:");
                 foreach (var info in debugInfos)
                     Log($"    {info.Info}");
                 Log($"and of memoization table.");
-                Guard.IsTrue(ErrorPos > oldErrorPos, $"ErrorPos ({ErrorPos}) > oldErrorPos ({oldErrorPos})");
+                return normalResult;
             }
 
             _recoverySkipPos = ErrorPos;

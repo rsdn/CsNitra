@@ -115,7 +115,8 @@ public class ParserTests
             return visitor.Result;
         }
 
-        throw new InternalTestFailureException($"Parse failed: [{parseResult.GetErrorOrDefault()}]");
+        Trace.WriteLine($"❌ Parse FAILED. {_parser.ErrorInfo.GetErrorText()}");
+        throw new InternalTestFailureException("Parse FAILED.");
     }
 
     private abstract record Expr

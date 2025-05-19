@@ -435,10 +435,7 @@ public partial class MiniCTests
             var contextLength = Math.Min(20, input.Length - contextStart);
             var context = input.Substring(contextStart, contextLength);
 
-            Trace.WriteLine($"❌ Parse FAILED. {parseResult.GetError()}");
-            Trace.WriteLine($"Error context: ...{context}...");
-            Trace.WriteLine($"Error position:   {new string(' ', errorPos - contextStart)}^");
-
+            Trace.WriteLine($"❌ Parse FAILED. {_parser.ErrorInfo.GetErrorText()}");
             Assert.Fail($"Parse failed for: {input}");
             return;
         }
