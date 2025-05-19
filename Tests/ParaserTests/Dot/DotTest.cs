@@ -56,7 +56,7 @@ public record DotAssignment(string Name, string Value) : DotStatement
 [TerminalMatcher]
 public sealed partial class DotTerminals
 {
-    [Regex(@"[a-zA-Z_][a-zA-Z0-9_]*")]
+    [Regex(@"[\l_]\w*")]
     public static partial Terminal Identifier();
 
     [Regex(@"""[^""]*""")]
