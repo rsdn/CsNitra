@@ -1,4 +1,6 @@
 ﻿#nullable enable
+using ExtensibleParaser;
+
 namespace Regex;
 
 public class RegexParser
@@ -21,7 +23,7 @@ public class RegexParser
         var nodes = new List<RegexNode> { ParseConcat() };
         while (Peek() == '|')
         {
-            Consume();
+            Expect('|');
             nodes.Add(ParseConcat());
         }
         return nodes.Count == 1 ? nodes[0] : new RegexAlternation(nodes);
@@ -40,9 +42,9 @@ public class RegexParser
         var node = ParseFactor();
         while (true) switch (Peek())
             {
-                case '*': Consume(); node = new RegexStar(node); break;
-                case '+': Consume(); node = new RegexPlus(node); break;
-                case '?': Consume(); node = new RegexOptional(node); break;
+                case '*': Expect('*'); node = new RegexStar(node); break;
+                case '+': Expect('+'); node = new RegexPlus(node); break;
+                case '?': Expect('?'); node = new RegexOptional(node); break;
                 default: return node;
             }
     }
@@ -51,88 +53,97 @@ public class RegexParser
     {
         return Peek() switch
         {
-            '(' => ParseGroup(),
-            '[' => ParseCharClass(),
-            '.' => ConsumeAndReturn(new RegexAnyChar()),
-            '\\' => ParseEscape(),
+            '(' => parseGroup(),
+            '[' => parseCharClass(),
+            '.' => parseRegexAnyChar(),
+            '\\' => parseEscape(),
             var c => new RegexChar(Consume())
         };
-    }
 
-    private RegexNode ParseGroup()
-    {
-        Consume();
-        var node = ParseAlternation();
-        Expect(')');
-        return new RegexGroup(node);
-    }
-
-    private RegexNode ParseEscape()
-    {
-        Consume();
-        return ExpectChar() switch
+        RegexNode parseEscape()
         {
-            'w' => new WordCharClass(Negated: false),
-            'W' => new WordCharClass(Negated: true),
-            'l' => new LetterCharClass(Negated: false),
-            'L' => new LetterCharClass(Negated: true),
-            'd' => new DigitCharClass(Negated: false),
-            'D' => new DigitCharClass(Negated: true),
-            's' => new WhitespaceCharClass(Negated: false),
-            'S' => new WhitespaceCharClass(Negated: true),
-            var c => new RegexChar(c)
-        };
-    }
-
-    private RegexNode ParseCharClass()
-    {
-        Consume();
-        bool negated = Peek() == '^' && Consume() == '^';
-        var classNodes = new List<RegexCharClass>();
-        while (Peek() != ']')
+            Expect('\\');
+            return parseEscapedChar() switch
+            {
+                'w' => new WordCharClass(Negated: false),
+                'W' => new WordCharClass(Negated: true),
+                'l' => new LetterCharClass(Negated: false),
+                'L' => new LetterCharClass(Negated: true),
+                'd' => new DigitCharClass(Negated: false),
+                'D' => new DigitCharClass(Negated: true),
+                's' => new WhitespaceCharClass(Negated: false),
+                'S' => new WhitespaceCharClass(Negated: true),
+                var c => new RegexChar(c)
+            };
+        }
+        RegexGroup parseGroup()
         {
-            if (Peek() == '\\')
+            Expect('(');
+            var node = ParseAlternation();
+            Expect(')');
+            return new RegexGroup(node);
+        }
+        RegexAnyChar parseRegexAnyChar()
+        {
+            Expect('.');
+            return new RegexAnyChar();
+        }
+        RegexNode parseCharClass()
+        {
+            Expect('[');
+            var negated = Peek() == '^' && Consume() == '^';
+            var classNodes = new List<RegexCharClass>();
+
+            while (Peek() != ']')
+                classNodes.Add(parseRangeCharClass());
+
+            Expect(']');
+            return CombineCharClasses(classNodes, negated);
+
+            RegexCharClass toCharClass(RegexNode node) => node switch
             {
-                Consume();
-                classNodes.Add(ParseEscapedCharClass());
-            }
-            else
+                RegexChar x => new RangesCharClass([new CharRange(x.Value, x.Value)], Negated: false),
+                RangesCharClass x => x,
+                var x => throw new InvalidCastException($"Unsupported type {x.GetType().Name}. Expected {nameof(RegexCharClass)}.")
+            };
+
+            RegexCharClass parseRangeCharClass()
             {
-                classNodes.Add(ParseRangeCharClass());
+                var firstPos = _pos;
+                var first = parse();
+
+                if (Peek() == '-' && _pos + 1 < _pattern.Length && _pattern[_pos + 1] != ']')
+                {
+                    Expect('-');
+                    var secodPos = _pos;
+                    var secod = parse();
+
+                    return new RangesCharClass(
+                        [new CharRange(expect<RegexChar>(first, firstPos).Value, expect<RegexChar>(secod, secodPos).Value)],
+                        Negated: false);
+                }
+
+                return toCharClass(first);
+
+                T expect<T>(RegexNode node, int pos) => node is T t
+                    ? t
+                    : throw new InvalidCastException($"Unexpected type {node.GetType().Name} at {pos}. Expected: {nameof(RegexChar)}");
+
+                RegexNode parse() => Peek() == '\\' ? parseEscape() : new RegexChar(Consume());
             }
         }
-        Consume();
-        return CombineCharClasses(classNodes, negated);
-    }
-
-    private RegexCharClass ParseEscapedCharClass()
-    {
-        var c = ExpectChar();
-        return c switch
+        char parseEscapedChar()
         {
-            'w' => new WordCharClass(Negated: false),
-            'W' => new WordCharClass(Negated: true),
-            'd' => new DigitCharClass(Negated: false),
-            'D' => new DigitCharClass(Negated: true),
-            'l' => new LetterCharClass(Negated: false),
-            'L' => new LetterCharClass(Negated: true),
-            's' => new WhitespaceCharClass(Negated: false),
-            'S' => new WhitespaceCharClass(Negated: true),
-            _ => new RangesCharClass([new CharRange(c, c)], Negated: false)
-        };
-    }
-
-    private RegexCharClass ParseRangeCharClass()
-    {
-        var from = ExpectChar();
-        if (Peek() == '-' && _pos + 1 < _pattern.Length && _pattern[_pos + 1] != ']')
-        {
-            Consume();
-            var to = ExpectChar();
-            if (from > to) throw new FormatException("Invalid range");
-            return new RangesCharClass([new CharRange(from, to)], Negated: false);
+            Expect('\\');
+            return ExpectChar() switch
+            {
+                'n' => '\n',
+                'r' => '\r',
+                't' => '\t',
+                '\\' => '\\',
+                var c => c
+            };
         }
-        return new RangesCharClass([new CharRange(from, from)], Negated: false);
     }
 
     private RegexNode CombineCharClasses(List<RegexCharClass> classes, bool negated)
@@ -147,7 +158,13 @@ public class RegexParser
     }
 
     private char? Peek() => _pos < _pattern.Length ? _pattern[_pos] : null;
-    private char Consume() => _pattern[_pos++];
+    private char Consume()
+    {
+        Guard.IsTrue(_pos > 0);
+        Guard.IsTrue(_pos < _pattern.Length);
+        return _pattern[_pos++];
+    }
+
     private char ExpectChar()
     {
         if (_pos >= _pattern.Length)
@@ -155,15 +172,12 @@ public class RegexParser
         return _pattern[_pos++];
     }
 
-    private void Expect(char expected)
+    private char ExpectChar(char expected)
     {
-        if (Consume() != expected)
-            throw new FormatException($"Expected '{expected}'");
+        var actual = Consume();
+        Guard.AreEqual(expected: expected, actual: actual);
+        return _pattern[_pos++];
     }
 
-    private RegexNode ConsumeAndReturn(RegexNode node)
-    {
-        Consume();
-        return node;
-    }
+    private void Expect(char expected) => Guard.AreEqual(expected: expected, actual: Consume());
 }

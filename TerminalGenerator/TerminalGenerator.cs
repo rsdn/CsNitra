@@ -90,7 +90,7 @@ namespace TerminalGenerator
                         var regexNode = parser.Parse();
                         var nfa = new NfaBuilder().Build(regexNode);
                         var dfa = new DfaBuilder(log).Build(nfa.StartState);
-
+                        //Debugger.Launch();
                         var code = GenerateDfaCode(dfa, startIndent: 3);
 
                         // Генерируем реализацию для одного метода

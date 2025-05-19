@@ -85,6 +85,11 @@ public class DfaBuilder(Log? log = null)
                 if (!transitions.TryGetValue(key, out var set))
                 {
                     transitions[key] = set = new HashSet<NfaState>();
+
+                    if (key.ToString() == "[^[n]]")
+                    {
+                    }
+
                     log?.Info($"New transition condition: {key}");
                 }
                 set.Add(t.Target);
@@ -101,7 +106,8 @@ public class DfaBuilder(Log? log = null)
         while (queue.Count > 0)
         {
             var state = queue.Dequeue();
-            if (!closure.Add(state)) continue;
+            if (!closure.Add(state))
+                continue;
 
             foreach (var t in state.Transitions.Where(t => t.Condition == null))
             {
@@ -121,7 +127,8 @@ public class DfaBuilder(Log? log = null)
         while (queue.Count > 0)
         {
             var state = queue.Dequeue();
-            if (!visited.Add(state)) continue;
+            if (!visited.Add(state))
+                continue;
 
             foreach (var t in state.Transitions)
             {
@@ -134,10 +141,39 @@ public class DfaBuilder(Log? log = null)
 
     private class RegexNodeComparer : IEqualityComparer<RegexNode>
     {
-        public bool Equals(RegexNode? x, RegexNode? y) =>
-            x?.ToString() == y?.ToString();
+        public bool Equals(RegexNode? x, RegexNode? y)
+        {
+            if (ReferenceEquals(x, y))
+                return true;
+            if (x is null || y is null)
+                return false;
 
-        public int GetHashCode(RegexNode obj) =>
-            obj.ToString().GetHashCode();
+            // Для CharClass сравниваем не только строковое представление, но и тип
+            if (x is RegexCharClass xCharClass && y is RegexCharClass yCharClass)
+            {
+                return xCharClass.GetType() == yCharClass.GetType()
+                    && xCharClass.Negated == yCharClass.Negated
+                    && x.ToString() == y.ToString();
+            }
+
+            return x.ToString() == y.ToString();
+        }
+
+        public int GetHashCode(RegexNode obj)
+        {
+            unchecked // Переполнение допустимо для хэш-кода
+            {
+                int hash = 17;
+                hash = hash * 23 + obj.ToString().GetHashCode();
+
+                if (obj is RegexCharClass charClass)
+                {
+                    hash = hash * 23 + charClass.GetType().GetHashCode();
+                    hash = hash * 23 + charClass.Negated.GetHashCode();
+                }
+
+                return hash;
+            }
+        }
     }
 }
