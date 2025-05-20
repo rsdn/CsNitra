@@ -12,7 +12,7 @@ public abstract record RegexNode
 public record RegexChar(char Value) : RegexNode
 {
     public override string ToString(int precedence) =>
-        Value.ToString().Replace("\\", "\\\\");
+        Value.ToString().Replace(@"\", @"\\").Replace("\r", @"\r").Replace("\n", @"\n").Replace("\t", @"\t");
 }
 
 public record RegexAnyChar : RegexNode

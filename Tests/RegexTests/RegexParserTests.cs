@@ -1,5 +1,8 @@
-﻿using System.Diagnostics;
+﻿using System;
+using System.Diagnostics;
 using Diagnostics;
+using Newtonsoft.Json.Linq;
+
 using Tests.Extensions;
 
 namespace Regex;
@@ -12,6 +15,43 @@ public class RegexParserTests
     {
         //Trace.Listeners.Add(new ConsoleTraceListener());
         Trace.AutoFlush = true;
+    }
+    [TestMethod]
+    public void DfaConstruction_ForCommentPattern_ShouldHaveCorrectTransitions()
+    {
+        // Arrange
+        var pattern = @"(\s|//[^\n]*\n?)*";
+        var parser = new RegexParser(pattern);
+        var regexNode = parser.Parse();
+        var nfa = new NfaBuilder().Build(regexNode);
+        var q0 = new DfaBuilder().Build(nfa.StartState);
+
+        NfaToDot.GenerateSvg(nfa.StartState, pattern, $"regex_NFA.svg");
+        DfaToDot.GenerateSvg(q0, pattern, $"regex_DFA.svg");
+
+        if (!(q0.Transitions is [_, DfaTransition { Condition: RegexChar { Value: '/' }, Target: var q2 }]))
+            throw new InvalidCastException($@"DFA start state has no transition by '/'");
+
+        if (!(q2.Transitions is [DfaTransition { Condition: RegexChar { Value: '/' }, Target: var q3 }]))
+            throw new InvalidCastException($@"DFA start state has no transition by '/'");
+
+        var expectedTransitions = q3.Transitions.Where(t =>
+            t.Condition is NegatedCharClassGroup { Classes: [RangesCharClass { Ranges: [CharRange { From: '\n', To: '\n' }] }] }
+                        or RegexChar { Value: '\n' }).ToArray();
+
+        const int expectedTransitionCount = 2;
+        Assert.AreEqual(expectedTransitionCount, expectedTransitions.Length);
+
+        if (q3.Transitions.Count == expectedTransitionCount)
+            return;
+
+        var unexpectedTransitions = q3.Transitions.Except(expectedTransitions).ToArray();
+
+        Trace.TraceInformation("Unexpected Transitions of q3:");
+        foreach (var unexpected in unexpectedTransitions)
+            Trace.TraceInformation($"    «{unexpected.Condition}» -> q{unexpected.Target.Id}");
+
+        Assert.AreEqual(expectedTransitionCount, q3.Transitions.Count);
     }
 
     [TestMethod]
