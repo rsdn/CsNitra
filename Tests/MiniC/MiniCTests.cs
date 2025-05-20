@@ -25,7 +25,7 @@ public partial class MiniCTests
             Terminals.Ident(),
             new Seq([new Literal("("), new Ref("Expr"), ], "Parens"),
             new Seq([Terminals.Ident(), new Literal("("), closingBracket], "CallNoArgs"),
-            new Seq([Terminals.Ident(), new Literal("("), new Ref("Expr"), new ZeroOrMany(new Seq([new Literal(","), new Ref("Expr")], Kind: "ArgsRest")), closingBracket], "Call"),
+            new Seq([Terminals.Ident(), new Literal("("), new SeparatedList(new Ref("Expr"), new Literal(","), IsSeparatorOptional: true, CanBeEmpty: true, Kind: "ArgsRest"), closingBracket], "Call"),
             new Seq([new Literal("-"), new ReqRef("Expr", 300)], "Neg"),
 
             new Seq([new Ref("Expr"), new Literal("*"),  new ReqRef("Expr", 200)], "Mul"),
@@ -370,6 +370,14 @@ public partial class MiniCTests
         "Expr",
         "func()",
         "Call: func()"
+    );
+
+
+    [TestMethod]
+    public void FunctionCallWithOneArgs() => TestMiniC(
+        "Expr",
+        "func(1)",
+        "Call: func(1)"
     );
 
     [TestMethod]

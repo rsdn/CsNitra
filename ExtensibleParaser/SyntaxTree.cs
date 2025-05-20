@@ -17,6 +17,7 @@ public interface ISyntaxVisitor
 {
     void Visit(TerminalNode node);
     void Visit(SeqNode node);
+    void Visit(ListNode node);
     void Visit(SomeNode node);
     void Visit(NoneNode node);
 }
@@ -73,6 +74,15 @@ public record TerminalNode(string Kind, int StartPos, int EndPos, int ContentLen
 public record SeqNode(string Kind, IReadOnlyList<ISyntaxNode> Elements, int StartPos, int EndPos) : Node(Kind, StartPos, EndPos)
 {
     public override void Accept(ISyntaxVisitor visitor) => visitor.Visit(this);
+}
+
+public record ListNode(string Kind, IReadOnlyList<ISyntaxNode> Elements, int StartPos, int EndPos, bool HasTrailingSeparator = false, bool IsRecovery = false)
+    : Node(Kind, StartPos, EndPos, IsRecovery)
+{
+    public override void Accept(ISyntaxVisitor visitor) => visitor.Visit(this);
+
+    public override string ToString(string input) =>
+        $"[{string.Join(", ", Elements.Select(e => e.ToString(input)))}]";
 }
 
 public abstract record OptionalNode(string Kind, int StartPos, int EndPos) : Node(Kind, StartPos, EndPos);

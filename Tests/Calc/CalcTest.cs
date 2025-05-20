@@ -47,6 +47,17 @@ public class ParserTests
             };
         }
 
+        public void Visit(ListNode node)
+        {
+            var children = new List<Expr>();
+            foreach (var element in node.Elements)
+            {
+                element.Accept(this);
+                if (Result != null)
+                    children.Add(Result);
+            }
+        }
+
         public void Visit(SomeNode node) => node.Value.Accept(this);
         public void Visit(NoneNode node) => Result = null;
     }
