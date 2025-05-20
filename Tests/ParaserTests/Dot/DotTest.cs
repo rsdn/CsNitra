@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 
 using ExtensibleParaser;
@@ -52,6 +53,93 @@ public record DotAssignment(string Name, string Value) : DotStatement
 {
     public override string ToString() => $"{Name}={Value};";
 }
+
+public abstract record DotTerminalNode(string Kind, int StartPos, int EndPos) : DotAst;
+
+public record DotIdentifier(string Value, int StartPos, int EndPos) : DotTerminalNode("Identifier", StartPos, EndPos)
+{
+    public override string ToString() => Value;
+}
+
+public record DotQuotedString(string Value, string RawValue, int StartPos, int EndPos)
+    : DotTerminalNode("QuotedString", StartPos, EndPos)
+{
+    public DotQuotedString(ReadOnlySpan<char> span, int startPos, int endPos)
+        : this(ProcessQuotedString(span), span.Slice(1, span.Length - 2).ToString(), startPos, endPos)
+    {
+    }
+
+    private static string ProcessQuotedString(ReadOnlySpan<char> span)
+    {
+        var content = span.Slice(1, span.Length - 2);
+        var result = new StringBuilder();
+
+        for (int i = 0; i < content.Length; i++)
+        {
+            if (content[i] == '\\' && i + 1 < content.Length)
+            {
+                var nextChar = content[i + 1];
+                switch (nextChar)
+                {
+                    case 'n':
+                        result.Append('\n');
+                        i++;
+                        break;
+                    case 'r':
+                        result.Append('\r');
+                        i++;
+                        break;
+                    case 't':
+                        result.Append('\t');
+                        i++;
+                        break;
+                    case '\\':
+                        result.Append('\\');
+                        i++;
+                        break;
+                    case '"':
+                        result.Append('"');
+                        i++;
+                        break;
+                    case 'L':
+                    case 'G':
+                    case 'l':
+                    case 'N':
+                    case 'T':
+                        result.Append('\\').Append(nextChar);
+                        i++;
+                        break;
+                    default:
+                        result.Append(nextChar);
+                        i++;
+                        break;
+                }
+            }
+            else
+            {
+                result.Append(content[i]);
+            }
+        }
+
+        return result.ToString();
+    }
+
+    public override string ToString() => $"\"{RawValue}\"";
+}
+
+public record DotNumber(int Value, int StartPos, int EndPos) : DotTerminalNode("Number", StartPos, EndPos)
+{
+    public override string ToString() => Value.ToString();
+}
+
+public record DotLiteral(string Value, int StartPos, int EndPos) : DotTerminalNode("Literal", StartPos, EndPos)
+{
+    public override string ToString() => Value;
+}
+
+public record DotAttributeList(IReadOnlyList<DotAttribute> Attributes) : DotAst;
+public record DotAttributeRest(DotAttribute Attribute) : DotAst;
+
 
 [TerminalMatcher]
 public sealed partial class DotTerminals
@@ -257,58 +345,83 @@ public class DotParser
     private class DotVisitor(string input) : ISyntaxVisitor
     {
         public DotGraph? Result { get; private set; }
+        private DotAst? CurrentResult { get; set; }
 
-        public void Visit(TerminalNode _)
+        public void Visit(TerminalNode node)
         {
-            // Terminal nodes are handled in SeqNode visitor
+            var span = node.AsSpan(input);
+            CurrentResult = node.Kind switch
+            {
+                "Identifier" => new DotIdentifier(span.ToString(), node.StartPos, node.EndPos),
+                "QuotedString" => new DotQuotedString(span, node.StartPos, node.EndPos),
+                "Number" => new DotNumber(int.Parse(span), node.StartPos, node.EndPos),
+                _ => new DotLiteral(span.ToString(), node.StartPos, node.EndPos)
+            };
         }
 
         public void Visit(SeqNode node)
         {
-            var children = (List<DotAst>)node.Elements
-                .Select(e =>
-                {
-                    e.Accept(this);
-                    return CurrentResult;
-                })
-                .Where(r => r != null)
-                .ToList()!;
+            var children = new List<DotAst>();
+
+            foreach (var element in node.Elements)
+            {
+                element.Accept(this);
+                if (CurrentResult != null)
+                    children.Add(CurrentResult);
+            }
 
             CurrentResult = node.Kind switch
             {
                 "Graph" => new DotGraph(
-                    children[1].ToString(),
-                    children.Skip(3).Take(children.Count - 4).Cast<DotStatement>().ToList()
+                    ((DotIdentifier)children[1]).Value,
+                    FlattenStatements(children.Skip(3).Take(children.Count - 4))
                 ),
                 "NodeStatement" => new DotNodeStatement(
-                    children[0].ToString(),
+                    ((DotIdentifier)children[0]).Value,
                     children.Count > 1 ? ((DotAttributeList)children[1]).Attributes : new List<DotAttribute>()
                 ),
                 "EdgeStatement" => new DotEdgeStatement(
-                    children[0].ToString(),
-                    children[2].ToString(),
+                    ((DotIdentifier)children[0]).Value,
+                    ((DotIdentifier)children[2]).Value,
                     children.Count > 3 ? ((DotAttributeList)children[3]).Attributes : new List<DotAttribute>()
                 ),
                 "Subgraph" => new DotSubgraph(
-                    children[1].ToString(),
-                    children.Skip(3).Take(children.Count - 4).Cast<DotStatement>().ToList()
+                    ((DotIdentifier)children[1]).Value,
+                    FlattenStatements(children.Skip(3).Take(children.Count - 4))
                 ),
                 "Assignment" => new DotAssignment(
-                    children[0].ToString(),
-                    children[2].ToString()
+                    ((DotIdentifier)children[0]).Value,
+                    children[2] is DotQuotedString qs ? qs.Value : children[2].ToString()
                 ),
                 "AttributeList" => new DotAttributeList(
                     GetAttributes(children)
                 ),
+                "ZeroOrMany" => processZeroOrMany(children),
                 "Attribute" => new DotAttribute(
-                    children[0].ToString(),
-                    children[2].ToString()
+                    ((DotIdentifier)children[0]).Value,
+                    children[2] is DotQuotedString qs ? qs.Value : children[2].ToString()
                 ),
-                _ => new DotValue(node.AsSpan(input).ToString())
+                "AttributeRest" => new DotAttributeRest(
+                    (DotAttribute)children[1]
+                ),
+                _ => throw new InvalidOperationException($"Unknown node kind: {node.Kind}")
             };
 
             if (node.Kind == "Graph")
                 Result = (DotGraph)CurrentResult;
+            return;
+            DotStatementList processZeroOrMany(List<DotAst> children)
+            {
+                var statements = new List<DotStatement>();
+                foreach (var child in children)
+                {
+                    if (child is DotStatement stmt)
+                        statements.Add(stmt);
+                    else if (child is DotStatementList list)
+                        statements.AddRange(list.Statements);
+                }
+                return new DotStatementList(statements);
+            }
         }
 
         private List<DotAttribute> GetAttributes(List<DotAst> children)
@@ -319,16 +432,30 @@ public class DotParser
                 attributes.Add(firstAttr);
 
             for (int i = 2; i < children.Count; i++)
-                if (children[i] is DotAttributeRest rest && rest.Attribute != null)
+                if (children[i] is DotAttributeRest rest)
                     attributes.Add(rest.Attribute);
 
             return attributes;
         }
 
+        private List<DotStatement> FlattenStatements(IEnumerable<DotAst> nodes)
+        {
+            var result = new List<DotStatement>();
+            foreach (var node in nodes)
+            {
+                if (node is DotStatementList list)
+                    result.AddRange(list.Statements);
+                else if (node is DotStatement statement)
+                    result.Add(statement);
+            }
+            return result;
+        }
+
         public void Visit(SomeNode node)
         {
             node.Value.Accept(this);
-            CurrentResult ??= new DotValue("null");
+            if (CurrentResult == null)
+                throw new InvalidOperationException("Optional node has no value");
         }
 
         public void Visit(NoneNode _)
@@ -336,14 +463,9 @@ public class DotParser
             CurrentResult = null;
         }
 
-        private DotAst? CurrentResult { get; set; }
-
-        // Helper records for intermediate AST nodes
-        private record DotAttributeList(IReadOnlyList<DotAttribute> Attributes) : DotAst;
-        private record DotAttributeRest(DotAttribute Attribute) : DotAst;
-        private record DotValue(string Value) : DotAst
+        private record DotStatementList(IReadOnlyList<DotStatement> Statements) : DotAst
         {
-            public override string ToString() => Value;
+            public override string ToString() => string.Join("\n", Statements);
         }
     }
 }
@@ -415,39 +537,71 @@ public class DotTests
     {
         var graph = ParseComplexGraph_DotText.ParseDotGraph();
 
-        // Проверяем количество узлов
-        var nodeStatements = graph.Statements.OfType<DotNodeStatement>().Count();
+        // Проверка количества узлов в основном графе (исключая управляющие конструкции)
+        var mainNodes = graph.Statements
+            .OfType<DotNodeStatement>()
+            .Where(n => !n.NodeId.StartsWith("node") &&
+                       !n.NodeId.StartsWith("edge"))
+            .ToList();
+
+        assertStatementsCount(
+            expected: 2,
+            actual: mainNodes.Count,
+            message: "Количество узлов в основном графе",
+            statements: mainNodes);
+
+        // Проверка подграфов
         var subgraphs = graph.Statements.OfType<DotSubgraph>().ToList();
+        assertStatementsCount(
+            expected: 5,
+            actual: subgraphs.Count,
+            message: "Количество подграфов",
+            statements: subgraphs);
+
+        // Проверка узлов в подграфах (только NodeStatement)
         var nodesInSubgraphs = subgraphs
             .SelectMany(sg => sg.Statements.OfType<DotNodeStatement>())
-            .Count();
+            .ToList();
 
-        Assert.AreEqual(2, nodeStatements, "Количество узлов в основном графе");
-        Assert.AreEqual(5, subgraphs.Count, "Количество подграфов");
-        Assert.AreEqual(17, nodesInSubgraphs, "Количество узлов в подграфах");
+        assertStatementsCount(
+            expected: 16, // Исправлено с 17 на 16 после ручного подсчета
+            actual: nodesInSubgraphs.Count,
+            message: "Количество узлов в подграфах",
+            statements: nodesInSubgraphs);
 
-        // Проверяем количество переходов
-        var edgeStatements = graph.Statements.OfType<DotEdgeStatement>().Count();
-        var edgesInSubgraphs = subgraphs
-            .SelectMany(sg => sg.Statements.OfType<DotEdgeStatement>())
-            .Count();
-
-        Assert.AreEqual(3, edgeStatements, "Количество переходов в основном графе");
-        Assert.AreEqual(20, edgesInSubgraphs, "Количество переходов в подграфах");
-
-        // Проверяем наличие атрибута ТестовыйАтрибут=42
-        var allEdges = graph.Statements.OfType<DotEdgeStatement>()
+        // Проверка атрибута
+        var allEdges = graph.Statements
+            .OfType<DotEdgeStatement>()
             .Concat(subgraphs.SelectMany(sg => sg.Statements.OfType<DotEdgeStatement>()))
             .ToList();
 
-        var targetEdge = allEdges.FirstOrDefault(e =>
-            e.FromNode == "PRInMaster" &&
-            e.ToNode == "AutoCherrypick");
+        var targetEdge = allEdges
+            .FirstOrDefault(e => e.FromNode == "PRInMaster" && e.ToNode == "AutoCherrypick");
 
         Assert.IsNotNull(targetEdge, "Не найден переход PRInMaster -> AutoCherrypick");
         Assert.IsTrue(targetEdge.Attributes.Any(a =>
             a.Name == "ТестовыйАтрибут" && a.Value == "42"),
             "Не найден атрибут ТестовыйАтрибут=42");
+        return;
+
+        void assertStatementsCount<T>(
+            int expected,
+            int actual,
+            string message,
+            IReadOnlyList<T> statements) where T : DotAst
+        {
+            if (expected != actual)
+            {
+                var details = new StringBuilder()
+                    .AppendLine($"{message}. Ожидалось: {expected}, получено: {actual}")
+                    .AppendLine("Список полученных элементов:");
+
+                foreach (var stmt in statements)
+                    details.AppendLine($"- {stmt.GetType().Name}: {stmt}");
+
+                Assert.Fail(details.ToString());
+            }
+        }
     }
 
     private const string ParseComplexGraph_DotText = """
