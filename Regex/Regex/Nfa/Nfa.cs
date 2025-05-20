@@ -5,7 +5,7 @@ public record NfaState(int Id)
     public List<NfaTransition> Transitions { get; } = new();
     public bool IsFinal { get; set; }
 
-    public override string ToString() => $"{PrintStateId(this)} [{string.Join(", ", Transitions)}]";
+    public override string ToString() => $"{PrintStateId(this)} [{string.Join(", ", Transitions.Select(t => t.Target == this ? PrintStateId(t.Target) : NfaTransition.PrintTransition(t)))}]";
 
     public static string PrintStateId(NfaState s) => $"{(s.IsFinal ? "fs" : "s")}{s.Id}";
 }

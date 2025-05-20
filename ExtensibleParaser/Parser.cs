@@ -33,7 +33,7 @@ public class Parser(Terminal trivia, Log? log = null)
 
     [Conditional("TRACE")]
     private void Log(string message, LogImportance importance = LogImportance.Normal, [CallerMemberName] string? memberName = null, [CallerLineNumber] int line = 0) =>
-        Logger?.Info($"{memberName} ({line}): {message}", importance);
+        Logger?.Info($"{memberName} {line}: {message}", importance);
 
     public Dictionary<string, Rule[]> Rules { get; } = new();
     public Dictionary<string, TdoppRule> TdoppRules { get; } = new();

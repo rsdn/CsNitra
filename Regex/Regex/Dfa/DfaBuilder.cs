@@ -16,7 +16,7 @@ public class DfaBuilder(Log? log = null)
         var queue = new Queue<HashSet<NfaState>>();
         var mapping = new Dictionary<HashSet<NfaState>, DfaState>(HashSet<NfaState>.CreateSetComparer());
 
-        var initial = EpsilonClosure(new[] { start });
+        var initial = EpsilonClosure([start]);
         log?.Info($"Initial ε-closure: [{string.Join(", ", initial.Select(s => s.Id))}]");
 
         bool isInitialFinal = initial.Any(s => s.IsFinal) && !IsEmptyPattern(start);
@@ -31,34 +31,34 @@ public class DfaBuilder(Log? log = null)
             var currentSet = queue.Dequeue();
             var currentDfaState = mapping[currentSet];
 
-            log?.Info($"\nProcessing DFA state {currentDfaState.Id}:");
-            log?.Info($"NFA states: [{string.Join(", ", currentSet.Select(s => s.Id))}]");
+            log?.Info($"\nProcessing DFA state {currentDfaState}:");
 
             var transitions = GetTransitions(currentSet);
             log?.Info($"Found {transitions.Count} transitions");
 
             foreach (var (condition, targets) in transitions)
             {
+                log?.Info($"  Condition: {condition} maker epsilon closure");
                 var closure = EpsilonClosure(targets);
-                log?.Info($"  Condition: {condition}");
-                log?.Info($"  Targets: [{string.Join(", ", closure.Select(s => s.Id))}]");
+                log?.Info($"  Condition: {condition} Targets: [{string.Join(", ", closure)}]");
 
                 if (!mapping.TryGetValue(closure, out var dfaState))
                 {
                     bool isFinal = closure.Any(s => s.IsFinal);
                     dfaState = new DfaState(mapping.Count, isFinal);
+                    if (dfaState.Id == 3)
+                    {
+                    }
                     mapping[closure] = dfaState;
                     queue.Enqueue(closure);
 
-                    log?.Info($"  Created new DFA state {dfaState.Id} (IsFinal: {isFinal})");
+                    log?.Info($"  Created new DFA state {dfaState}");
                 }
                 else
-                {
-                    log?.Info($"  Reusing existing DFA state {dfaState.Id}");
-                }
+                    log?.Info($"  Reusing existing DFA state {dfaState}");
 
                 currentDfaState.Transitions.Add(new DfaTransition(condition, dfaState));
-                log?.Info($"  Added transition: {condition} → State {dfaState.Id}");
+                log?.Info($"  Added transition: {condition} → State {dfaState}");
             }
         }
 
@@ -84,7 +84,7 @@ public class DfaBuilder(Log? log = null)
                 var key = t.Condition!;
                 if (!transitions.TryGetValue(key, out var set))
                 {
-                    transitions[key] = set = new HashSet<NfaState>();
+                    transitions.Add(key,  set = new HashSet<NfaState>());
 
                     if (key.ToString() == "[^[n]]")
                     {
@@ -92,9 +92,11 @@ public class DfaBuilder(Log? log = null)
 
                     log?.Info($"New transition condition: {key}");
                 }
+
                 set.Add(t.Target);
             }
         }
+
         return transitions;
     }
 
@@ -112,7 +114,10 @@ public class DfaBuilder(Log? log = null)
             foreach (var t in state.Transitions.Where(t => t.Condition == null))
             {
                 queue.Enqueue(t.Target);
-                log?.Info($"Adding ε-transition: {state.Id} → {t.Target.Id}");
+                //if (state.Id == 3  && t.Target.Id is 1 or 2)
+                //{
+                //}
+                log?.Info($"Adding ε-transition: {NfaState.PrintStateId(state)} → {t.Target}");
             }
         }
         return closure;
@@ -130,10 +135,13 @@ public class DfaBuilder(Log? log = null)
             if (!visited.Add(state))
                 continue;
 
+            log?.Info($"NFA state: {state.Id}{(state.IsFinal ? " final" : "")}");
+
             foreach (var t in state.Transitions)
             {
                 queue.Enqueue(t.Target);
-                log?.Info($"Tracking NFA state: {t.Target.Id}");
+                var condition = t.Condition == null ? "ε" : t.Condition.ToString();
+                log?.Info($"    Transition: Condition=«{condition}» {t.Target.Id}");
             }
         }
         return visited;

@@ -22,6 +22,6 @@ public sealed class Log
     public void Info(string text, LogImportance importance = LogImportance.Normal, [CallerMemberName] string? memberName = null, [CallerLineNumber] int line = 0)
     {
         if (importance >= Importance)
-            Trace.TraceInformation($"memberName ({line}): {text}");
+            Trace.TraceInformation($"{memberName} {line}: {text}");
     }
 }

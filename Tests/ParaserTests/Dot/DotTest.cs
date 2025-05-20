@@ -65,7 +65,7 @@ public sealed partial class DotTerminals
     [Regex(@"\d+")]
     public static partial Terminal Number();
 
-    [Regex(@"(\s|//[^\n]*\n?)*")]// /\*.*?\*/
+    [Regex(@"(\s*(\/\/[^\n]*)|\s+)*")]
     public static partial Terminal Trivia();
 }
 

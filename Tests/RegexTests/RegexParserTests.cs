@@ -36,7 +36,7 @@ public class RegexParserTests
     public void DfaConstruction_3()
     {
         // Arrange
-        var pattern = @"(\s|//[^\n]*\n?)*";
+        var pattern = @"(\s|//[^\n]*)*";
         var parser = new RegexParser(pattern);
         var regexNode = parser.Parse();
         var log = new Log();
@@ -54,7 +54,7 @@ public class RegexParserTests
 
         var expectedTransitions = q3.Transitions.Where(t =>
             t.Condition is NegatedCharClassGroup { Classes: [RangesCharClass { Ranges: [CharRange { From: '\n', To: '\n' }] }] }
-                        or RegexChar { Value: '\n' }).ToArray();
+                        or RegexChar { Value: '/' }).ToArray();
 
         const int expectedTransitionCount = 2;
         Assert.AreEqual(expectedTransitionCount, expectedTransitions.Length);
@@ -68,7 +68,8 @@ public class RegexParserTests
         foreach (var unexpected in unexpectedTransitions)
             Trace.TraceInformation($"    «{unexpected.Condition}» -> q{unexpected.Target.Id}");
 
-        Assert.AreEqual(expectedTransitionCount, q3.Transitions.Count);
+        int count = unexpectedTransitions.Length;
+        Assert.AreEqual(expected: 0, count, $"Unexpected transition ({count}): [{string.Join<DfaTransition>(", ", unexpectedTransitions)}]");
     }
 
     [TestMethod]
@@ -183,13 +184,13 @@ public class RegexParserTests
     {
         var testCases = new[]
         {
-            (Start: 1, Pattern: @"(\s|//[^\n]*\n?)*",     Input: ";  // Top to Bottom\r\n    n", Expected: 24),
+            (Start: 1, Pattern: @"(\s|//[^\n]*)*",       Input: ";  // Top to Bottom\r\n    n", Expected: 24),
                                                                  //012345678901234567 8 901234567890
                                                                  //          10          20
-            (Start: 0, Pattern: @"(\s|//[^\n]*\n?)*",     Input: "  // Top to Bottom\r\n/ ", Expected: 20),
-            (Start: 0, Pattern: @"(\s|//[^\n]*\n?)*",     Input: "  // Top to Bottom",       Expected: 18),
-            (Start: 0, Pattern: @"(\s|//[^\n]*\n?)*",     Input: "  // Top to Bottom\r\n ",  Expected: 21),
-            (Start: 0, Pattern: @"(\s|//[^\n]*\n?)*",     Input: "  // Top to Bottom\n ",    Expected: 20),
+            (Start: 0, Pattern: @"(\s|//[^\n]*)*",       Input: "  // Top to Bottom\r\n/ ", Expected: 20),
+            (Start: 0, Pattern: @"(\s|//[^\n]*)*",       Input: "  // Top to Bottom",       Expected: 18),
+            (Start: 0, Pattern: @"(\s|//[^\n]*)*",       Input: "  // Top to Bottom\r\n ",  Expected: 21),
+            (Start: 0, Pattern: @"(\s|//[^\n]*)*",       Input: "  // Top to Bottom\n ",    Expected: 20),
             (Start: 0, Pattern: @"[\\\/*+\-<=>!@#$%^&]+", Input: ";",         Expected: -1),
             (Start: 0, Pattern: @"[\\\/*+\-<=>!@#$%^&]+", Input: @"\/-",      Expected: 3),
             (Start: 0, Pattern: @"[\\\/*+\-<=>!@#$%^&]+", Input: @"\/-;",     Expected: 3),
