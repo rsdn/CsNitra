@@ -200,6 +200,36 @@ public record NotPredicate(Rule PredicateRule, Rule MainRule) : Rule("!")
     }
 }
 
+public record SeparatedList(
+    Rule Element,
+    Rule Separator,
+    bool IsSeparatorOptional,
+    bool CanBeEmpty,
+    string? Kind = null
+) : Rule(Kind ?? nameof(SeparatedList))
+{
+    public override string ToString() => $"({Element}; {Separator}{(IsSeparatorOptional ? "?" : "")})*{(CanBeEmpty ? "" : "+")}";
+
+    public override Rule InlineReferences(Dictionary<string, Rule> inlineableRules)
+    {
+        var inlinedElement = Element.InlineReferences(inlineableRules);
+        var inlinedSeparator = Separator.InlineReferences(inlineableRules);
+        return new SeparatedList(inlinedElement, inlinedSeparator, IsSeparatorOptional, CanBeEmpty, Kind);
+    }
+
+    public override IEnumerable<Rule> GetSubRules<T>()
+    {
+        if (this is T)
+            yield return this;
+        foreach (var subRule in Element.GetSubRules<T>())
+            yield return subRule;
+
+        // Мб. не требуется.
+        foreach (var subRule in Separator.GetSubRules<T>())
+            yield return subRule;
+    }
+}
+
 public abstract record RecoveryTerminal(string Kind) : Terminal(Kind);
 
 public record EmptyTerminal(string Kind) : RecoveryTerminal(Kind)
@@ -207,4 +237,3 @@ public record EmptyTerminal(string Kind) : RecoveryTerminal(Kind)
     public override int TryMatch(string input, int position) => 0;
     public override string ToString() => Kind;
 }
-
