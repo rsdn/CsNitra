@@ -16,15 +16,32 @@ public class RegexParserTests
         //Trace.Listeners.Add(new ConsoleTraceListener());
         Trace.AutoFlush = true;
     }
+
     [TestMethod]
-    public void DfaConstruction_ForCommentPattern_ShouldHaveCorrectTransitions()
+    public void DfaConstruction_2()
+    {
+        // Arrange
+        var pattern = @"(\s|//[^\n]*)*";
+        var parser = new RegexParser(pattern);
+        var regexNode = parser.Parse();
+        var log = new Log();
+        var nfa = new NfaBuilder().Build(regexNode);
+        var q0 = new DfaBuilder(log).Build(nfa.StartState);
+
+        NfaToDot.GenerateSvg(nfa.StartState, pattern, $"DfaConstruction_2_regex_NFA.svg");
+        DfaToDot.GenerateSvg(q0, pattern, $"DfaConstruction_2_regex_DFA.svg");
+    }
+
+    [TestMethod]
+    public void DfaConstruction_3()
     {
         // Arrange
         var pattern = @"(\s|//[^\n]*\n?)*";
         var parser = new RegexParser(pattern);
         var regexNode = parser.Parse();
+        var log = new Log();
         var nfa = new NfaBuilder().Build(regexNode);
-        var q0 = new DfaBuilder().Build(nfa.StartState);
+        var q0 = new DfaBuilder(log).Build(nfa.StartState);
 
         NfaToDot.GenerateSvg(nfa.StartState, pattern, $"regex_NFA.svg");
         DfaToDot.GenerateSvg(q0, pattern, $"regex_DFA.svg");
