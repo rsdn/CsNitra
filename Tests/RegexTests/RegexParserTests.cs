@@ -176,9 +176,6 @@ public class RegexParserTests
             (Start: 0, Pattern: @"[\\\/*+\-<=>!@#$%^&]+", Input: ";",         Expected: -1),
             (Start: 0, Pattern: @"[\\\/*+\-<=>!@#$%^&]+", Input: @"\/-",      Expected: 3),
             (Start: 0, Pattern: @"[\\\/*+\-<=>!@#$%^&]+", Input: @"\/-;",     Expected: 3),
-            (Start: 0, Pattern: @"[\l_]\w*",              Input: "_ifField",  Expected: 8),
-            (Start: 0, Pattern: @"[\l_]\w*",              Input: "ifField",   Expected: 7),
-            (Start: 0, Pattern: @"[\l_]\w*",              Input: "1ifField",  Expected: -1),
             (Start: 0, Pattern: @"\d*",                   Input: "1ifField",  Expected: 1),
             (Start: 0, Pattern: "a+",                     Input: "aaa",       Expected: 3),
             (Start: 0, Pattern: "a+",                     Input: "aaax",      Expected: 3),
@@ -188,7 +185,6 @@ public class RegexParserTests
             (Start: 0, Pattern: "a*",                     Input: "aaa",       Expected: 3),
             (Start: 1, Pattern: "a*",                     Input: "xaaay",     Expected: 3),
             (Start: 0, Pattern: "a|b",                    Input: "a",         Expected: 1),
-            (Start: 0, Pattern: @"[\l_]\w*",              Input: "_ifField",  Expected: 8),
             (Start: 0, Pattern: @"\w+",                   Input: "мама",      Expected: 4),
             (Start: 0, Pattern: @"\d+",                   Input: "123",       Expected: 3),
             (Start: 0, Pattern: "[a-c]",                  Input: "c",         Expected: 1),
@@ -211,6 +207,10 @@ public class RegexParserTests
             (Start: 0, Pattern: @"\\[0-da-fA-f][0-da-fA-f][0-da-fA-f]?[0-da-fA-f]?",  Input: @"\F0",   Expected: 3),
             (Start: 0, Pattern: @"\\[0-da-fA-f][0-da-fA-f][0-da-fA-f]?[0-da-fA-f]?",  Input: @"\F0A",  Expected: 4),
             (Start: 0, Pattern: @"\\[0-da-fA-f][0-da-fA-f][0-da-fA-f]?[0-da-fA-f]?",  Input: @"\F0A9", Expected: 5),
+            (Start: 0, Pattern: @"[\l_]\w*",              Input: "_ifField",  Expected: 8),
+            (Start: 0, Pattern: @"[\l_]\w*",              Input: "ifField",   Expected: 7),
+            (Start: 0, Pattern: @"[\l_]\w*",              Input: "1ifField",  Expected: -1),
+            (Start: 0, Pattern: @"[\l_]\w*",              Input: "_ifField",  Expected: 8),
         };
 
         var i = 0;
