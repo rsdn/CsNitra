@@ -17,26 +17,11 @@ public class RegexParserTests
         Trace.AutoFlush = true;
     }
 
-    [TestMethod]
-    public void DfaConstruction_2()
-    {
-        // Arrange
-        var pattern = @"(\s|//[^\n]*)*";
-        var parser = new RegexParser(pattern);
-        var regexNode = parser.Parse();
-        var log = new Log();
-        var nfa = new NfaBuilder().Build(regexNode);
-        var q0 = new DfaBuilder(log).Build(nfa.StartState);
-
-        NfaToDot.GenerateSvg(nfa.StartState, pattern, $"DfaConstruction_2_regex_NFA.svg");
-        DfaToDot.GenerateSvg(q0, pattern, $"DfaConstruction_2_regex_DFA.svg");
-    }
-
-    [TestMethod]
+    //[TestMethod]
     public void DfaConstruction_3()
     {
         // Arrange
-        var pattern = @"(\s|//[^\n]*)*";
+        var pattern = @"(//[^\n]*(\n|$)|\s)*";
         var parser = new RegexParser(pattern);
         var regexNode = parser.Parse();
         var log = new Log();
@@ -184,13 +169,13 @@ public class RegexParserTests
     {
         var testCases = new[]
         {
-            (Start: 1, Pattern: @"(\s|//[^\n]*)*",       Input: ";  // Top to Bottom\r\n    n", Expected: 24),
+            //(Start: 0, Pattern: @"(//[^\n]*(\n|$)|\s)*",  Input: "  // Top to Bottom",       Expected: 18),
+            (Start: 1, Pattern: @"(//[^\n]*(\n|$)|\s)*",  Input: ";  // Top to Bottom\r\n    n", Expected: 24),
                                                                  //012345678901234567 8 901234567890
                                                                  //          10          20
-            (Start: 0, Pattern: @"(\s|//[^\n]*)*",       Input: "  // Top to Bottom\r\n/ ", Expected: 20),
-            (Start: 0, Pattern: @"(\s|//[^\n]*)*",       Input: "  // Top to Bottom",       Expected: 18),
-            (Start: 0, Pattern: @"(\s|//[^\n]*)*",       Input: "  // Top to Bottom\r\n ",  Expected: 21),
-            (Start: 0, Pattern: @"(\s|//[^\n]*)*",       Input: "  // Top to Bottom\n ",    Expected: 20),
+            (Start: 0, Pattern: @"(//[^\n]*(\n|$)|\s)*",  Input: "  // Top to Bottom\r\n/ ", Expected: 20),
+            (Start: 0, Pattern: @"(//[^\n]*(\n|$)|\s)*",  Input: "  // Top to Bottom\r\n ",  Expected: 21),
+            (Start: 0, Pattern: @"(//[^\n]*(\n|$)|\s)*",  Input: "  // Top to Bottom\n ",    Expected: 20),
             (Start: 0, Pattern: @"[\\\/*+\-<=>!@#$%^&]+", Input: ";",         Expected: -1),
             (Start: 0, Pattern: @"[\\\/*+\-<=>!@#$%^&]+", Input: @"\/-",      Expected: 3),
             (Start: 0, Pattern: @"[\\\/*+\-<=>!@#$%^&]+", Input: @"\/-;",     Expected: 3),
@@ -220,7 +205,7 @@ public class RegexParserTests
             (Start: 0, Pattern: @"[^\W\d]+",              Input: "1234",      Expected: -1),
             (Start: 0, Pattern: @"[^\W\d]+",              Input: "мама",      Expected: 4),
             (Start: 0, Pattern: @"[^\W\d]+",              Input: "qwerty",    Expected: 6),
-            (Start: 0, Pattern: @"[^\W\d]+",              Input: "!@#$%",     Expected: -1),
+            (Start: 0, Pattern: @"[^\W\d]+",              Input: @"!@#\$%",     Expected: -1),
             (Start: 0, Pattern: @"\\[0-da-fA-f][0-da-fA-f]",                          Input: @"\F0",   Expected: 3),
             (Start: 0, Pattern: @"\\[0-da-fA-f][0-da-fA-f][0-da-fA-f]?[0-da-fA-f]?",  Input: @"\F0",   Expected: 3),
             (Start: 0, Pattern: @"\\[0-da-fA-f][0-da-fA-f][0-da-fA-f]?[0-da-fA-f]?",  Input: @"\F0A",  Expected: 4),

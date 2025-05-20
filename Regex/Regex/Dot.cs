@@ -38,8 +38,9 @@ public static class Dot
     }
 
     public static string EscapeLabel(string input) => input
-        .Replace("\\", "\\\\")
+        .Replace(@"\", @"\\")
         .Replace("\"", "\\\"")
-        .Replace("\n", "\\n")
+        .Replace("\n", @"\n")
+        .Replace("$", @"\$")
         .Replace("\r", "\\r");
 }

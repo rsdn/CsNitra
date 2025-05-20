@@ -56,10 +56,16 @@ public class RegexParser
             '(' => parseGroup(),
             '[' => parseCharClass(),
             '.' => parseRegexAnyChar(),
+            '$' => parseEndOfLine(),
             '\\' => parseEscape(),
             var c => new RegexChar(Consume())
         };
 
+        RegexEndOfLine parseEndOfLine()
+        {
+            Accept('$');
+            return new RegexEndOfLine();
+        }
         RegexNode parseEscape()
         {
             return parseEscapedChar() switch

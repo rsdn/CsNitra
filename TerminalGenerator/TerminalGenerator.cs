@@ -86,15 +86,16 @@ namespace TerminalGenerator
                         var methodModifiers = methodSyntax.Modifiers.ToString(); // "public" и т.д.
                         var returnType = methodSyntax.ReturnType;
                         //Debugger.Launch();
+                        if (regexPattern == @"//[^\n]*(\n|$)|\s)*")
+                        {
+                            //Debugger.Launch();
+                        }
+
                         var parser = new RegexParser(regexPattern);
                         var regexNode = parser.Parse();
                         var nfa = new NfaBuilder().Build(regexNode);
                         var dfa = new DfaBuilder(log).Build(nfa.StartState);
 
-                        if (regexPattern == @"(\s|//[^\n]*\n?)*")
-                        {
-                            //Debugger.Launch();
-                        }
 
                         var code = GenerateDfaCode(dfa, startIndent: 3);
 

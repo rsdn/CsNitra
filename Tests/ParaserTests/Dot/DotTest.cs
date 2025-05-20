@@ -59,14 +59,84 @@ public sealed partial class DotTerminals
     [Regex(@"[\l_]\w*")]
     public static partial Terminal Identifier();
 
-    [Regex(@"""[^""]*""")]
-    public static partial Terminal QuotedString();
+    //[Regex(@"""[^""]*""")]
+    //public static partial Terminal QuotedString();
+    public static Terminal QuotedString() => _quotedString;
 
     [Regex(@"\d+")]
     public static partial Terminal Number();
 
-    [Regex(@"(\s*(\/\/[^\n]*)|\s+)*")]
-    public static partial Terminal Trivia();
+    //[Regex(@"(\s*(\/\/[^\n]*)|\s+)*")]
+    //public static partial Terminal Trivia();
+    public static Terminal Trivia() => _trivia;
+
+    private sealed record QuotedStringMatcher() : Terminal(Kind: "QuotedString")
+    {
+        public override int TryMatch(string input, int startPos)
+        {
+            if (startPos >= input.Length)
+                return -1;
+
+            var i = startPos;
+            var c = input[i];
+
+            if (c != '\"')
+                return -1;
+
+            for (i++; i < input.Length; i++)
+            {
+                c = input[i];
+
+                if (c == '\\' && peek() != '\0')
+                    i++;
+                else if (c == '\n')
+                    return -1;
+                else if (c == '\"')
+                {
+                    i++;
+                    break;
+                }
+            }
+
+            return i - startPos;
+            char peek() => i + 1 < input.Length ? input[i + 1] : '\0';
+        }
+
+        public override string ToString() => @"QuotedString";
+    }
+
+    private static readonly Terminal _quotedString = new QuotedStringMatcher();
+
+    private sealed record TriviaMatcher() : Terminal(Kind: "Trivia")
+    {
+        public override int TryMatch(string input, int startPos)
+        {
+            var i = startPos;
+            for (; i < input.Length; i++)
+            {
+                var c = input[i];
+
+                if (char.IsWhiteSpace(c))
+                    continue;
+
+                if (c == '/' && peek() == '/')
+                {
+                    for (i += 2; i < input.Length && (c = input[i]) != '\n'; i++)
+                        ;
+                    i--;
+                }
+                else
+                    return i - startPos;
+            }
+
+            return i - startPos;
+            char peek() => i + 1 < input.Length ? input[i + 1] : '\0';
+        }
+
+        public override string ToString() => @"Trivia";
+    }
+
+    private static readonly Terminal _trivia = new TriviaMatcher();
 }
 
 public class DotParser
@@ -128,15 +198,15 @@ public class DotParser
             ], "Subgraph")
         };
 
-        _parser.Rules["Assignment"] = new Rule[]
-        {
+        _parser.Rules["Assignment"] =
+        [
             new Seq([
                 DotTerminals.Identifier(),
                 new Literal("="),
                 new Ref("Value"),
                 new Literal(";")
             ], "Assignment")
-        };
+        ];
 
         _parser.Rules["AttributeList"] = new Rule[]
         {
@@ -290,6 +360,56 @@ public static class DotParserExtensions
 [TestClass]
 public class DotTests
 {
+    [TestMethod]
+    public void TriviaMatcherTest()
+    {
+        var matcher = DotTerminals.Trivia();
+
+        test(startPos: 0, expectedLen: 18, "  // Top to Bottom");
+        test(startPos: 1, expectedLen: 24, ";  // Top to Bottom\r\n    n");
+        test(startPos: 0, expectedLen: 20, "  // Top to Bottom\r\n/ ");
+        test(startPos: 0, expectedLen: 21, "  // Top to Bottom\r\n ");
+        test(startPos: 0, expectedLen: 20, "  // Top to Bottom\n ");
+        test(startPos: 0, expectedLen:  4, "  //");
+        test(startPos: 0, expectedLen:  2, "  /");
+        test(startPos: 0, expectedLen:  2, "  ");
+        test(startPos: 1, expectedLen:  1, "  ");
+        test(startPos: 2, expectedLen:  0, "  ");
+        test(startPos: 4, expectedLen:  0, "  ");
+        test(startPos: 0, expectedLen: 0, "we");
+        test(startPos: 0, expectedLen: 1, "\rwe");
+        test(startPos: 1, expectedLen: 0, "we");
+        test(startPos: 0, expectedLen: 31, "  // 1212 \r\n // 534534\r\n// 1212");
+
+        return;
+        void test(int startPos, int expectedLen, string input)
+        {
+            Assert.AreEqual(expectedLen, matcher.TryMatch(input, startPos));
+        }
+    }
+
+    [TestMethod]
+    public void QuotedStringTest()
+    {
+        var matcher = DotTerminals.QuotedString();
+
+        test(startPos: 0, expectedLen: -1, "123");
+        test(startPos: 0, expectedLen: 10, "\"23456789\"");
+        test(startPos: 1, expectedLen: 10, " \"23456789\"");
+        test(startPos: 1, expectedLen: 12, """
+             "23\"456789""23\"456789"
+            """);
+        test(startPos: 1, expectedLen: 16, """
+            ="23\"\n4\r56789"
+            """);
+
+        return;
+        void test(int startPos, int expectedLen, string input)
+        {
+            Assert.AreEqual(expectedLen, matcher.TryMatch(input, startPos));
+        }
+    }
+
     [TestMethod]
     public void ParseComplexGraph()
     {
