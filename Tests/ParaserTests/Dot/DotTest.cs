@@ -102,9 +102,16 @@ public class DotTests
             .FirstOrDefault(e => e.FromNode == "PRInMaster" && e.ToNode == "AutoCherrypick");
 
         Assert.IsNotNull(targetEdge, "Не найден переход PRInMaster -> AutoCherrypick");
-        Assert.IsTrue(targetEdge.Attributes.Any(a =>
-            a.Name == "ТестовыйАтрибут" && a.Value == "42"),
-            "Не найден атрибут ТестовыйАтрибут=42");
+        Assert.IsTrue(targetEdge.Attributes is
+            [
+                { Name: "label", Value: DotQuotedString { Value: "PR master прошёл успешно" } },
+                { Name: "ТестовыйАтрибут", Value: DotNumber { Value: 42 } }
+            ],
+            $"""
+
+            Ожидались атрибуты: label="PR master прошёл успешно" и ТестовыйАтрибут=42.
+            Реальные атрибуты: {string.Join(", ", targetEdge.Attributes)}
+            """);
         return;
 
         void assertStatementsCount<T>(

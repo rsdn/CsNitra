@@ -35,7 +35,7 @@ public record DotSubgraph(string Name, IReadOnlyList<DotStatement> Statements) :
     public override string ToString() => $"subgraph {Name} {{\n{string.Join("\n", Statements)}\n}}";
 }
 
-public record DotAttribute(string Name, string Value) : DotAst
+public record DotAttribute(string Name, DotTerminalNode Value) : DotAst
 {
     public override string ToString() => $"{Name}={Value}";
 }
@@ -53,16 +53,16 @@ public record DotIdentifier(string Value, int StartPos, int EndPos) : DotTermina
 }
 
 public record DotQuotedString(string Value, string RawValue, int StartPos, int EndPos)
-    : DotTerminalNode("QuotedString", StartPos, EndPos)
+    : DotTerminalNode(Kind: "QuotedString", StartPos: StartPos, EndPos: EndPos)
 {
     public DotQuotedString(ReadOnlySpan<char> span, int startPos, int endPos)
-        : this(ProcessQuotedString(span), span.Slice(1, span.Length - 2).ToString(), startPos, endPos)
+        : this(Value: ProcessQuotedString(span), RawValue: span[1..^1].ToString(), StartPos: startPos, EndPos: endPos)
     {
     }
 
     private static string ProcessQuotedString(ReadOnlySpan<char> span)
     {
-        var content = span.Slice(1, span.Length - 2);
+        var content = span[1..^1];
         var result = new StringBuilder();
 
         for (int i = 0; i < content.Length; i++)
@@ -107,9 +107,7 @@ public record DotQuotedString(string Value, string RawValue, int StartPos, int E
                 }
             }
             else
-            {
                 result.Append(content[i]);
-            }
         }
 
         return result.ToString();

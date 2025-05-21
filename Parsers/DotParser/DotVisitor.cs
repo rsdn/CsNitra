@@ -35,7 +35,7 @@ public class DotVisitor(string input) : ISyntaxVisitor
         {
             "Graph" => new DotGraph(
                 ((DotIdentifier)children[1]).Value,
-                FlattenStatements(children.Skip(3).Take(children.Count - 4))
+                flattenStatements(children.Skip(3).Take(children.Count - 4))
             ),
             "NodeStatement" => new DotNodeStatement(
                 ((DotIdentifier)children[0]).Value,
@@ -48,7 +48,7 @@ public class DotVisitor(string input) : ISyntaxVisitor
             ),
             "Subgraph" => new DotSubgraph(
                 ((DotIdentifier)children[1]).Value,
-                FlattenStatements(children.Skip(3).Take(children.Count - 4))
+                flattenStatements(children.Skip(3).Take(children.Count - 4))
             ),
             "Assignment" => new DotAssignment(
                 ((DotIdentifier)children[0]).Value,
@@ -58,7 +58,7 @@ public class DotVisitor(string input) : ISyntaxVisitor
             "Statements" => processZeroOrMany(children),
             "Attribute" => new DotAttribute(
                 ((DotIdentifier)children[0]).Value,
-                children[2] is DotQuotedString qs ? qs.Value : children[2].ToString()
+                (DotTerminalNode)children[2]
             ),
             "AttributeRest" => (DotAttribute)children[1],
             "AttributeRestList" => children.Count switch
@@ -98,19 +98,18 @@ public class DotVisitor(string input) : ISyntaxVisitor
             }
             return new DotStatementList(statements);
         }
-    }
-
-    private List<DotStatement> FlattenStatements(IEnumerable<DotAst> nodes)
-    {
-        var result = new List<DotStatement>();
-        foreach (var node in nodes)
+        static List<DotStatement> flattenStatements(IEnumerable<DotAst> nodes)
         {
-            if (node is DotStatementList list)
-                result.AddRange(list.Statements);
-            else if (node is DotStatement statement)
-                result.Add(statement);
+            var result = new List<DotStatement>();
+            foreach (var node in nodes)
+            {
+                if (node is DotStatementList list)
+                    result.AddRange(list.Statements);
+                else if (node is DotStatement statement)
+                    result.Add(statement);
+            }
+            return result;
         }
-        return result;
     }
 
     public void Visit(SomeNode node)

@@ -10,8 +10,8 @@ public class DotParser
     {
         _parser = new Parser(DotTerminals.Trivia());
 
-        _parser.Rules["Graph"] = new Rule[]
-        {
+        _parser.Rules["Graph"] =
+        [
             new Seq([
                 new Literal("digraph"),
                 DotTerminals.Identifier(),
@@ -19,28 +19,28 @@ public class DotParser
                 new ZeroOrMany(new Ref("Statement"), Kind: "Statements"),
                 new Literal("}")
             ], "Graph")
-        };
+        ];
 
-        _parser.Rules["Statement"] = new Rule[]
-        {
+        _parser.Rules["Statement"] =
+        [
             new Ref("NodeStatement"),
             new Ref("EdgeStatement"),
             new Ref("Subgraph"),
             new Ref("Assignment"),
             new Ref("AttributeList")
-        };
+        ];
 
-        _parser.Rules["NodeStatement"] = new Rule[]
-        {
+        _parser.Rules["NodeStatement"] =
+        [
             new Seq([
                 DotTerminals.Identifier(),
                 new Optional(new Ref("AttributeList")),
                 new Literal(";")
             ], "NodeStatement")
-        };
+        ];
 
-        _parser.Rules["EdgeStatement"] = new Rule[]
-        {
+        _parser.Rules["EdgeStatement"] =
+        [
             new Seq([
                 DotTerminals.Identifier(),
                 new Literal("->"),
@@ -48,10 +48,10 @@ public class DotParser
                 new Optional(new Ref("AttributeList")),
                 new Literal(";")
             ], "EdgeStatement")
-        };
+        ];
 
-        _parser.Rules["Subgraph"] = new Rule[]
-        {
+        _parser.Rules["Subgraph"] =
+        [
             new Seq([
                 new Literal("subgraph"),
                 DotTerminals.Identifier(),
@@ -59,7 +59,7 @@ public class DotParser
                 new ZeroOrMany(new Ref("Statement"), Kind: "Statements"),
                 new Literal("}")
             ], "Subgraph")
-        };
+        ];
 
         _parser.Rules["Assignment"] =
         [
@@ -71,8 +71,8 @@ public class DotParser
             ], "Assignment")
         ];
 
-        _parser.Rules["AttributeList"] = new Rule[]
-        {
+        _parser.Rules["AttributeList"] =
+        [
             new Seq([
                 new Literal("["),
                 new Ref("Attribute"),
@@ -82,23 +82,23 @@ public class DotParser
                 ], "AttributeRest"), "AttributeRestList"),
                 new Literal("]")
             ], "AttributeList")
-        };
+        ];
 
-        _parser.Rules["Attribute"] = new Rule[]
-        {
+        _parser.Rules["Attribute"] =
+        [
             new Seq([
                 DotTerminals.Identifier(),
                 new Literal("="),
                 new Ref("Value")
             ], "Attribute")
-        };
+        ];
 
-        _parser.Rules["Value"] = new Rule[]
-        {
+        _parser.Rules["Value"] =
+        [
             DotTerminals.Identifier(),
             DotTerminals.QuotedString(),
             DotTerminals.Number()
-        };
+        ];
 
         _parser.BuildTdoppRules();
     }
