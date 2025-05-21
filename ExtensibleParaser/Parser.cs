@@ -1,6 +1,5 @@
 ﻿#nullable enable
 
-using System.Data.Common;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -10,6 +9,7 @@ namespace ExtensibleParaser;
 
 public class Parser(Terminal trivia, Log? log = null)
 {
+#pragma warning disable IDE0079 // Remove unnecessary suppression
 #pragma warning disable CA2211 // Non-constant fields should not be visible
     /// <summary>
     /// Используется только для отладки. Позволяет отображать разобранный код в наследниках Node не храня в нем входной строки.
@@ -18,6 +18,7 @@ public class Parser(Terminal trivia, Log? log = null)
     [Obsolete("This field should be used for debugging purposes only. Do not use it in the visitor parser itself.")]
     public static string? Input;
 #pragma warning restore CA2211 // Non-constant fields should not be visible
+#pragma warning restore IDE0079 // Remove unnecessary suppression
 
     public int ErrorPos { get; private set; }
     public FatalError ErrorInfo { get; private set; }

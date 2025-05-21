@@ -7,8 +7,6 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 
 using Regex;
-
-using System.Diagnostics;
 using System.Text;
 
 namespace TerminalGenerator

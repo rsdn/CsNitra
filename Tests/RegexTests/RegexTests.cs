@@ -1,34 +1,30 @@
-﻿using System;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Diagnostics;
-using Newtonsoft.Json.Linq;
 
 using Tests.Extensions;
 
 namespace Regex;
 
 [TestClass]
-public class RegexParserTests
+public class RegexTests
 {
     [TestInitialize]
     public void Setup()
     {
-        //Trace.Listeners.Add(new ConsoleTraceListener());
         Trace.AutoFlush = true;
     }
 
-    //[TestMethod]
+    [TestMethod, Ignore]
     public void DfaConstruction_3()
     {
-        // Arrange
         var pattern = @"(//[^\n]*(\n|$)|\s)*";
         var parser = new RegexParser(pattern);
         var regexNode = parser.Parse();
         var log = new Log();
-        var nfa = new NfaBuilder().Build(regexNode);
-        var q0 = new DfaBuilder(log).Build(nfa.StartState);
+        var startState = new NfaBuilder().Build(regexNode).StartState;
+        var q0 = new DfaBuilder(log).Build(startState);
 
-        NfaToDot.GenerateSvg(nfa.StartState, pattern, $"regex_NFA.svg");
+        NfaToDot.GenerateSvg(startState, pattern, $"regex_NFA.svg");
         DfaToDot.GenerateSvg(q0, pattern, $"regex_DFA.svg");
 
         if (!(q0.Transitions is [_, DfaTransition { Condition: RegexChar { Value: '/' }, Target: var q2 }]))
@@ -66,9 +62,9 @@ public class RegexParserTests
         Assert.IsInstanceOfType(node, typeof(LetterCharClass));
         var letterClass = (LetterCharClass)node;
 
-        Assert.IsTrue(letterClass.Matches('я'));   // Русская буква
-        Assert.IsTrue(letterClass.Matches('漢'));  // Китайский иероглиф
-        Assert.IsFalse(letterClass.Matches('5')); // Не буква
+        Assert.IsTrue(letterClass.Matches('я'));
+        Assert.IsTrue(letterClass.Matches('漢'));
+        Assert.IsFalse(letterClass.Matches('5'));
     }
 
     [TestMethod]
@@ -101,7 +97,7 @@ public class RegexParserTests
     public void NfaConstruction()
     {
         var parser = new RegexParser("a|b");
-        var nfa = new NfaBuilder().Build(parser.Parse());
+        var startState = new NfaBuilder().Build(parser.Parse()).StartState;
 
         const string expected = """
         State 0:
@@ -118,7 +114,7 @@ public class RegexParserTests
           ε -> State 1
         """;
 
-        var actual = NfaPrinter.Print(nfa.StartState).Trim();
+        var actual = NfaPrinter.Print(startState).Trim();
         Assert.AreEqual(expected.Trim().NormalizeEol(), actual.NormalizeEol());
     }
 
@@ -137,8 +133,8 @@ public class RegexParserTests
     public void DfaConstruction()
     {
         var parser = new RegexParser("a|b");
-        var nfa = new NfaBuilder().Build(parser.Parse());
-        var dfa = new DfaBuilder().Build(nfa.StartState);
+        var startState = new NfaBuilder().Build(parser.Parse()).StartState;
+        var dfa = new DfaBuilder().Build(startState);
 
         const string expected = """
         State 0:
@@ -233,12 +229,12 @@ public class RegexParserTests
         {
             var parser = new RegexParser(Pattern);
             var regexNode = parser.Parse();
-            var nfa = new NfaBuilder().Build(regexNode);
+            var startState = new NfaBuilder().Build(regexNode).StartState;
             
             if (log != null)
-                NfaToDot.GenerateSvg(nfa.StartState, Pattern, $"regex_{caseIndex:D2}_NFA.svg");
+                NfaToDot.GenerateSvg(startState, Pattern, $"regex_{caseIndex:D2}_NFA.svg");
             
-            var dfa = new DfaBuilder(log).Build(nfa.StartState);
+            var dfa = new DfaBuilder(log).Build(startState);
 
             if (log != null)
                 DfaToDot.GenerateSvg(dfa, Pattern, $"regex_{caseIndex:D2}_DFA.svg");

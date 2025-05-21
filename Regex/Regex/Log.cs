@@ -1,6 +1,8 @@
 ﻿using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
+#pragma warning disable IDE0130 // Namespace does not match folder structure
+
 namespace Diagnostics;
 
 public enum LogImportance
@@ -10,14 +12,9 @@ public enum LogImportance
     High,
 }
 
-public sealed class Log
+public sealed class Log(LogImportance importance = LogImportance.Non)
 {
-    public Log(LogImportance importance = LogImportance.Non)
-    {
-        Importance = importance;
-    }
-
-    public LogImportance Importance { get; set; } = LogImportance.Normal;
+    public LogImportance Importance { get; set; } = importance;
 
     public void Info(string text, LogImportance importance = LogImportance.Normal, [CallerMemberName] string? memberName = null, [CallerLineNumber] int line = 0)
     {
