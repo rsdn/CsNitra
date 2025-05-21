@@ -157,7 +157,7 @@ public class Parser(Terminal trivia, Log? log = null)
             Log($"Starting at {currentStartPos} i={i} parse for rule '{startRule}' _recoverySkipPos={_recoverySkipPos}");
             var normalResult = ParseRule(startRule, minPrecedence: 0, startPos: currentStartPos, input);
 
-            if (normalResult.TryGetSuccess(out var node, out var newPos) && newPos == input.Length)
+            if (normalResult.TryGetSuccess(out _, out var newPos) && newPos == input.Length)
                 return normalResult;
 
             ErrorInfo = (input, ErrorPos, Location: input.PositionToLineCol(ErrorPos), _expected.ToArray());

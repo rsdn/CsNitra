@@ -1,6 +1,6 @@
 ﻿#nullable enable
 
-namespace CalcTest;
+namespace Calc;
 
 using Diagnostics;
 using ExtensibleParaser;
@@ -11,7 +11,7 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 
 [TestClass]
-public class ParserTests
+public class CalcTests
 {
     private class ExprBuilderVisitor(string input) : ISyntaxVisitor
     {

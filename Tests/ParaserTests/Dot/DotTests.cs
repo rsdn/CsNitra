@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Runtime.CompilerServices;
+using System.Text;
 
 namespace Dot;
 
@@ -102,18 +103,46 @@ public class DotTests
             .FirstOrDefault(e => e.FromNode == "PRInMaster" && e.ToNode == "AutoCherrypick");
 
         Assert.IsNotNull(targetEdge, "Не найден переход PRInMaster -> AutoCherrypick");
-        Assert.IsTrue(targetEdge.Attributes is
+        checkAttributes(
+            targetEdge.Attributes is
             [
                 { Name: "label", Value: DotQuotedString { Value: "PR master прошёл успешно" } },
                 { Name: "ТестовыйАтрибут", Value: DotNumber { Value: 42 } }
             ],
-            $"""
+            targetEdge.Attributes,
+            "Переход PRInMaster -> AutoCherrypick");
 
-            Ожидались атрибуты: label="PR master прошёл успешно" и ТестовыйАтрибут=42.
-            Реальные атрибуты: {string.Join(", ", targetEdge.Attributes)}
-            """);
+        // Проверка атрибутов узла Closed
+        var closedNode = mainNodes.FirstOrDefault(n => n.NodeId == "Closed");
+        Assert.IsNotNull(closedNode, "Не найден узел Closed");
+
+        checkAttributes(
+            closedNode.Attributes is 
+            [
+                { Name: "label", Value: DotQuotedString { Value: "Закрыто" } },
+                { Name: "fillcolor", Value: DotQuotedString { Value: "lightgreen" } },
+                { Name: "style", Value: DotQuotedString { Value: "filled" } }
+            ],
+            closedNode.Attributes,
+            "Узел Closed");
+
         return;
 
+        void checkAttributes(
+            bool condition,
+            IReadOnlyList<DotAttribute> actualAttributes,
+            string elementDescription,
+            [CallerArgumentExpression(nameof(condition))] string? expression = null)
+        {
+            if (!condition)
+            {
+                Assert.Fail($"""
+                Проверка не пройдена для {elementDescription}.
+                Выражение: {expression}
+                Фактические атрибуты: {string.Join(", ", actualAttributes)}
+                """);
+            }
+        }
         void assertStatementsCount<T>(
             int expected,
             int actual,

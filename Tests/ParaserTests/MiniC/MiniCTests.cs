@@ -428,13 +428,8 @@ public partial class MiniCTests
         Trace.WriteLine($"\n=== TEST START: {input} ===");
 
         var parseResult = _parser.Parse(input, startRule, out _);
-        if (!parseResult.TryGetSuccess(out var node, out var pos))
+        if (!parseResult.TryGetSuccess(out var node, out _))
         {
-            var errorPos = _parser.ErrorPos;
-            var contextStart = Math.Max(0, errorPos - 10);
-            var contextLength = Math.Min(20, input.Length - contextStart);
-            var context = input.Substring(contextStart, contextLength);
-
             Trace.WriteLine($"❌ Parse FAILED. {_parser.ErrorInfo.GetErrorText()}");
             Assert.Fail($"Parse failed for: {input}");
             return;
