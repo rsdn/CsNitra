@@ -10,13 +10,16 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="Extensions\**" />
     <Compile Remove="Regex\**" />
+    <EmbeddedResource Remove="Extensions\**" />
     <EmbeddedResource Remove="Regex\**" />
+    <None Remove="Extensions\**" />
     <None Remove="Regex\**" />
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="..\Extensions\StringExtensions.cs" Link="Extensions\StringExtensions.cs" />
+    <Compile Include="..\..\Shared\StringExtensions.cs" Link="Shared\StringExtensions.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -30,8 +33,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Extensions\" />
-    <Folder Include="Extensions\" />
+    <Folder Include="Shared\" />
   </ItemGroup>
 
 </Project>

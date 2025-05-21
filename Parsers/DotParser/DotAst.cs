@@ -55,12 +55,12 @@ public record DotIdentifier(string Value, int StartPos, int EndPos) : DotTermina
 public record DotQuotedString(string Value, string RawValue, int StartPos, int EndPos)
     : DotTerminalNode(Kind: "QuotedString", StartPos: StartPos, EndPos: EndPos)
 {
-    public DotQuotedString(ReadOnlySpan<char> span, int startPos, int endPos)
+    public DotQuotedString(ChatRef span, int startPos, int endPos)
         : this(Value: ProcessQuotedString(span), RawValue: span[1..^1].ToString(), StartPos: startPos, EndPos: endPos)
     {
     }
 
-    private static string ProcessQuotedString(ReadOnlySpan<char> span)
+    private static string ProcessQuotedString(ChatRef span)
     {
         var content = span[1..^1];
         var result = new StringBuilder();

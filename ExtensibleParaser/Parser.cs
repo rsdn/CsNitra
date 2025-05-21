@@ -481,7 +481,7 @@ public class Parser(Terminal trivia, Log? log = null)
         return Result.Success(new SeqNode(zeroOrMany.Kind ?? "ZeroOrMany", elements, startPos, currentPos), currentPos, maxFailPos);
     }
 
-    private static ReadOnlySpan<char> Preview(string input, int pos, int len = 5) => pos >= input.Length
+    private static ChatRef Preview(string input, int pos, int len = 5) => pos >= input.Length
         ? "«»"
         : $"«{input.AsSpan(pos, Math.Min(input.Length - pos, len))}»";
 
