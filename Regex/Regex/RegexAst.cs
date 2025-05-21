@@ -12,7 +12,7 @@ public abstract record RegexNode
 public record RegexChar(char Value) : RegexNode
 {
     public override string ToString(int precedence) =>
-        Value.ToString().Replace("\\", "\\\\");
+        Value.ToString().Replace(@"\", @"\\").Replace("\r", @"\r").Replace("\n", @"\n").Replace("\t", @"\t");
 }
 
 public record RegexAnyChar : RegexNode
@@ -47,7 +47,7 @@ public record RangesCharClass(CharRange[] Ranges, bool Negated) : RegexCharClass
 
     public override bool Matches(char c) => Ranges.Any(r => c >= r.From && c <= r.To) ^ Negated;
 
-    private static string EscapeChar(char c) => c switch
+    public static string EscapeChar(char c) => c switch
     {
         '\\' => @"\\",
         ']' => @"\]",
@@ -56,6 +56,7 @@ public record RangesCharClass(CharRange[] Ranges, bool Negated) : RegexCharClass
         '\t' => @"\t",
         '\n' => @"\n",
         '\r' => @"\r",
+        '$' => @"\$",
         _ when char.IsControl(c) => $"\\u{(int)c:X4}",
         _ => c.ToString()
     };
@@ -142,4 +143,9 @@ public record NegatedCharClassGroup(List<RegexCharClass> Classes) : RegexCharCla
 {
     public override string ToString(int precedence) => $"[^{string.Join("", Classes)}]";
     public override bool Matches(char c) => !Classes.Any(cls => cls.Matches(c));
+}
+
+public record RegexEndOfLine : RegexNode
+{
+    public override string ToString(int precedence) => "¶";
 }

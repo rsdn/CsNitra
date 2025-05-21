@@ -2,7 +2,7 @@
 
 namespace System.Runtime.CompilerServices;
 
-public static class Extensions
+internal static class Extensions
 {
     public static void Deconstruct<TKey, TValue>(
         this KeyValuePair<TKey, TValue> pair,
@@ -12,6 +12,17 @@ public static class Extensions
         key = pair.Key;
         value = pair.Value;
     }
+}
+
+[AttributeUsage(AttributeTargets.Parameter, AllowMultiple = false, Inherited = false)]
+internal sealed class CallerArgumentExpressionAttribute : Attribute
+{
+    public CallerArgumentExpressionAttribute(string parameterName)
+    {
+        ParameterName = parameterName;
+    }
+
+    public string ParameterName { get; }
 }
 
 #endif

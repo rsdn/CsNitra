@@ -4,6 +4,17 @@ namespace Regex;
 
 public static class Dot
 {
+    public static string Dot2Svg(string dotType, string dotContent, string outputPath)
+    {
+        var fullOutputPath = Path.GetFullPath(outputPath);
+        var dotFile = Path.ChangeExtension(fullOutputPath, ".dot");
+
+        File.WriteAllText(dotFile, dotContent);
+        Dot.GenerateSvg(dotFile, fullOutputPath);
+        Trace.TraceInformation($"{dotType} diagram writen into: {fullOutputPath}");
+        return fullOutputPath;
+    }
+
     public static void GenerateSvg(string dotFilePath, string outputSvgPath)
     {
         var processStartInfo = new ProcessStartInfo
@@ -27,8 +38,9 @@ public static class Dot
     }
 
     public static string EscapeLabel(string input) => input
-        .Replace("\\", "\\\\")
+        .Replace(@"\", @"\\")
         .Replace("\"", "\\\"")
-        .Replace("\n", "\\n")
+        .Replace("\n", @"\n")
+        .Replace("$", @"\$")
         .Replace("\r", "\\r");
 }

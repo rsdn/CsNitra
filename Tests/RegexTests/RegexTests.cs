@@ -1,17 +1,56 @@
 ﻿using System.Diagnostics;
 using Diagnostics;
+
 using Tests.Extensions;
 
 namespace Regex;
 
 [TestClass]
-public class RegexParserTests
+public class RegexTests
 {
     [TestInitialize]
     public void Setup()
     {
-        //Trace.Listeners.Add(new ConsoleTraceListener());
         Trace.AutoFlush = true;
+    }
+
+    [TestMethod, Ignore]
+    public void DfaConstruction_3()
+    {
+        var pattern = @"(//[^\n]*(\n|$)|\s)*";
+        var parser = new RegexParser(pattern);
+        var regexNode = parser.Parse();
+        var log = new Log();
+        var startState = new NfaBuilder().Build(regexNode).StartState;
+        var q0 = new DfaBuilder(log).Build(startState);
+
+        NfaToDot.GenerateSvg(startState, pattern, $"regex_NFA.svg");
+        DfaToDot.GenerateSvg(q0, pattern, $"regex_DFA.svg");
+
+        if (!(q0.Transitions is [_, DfaTransition { Condition: RegexChar { Value: '/' }, Target: var q2 }]))
+            throw new InvalidCastException($@"DFA start state has no transition by '/'");
+
+        if (!(q2.Transitions is [DfaTransition { Condition: RegexChar { Value: '/' }, Target: var q3 }]))
+            throw new InvalidCastException($@"DFA start state has no transition by '/'");
+
+        var expectedTransitions = q3.Transitions.Where(t =>
+            t.Condition is NegatedCharClassGroup { Classes: [RangesCharClass { Ranges: [CharRange { From: '\n', To: '\n' }] }] }
+                        or RegexChar { Value: '/' }).ToArray();
+
+        const int expectedTransitionCount = 2;
+        Assert.AreEqual(expectedTransitionCount, expectedTransitions.Length);
+
+        if (q3.Transitions.Count == expectedTransitionCount)
+            return;
+
+        var unexpectedTransitions = q3.Transitions.Except(expectedTransitions).ToArray();
+
+        Trace.TraceInformation("Unexpected Transitions of q3:");
+        foreach (var unexpected in unexpectedTransitions)
+            Trace.TraceInformation($"    «{unexpected.Condition}» -> q{unexpected.Target.Id}");
+
+        int count = unexpectedTransitions.Length;
+        Assert.AreEqual(expected: 0, count, $"Unexpected transition ({count}): [{string.Join<DfaTransition>(", ", unexpectedTransitions)}]");
     }
 
     [TestMethod]
@@ -23,9 +62,9 @@ public class RegexParserTests
         Assert.IsInstanceOfType(node, typeof(LetterCharClass));
         var letterClass = (LetterCharClass)node;
 
-        Assert.IsTrue(letterClass.Matches('я'));   // Русская буква
-        Assert.IsTrue(letterClass.Matches('漢'));  // Китайский иероглиф
-        Assert.IsFalse(letterClass.Matches('5')); // Не буква
+        Assert.IsTrue(letterClass.Matches('я'));
+        Assert.IsTrue(letterClass.Matches('漢'));
+        Assert.IsFalse(letterClass.Matches('5'));
     }
 
     [TestMethod]
@@ -58,7 +97,7 @@ public class RegexParserTests
     public void NfaConstruction()
     {
         var parser = new RegexParser("a|b");
-        var nfa = new NfaBuilder().Build(parser.Parse());
+        var startState = new NfaBuilder().Build(parser.Parse()).StartState;
 
         const string expected = """
         State 0:
@@ -75,16 +114,27 @@ public class RegexParserTests
           ε -> State 1
         """;
 
-        var actual = NfaPrinter.Print(nfa.StartState).Trim();
+        var actual = NfaPrinter.Print(startState).Trim();
         Assert.AreEqual(expected.Trim().NormalizeEol(), actual.NormalizeEol());
+    }
+
+    [TestMethod]
+    public void EscapedBracket_InCharClass()
+    {
+        var parser = new RegexParser(@"[\]\n]"); // Должен распознать ']' и '\n'
+        var node = parser.Parse();
+        Assert.IsTrue(node is RangesCharClass);
+        var ranges = ((RangesCharClass)node).Ranges;
+        Assert.AreEqual(']', ranges[0].From); // Проверяем, что ']' добавлен
+        Assert.AreEqual('\n', ranges[1].From); // Проверяем '\n'
     }
 
     [TestMethod]
     public void DfaConstruction()
     {
         var parser = new RegexParser("a|b");
-        var nfa = new NfaBuilder().Build(parser.Parse());
-        var dfa = new DfaBuilder().Build(nfa.StartState);
+        var startState = new NfaBuilder().Build(parser.Parse()).StartState;
+        var dfa = new DfaBuilder().Build(startState);
 
         const string expected = """
         State 0:
@@ -99,16 +149,32 @@ public class RegexParserTests
     }
 
     [TestMethod]
+    public void EscapeSequences_InCharClass()
+    {
+        var parser = new RegexParser(@"[\n\r\t]");
+        var node = parser.Parse();
+        Assert.IsInstanceOfType<RangesCharClass>(node);
+        var ranges = ((RangesCharClass)node).Ranges;
+        Assert.AreEqual('\n', ranges[0].From);
+        Assert.AreEqual('\r', ranges[1].From);
+        Assert.AreEqual('\t', ranges[2].From);
+    }
+
+    [TestMethod]
     public void DfaMatching()
     {
         var testCases = new[]
         {
+            //(Start: 0, Pattern: @"(//[^\n]*(\n|$)|\s)*",  Input: "  // Top to Bottom",       Expected: 18),
+            (Start: 1, Pattern: @"(//[^\n]*(\n|$)|\s)*",  Input: ";  // Top to Bottom\r\n    n", Expected: 24),
+                                                                 //012345678901234567 8 901234567890
+                                                                 //          10          20
+            (Start: 0, Pattern: @"(//[^\n]*(\n|$)|\s)*",  Input: "  // Top to Bottom\r\n/ ", Expected: 20),
+            (Start: 0, Pattern: @"(//[^\n]*(\n|$)|\s)*",  Input: "  // Top to Bottom\r\n ",  Expected: 21),
+            (Start: 0, Pattern: @"(//[^\n]*(\n|$)|\s)*",  Input: "  // Top to Bottom\n ",    Expected: 20),
             (Start: 0, Pattern: @"[\\\/*+\-<=>!@#$%^&]+", Input: ";",         Expected: -1),
             (Start: 0, Pattern: @"[\\\/*+\-<=>!@#$%^&]+", Input: @"\/-",      Expected: 3),
             (Start: 0, Pattern: @"[\\\/*+\-<=>!@#$%^&]+", Input: @"\/-;",     Expected: 3),
-            (Start: 0, Pattern: @"[\l_]\w*",              Input: "_ifField",  Expected: 8),
-            (Start: 0, Pattern: @"[\l_]\w*",              Input: "ifField",   Expected: 7),
-            (Start: 0, Pattern: @"[\l_]\w*",              Input: "1ifField",  Expected: -1),
             (Start: 0, Pattern: @"\d*",                   Input: "1ifField",  Expected: 1),
             (Start: 0, Pattern: "a+",                     Input: "aaa",       Expected: 3),
             (Start: 0, Pattern: "a+",                     Input: "aaax",      Expected: 3),
@@ -118,7 +184,6 @@ public class RegexParserTests
             (Start: 0, Pattern: "a*",                     Input: "aaa",       Expected: 3),
             (Start: 1, Pattern: "a*",                     Input: "xaaay",     Expected: 3),
             (Start: 0, Pattern: "a|b",                    Input: "a",         Expected: 1),
-            (Start: 0, Pattern: @"[\l_]\w*",              Input: "_ifField",  Expected: 8),
             (Start: 0, Pattern: @"\w+",                   Input: "мама",      Expected: 4),
             (Start: 0, Pattern: @"\d+",                   Input: "123",       Expected: 3),
             (Start: 0, Pattern: "[a-c]",                  Input: "c",         Expected: 1),
@@ -136,11 +201,15 @@ public class RegexParserTests
             (Start: 0, Pattern: @"[^\W\d]+",              Input: "1234",      Expected: -1),
             (Start: 0, Pattern: @"[^\W\d]+",              Input: "мама",      Expected: 4),
             (Start: 0, Pattern: @"[^\W\d]+",              Input: "qwerty",    Expected: 6),
-            (Start: 0, Pattern: @"[^\W\d]+",              Input: "!@#$%",     Expected: -1),
+            (Start: 0, Pattern: @"[^\W\d]+",              Input: @"!@#\$%",     Expected: -1),
             (Start: 0, Pattern: @"\\[0-da-fA-f][0-da-fA-f]",                          Input: @"\F0",   Expected: 3),
             (Start: 0, Pattern: @"\\[0-da-fA-f][0-da-fA-f][0-da-fA-f]?[0-da-fA-f]?",  Input: @"\F0",   Expected: 3),
             (Start: 0, Pattern: @"\\[0-da-fA-f][0-da-fA-f][0-da-fA-f]?[0-da-fA-f]?",  Input: @"\F0A",  Expected: 4),
             (Start: 0, Pattern: @"\\[0-da-fA-f][0-da-fA-f][0-da-fA-f]?[0-da-fA-f]?",  Input: @"\F0A9", Expected: 5),
+            (Start: 0, Pattern: @"[\l_]\w*",              Input: "_ifField",  Expected: 8),
+            (Start: 0, Pattern: @"[\l_]\w*",              Input: "ifField",   Expected: 7),
+            (Start: 0, Pattern: @"[\l_]\w*",              Input: "1ifField",  Expected: -1),
+            (Start: 0, Pattern: @"[\l_]\w*",              Input: "_ifField",  Expected: 8),
         };
 
         var i = 0;
@@ -160,12 +229,12 @@ public class RegexParserTests
         {
             var parser = new RegexParser(Pattern);
             var regexNode = parser.Parse();
-            var nfa = new NfaBuilder().Build(regexNode);
+            var startState = new NfaBuilder().Build(regexNode).StartState;
             
             if (log != null)
-                NfaToDot.GenerateSvg(nfa.StartState, Pattern, $"regex_{caseIndex:D2}_NFA.svg");
+                NfaToDot.GenerateSvg(startState, Pattern, $"regex_{caseIndex:D2}_NFA.svg");
             
-            var dfa = new DfaBuilder(log).Build(nfa.StartState);
+            var dfa = new DfaBuilder(log).Build(startState);
 
             if (log != null)
                 DfaToDot.GenerateSvg(dfa, Pattern, $"regex_{caseIndex:D2}_DFA.svg");

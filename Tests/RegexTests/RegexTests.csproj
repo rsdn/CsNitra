@@ -1,0 +1,27 @@
+<Project Sdk="MSTest.Sdk/3.6.4">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseVSTest>true</UseVSTest>
+    <RootNamespace>Regex</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Extensions\StringExtensions.cs" Link="Extensions\StringExtensions.cs" />
+  </ItemGroup>
+
+    <ItemGroup>
+
+        <ProjectReference Include="..\..\Regex\Regex\Regex.csproj" OutputItemType="Analyzer" />
+
+    </ItemGroup>
+
+    <ItemGroup>
+      <Folder Include="Extensions\" />
+      <Folder Include="Extensions\" />
+    </ItemGroup>
+
+</Project>

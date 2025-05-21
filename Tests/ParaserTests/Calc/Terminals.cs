@@ -1,7 +1,7 @@
 ﻿
 using ExtensibleParaser;
 
-namespace CalcTest;
+namespace Calc;
 
 [TerminalMatcher]
 public static partial class Terminals

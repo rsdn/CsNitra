@@ -23,8 +23,18 @@ public class NfaBuilder
         RegexPlus p => BuildPlus(p),
         RegexOptional o => BuildOptional(o),
         RegexGroup g => BuildNode(g.Node),
+        RegexEndOfLine => BuildEndOfLine(),
         _ => throw new NotSupportedException()
     };
+
+    private (NfaState StartState, NfaState EndState) BuildEndOfLine()
+    {
+        var start = CreateState();
+        var end = CreateState();
+        // Создаем переход, который активируется только при конце строки
+        start.Transitions.Add(new NfaTransition(end, new RegexEndOfLine()));
+        return (start, end);
+    }
 
     private (NfaState StartState, NfaState EndState) BuildSingle(RegexNode node)
     {
@@ -36,14 +46,22 @@ public class NfaBuilder
 
     private (NfaState StartState, NfaState EndState) BuildConcat(RegexConcat concat)
     {
-        if (concat.Nodes.Count == 0) return (CreateState(), CreateState());
+        if (concat.Nodes.Count == 0)
+            return (CreateState(), CreateState());
+
         var (currentStart, currentEnd) = BuildNode(concat.Nodes[0]);
+
         foreach (var node in concat.Nodes.Skip(1))
         {
+            if (@"[^[\n]]*" == node.ToString())
+            {
+            }
+
             var (nextStart, nextEnd) = BuildNode(node);
             currentEnd.Transitions.Add(new NfaTransition(nextStart));
             currentEnd = nextEnd;
         }
+
         return (currentStart, currentEnd);
     }
 

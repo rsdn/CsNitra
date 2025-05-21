@@ -1,28 +1,11 @@
-﻿using System.Diagnostics;
-using System.Text;
+﻿using System.Text;
 
 namespace Regex;
 
 public class NfaToDot
 {
-    public static void GenerateSvg(NfaState startState, string regexPattern, string outputPath)
-    {
-        var dotContent = GenerateDot(startState, regexPattern);
-        var tempDotFile = Path.GetTempFileName();
-
-        try
-        {
-            var fullOutputPath = Path.GetFullPath(outputPath);
-            File.WriteAllText(tempDotFile, dotContent);
-            Dot.GenerateSvg(tempDotFile, fullOutputPath);
-            Trace.TraceInformation($"DFA diagram writen into: {fullOutputPath}");
-        }
-        finally
-        {
-            if (File.Exists(tempDotFile))
-                File.Delete(tempDotFile);
-        }
-    }
+    public static void GenerateSvg(NfaState startState, string regexPattern, string outputPath) =>
+        Dot.Dot2Svg("NFA", GenerateDot(startState, regexPattern), outputPath);
 
     public static string GenerateDot(NfaState startState, string regexPattern)
     {
@@ -39,7 +22,7 @@ public class NfaToDot
                 labeljust=left;
                 
                 start [shape=point, style=invis];
-                start -> q{{startState.Id}} [label="start"];
+                start -> s{{startState.Id}} [label="start"];
             
             """);
 
@@ -57,13 +40,13 @@ public class NfaToDot
 
         // Финализируем состояние
         if (state.IsFinal)
-            dot.AppendLine($"    q{state.Id} [peripheries=2];");
+            dot.AppendLine($"    s{state.Id} [peripheries=2];");
 
         // Добавляем переходы
         foreach (var transition in state.Transitions)
         {
             var label = Dot.EscapeLabel(transition.Condition?.ToString() ?? "ε");
-            dot.AppendLine($$"""    q{{state.Id}} -> q{{transition.Target.Id}} [label="{{label}}"];""");
+            dot.AppendLine($$"""    s{{state.Id}} -> s{{transition.Target.Id}} [label="{{label}}"];""");
             VisitState(transition.Target, dot, visited);
         }
     }
