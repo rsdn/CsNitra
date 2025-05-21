@@ -20,6 +20,8 @@
 
   <ItemGroup>
 
+    <ProjectReference Include="..\..\Parsers\DotParser\DotParser.csproj" />
+
     <ProjectReference Include="..\..\Regex\Regex\Regex.csproj" OutputItemType="Analyzer" />
     <ProjectReference Include="..\..\TerminalGenerator\TerminalGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\..\ExtensibleParaser\ExtensibleParaser.csproj" />
@@ -27,6 +29,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Folder Include="Extensions\" />
     <Folder Include="Extensions\" />
   </ItemGroup>
 

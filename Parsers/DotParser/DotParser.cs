@@ -107,7 +107,7 @@ public class DotParser
     {
         var result = _parser.Parse(input, "Graph", out _);
         if (!result.TryGetSuccess(out var node, out _))
-            throw new InternalTestFailureException($"❌ Parse FAILED. {_parser.ErrorInfo.GetErrorText()}");
+            throw new InvalidOperationException($"❌ Parse FAILED. {_parser.ErrorInfo.GetErrorText()}");
 
         var visitor = new DotVisitor(input);
         node.Accept(visitor);
