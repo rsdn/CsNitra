@@ -9,13 +9,13 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <Compile Include="..\..\Shared\NetStandard2_0Support.cs" Link="Shared\NetStandard2_0Support.cs" />
+      <Compile Include="..\..\..\Shared\NetStandard2_0Support.cs" Link="Shared\NetStandard2_0Support.cs" />
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\..\ExtensibleParaser\ExtensibleParaser.csproj" />
-        <ProjectReference Include="..\..\Regex\Regex\Regex.csproj" OutputItemType="Analyzer" />
-        <ProjectReference Include="..\..\TerminalGenerator\TerminalGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+        <ProjectReference Include="..\..\..\ExtensibleParaser\ExtensibleParaser.csproj" />
+        <ProjectReference Include="..\..\..\Regex\Regex\Regex.csproj" OutputItemType="Analyzer" />
+        <ProjectReference Include="..\..\..\TerminalGenerator\TerminalGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     </ItemGroup>
 
     <ItemGroup>
