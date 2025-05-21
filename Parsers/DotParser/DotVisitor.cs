@@ -74,7 +74,7 @@ public class DotVisitor(string input) : ISyntaxVisitor
         return;
         DotAttribute[] getAttributes(List<DotAst> children)
         {
-            if (children is [DotLiteral { Value: "[" }, .. var attributes, DotLiteral { Value: "]" }])
+            if (children.ToArray() is [DotLiteral { Value: "[" }, .. var attributes, DotLiteral { Value: "]" }])
                 return attributes.SelectMany(x => x switch
                 {
                     DotAttribute a => [a],

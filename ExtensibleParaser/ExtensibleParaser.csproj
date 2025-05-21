@@ -1,13 +1,28 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <LangVersion>preview</LangVersion>
-  </PropertyGroup>
+    <PropertyGroup>
+        <TargetFramework>netstandard2.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <LangVersion>preview</LangVersion>
+    </PropertyGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\Regex\Regex\Regex.csproj" />
-  </ItemGroup>
+    <!--<ItemGroup>
+        <PackageReference Include="IsExternalInit" Version="1.0.3">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+    </ItemGroup>-->
+    
+    <ItemGroup>
+      <Compile Include="..\Shared\NetStandard2_0Support.cs" Link="Shared\NetStandard2_0Support.cs" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Regex\Regex\Regex.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <Folder Include="Shared\" />
+    </ItemGroup>
 </Project>
