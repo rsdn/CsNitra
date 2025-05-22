@@ -66,3 +66,4 @@ $tf/
 *.VC.db
 *.VC.opendb
 *.VC.VC.opendb
+/Parsers/Dot/WiWorkflow/wf.svg

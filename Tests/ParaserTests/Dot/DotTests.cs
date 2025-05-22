@@ -60,7 +60,7 @@ public class DotTests
     public void ParseDotGraph()
     {
         var parser = new DotParser();
-        var graph = parser.Parse(ParseComplexGraph_DotText);
+        var graph = parser.ParseDotGraph(ParseComplexGraph_DotText);
 
         // Проверка количества узлов в основном графе (исключая управляющие конструкции)
         var mainNodes = graph.Statements
