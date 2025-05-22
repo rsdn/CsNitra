@@ -65,7 +65,7 @@ public class DotTests
         // Проверка количества узлов в основном графе (исключая управляющие конструкции)
         var mainNodes = graph.Statements
             .OfType<DotNodeStatement>()
-            .Where(n => !n.NodeId.StartsWith("node") && !n.NodeId.StartsWith("edge"))
+            .Where(n => !n.Name.StartsWith("node") && !n.Name.StartsWith("edge"))
             .ToList();
 
         assertStatementsCount(
@@ -113,7 +113,7 @@ public class DotTests
             "Переход PRInMaster -> AutoCherrypick");
 
         // Проверка атрибутов узла Closed
-        var closedNode = mainNodes.FirstOrDefault(n => n.NodeId == "Closed");
+        var closedNode = mainNodes.FirstOrDefault(n => n.Name == "Closed");
         Assert.IsNotNull(closedNode, "Не найден узел Closed");
 
         checkAttributes(

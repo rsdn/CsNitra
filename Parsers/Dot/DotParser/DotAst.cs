@@ -14,9 +14,9 @@ public record DotGraph(string Name, IReadOnlyList<DotStatement> Statements) : Do
 
 public abstract record DotStatement : DotAst;
 
-public record DotNodeStatement(string NodeId, IReadOnlyList<DotAttribute> Attributes) : DotStatement
+public record DotNodeStatement(string Name, IReadOnlyList<DotAttribute> Attributes) : DotStatement
 {
-    public override string ToString() => $"{NodeId} {AttributesToString()};";
+    public override string ToString() => $"{Name} {AttributesToString()};";
     private string AttributesToString() => Attributes.Count > 0
         ? $"[{string.Join(", ", Attributes)}]"
         : "";
