@@ -688,12 +688,6 @@ public class Parser(Terminal trivia, Log? log = null)
                 }
                 else
                 {
-                    // Восстановление: пропускаем до следующего элемента
-                    if (currentPos >= ErrorPos)
-                    {
-                        _expected.Add(listRule.Separator as Terminal);
-                        ErrorPos = currentPos;
-                    }
                     Log($"Missing separator at {currentPos}. Recovery mode: {recoveryMode}");
                     return Result.Failure(maxFailPos);
                 }
@@ -708,11 +702,6 @@ public class Parser(Terminal trivia, Log? log = null)
             if (!elemResult.TryGetSuccess(out var elemNode, out currentPos))
             {
                 // Восстановление: создаем ошибку для пропущенного элемента
-                if (currentPos >= ErrorPos)
-                {
-                    _expected.Add(listRule.Element as Terminal);
-                    ErrorPos = sepPos;
-                }
                 var errorNode = new TerminalNode("Error", sepPos, sepPos, 0, IsRecovery: true);
                 elements.Add(errorNode);
                 Log($"Missing element after separator at {sepPos}");

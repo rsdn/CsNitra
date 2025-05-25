@@ -381,6 +381,27 @@ public partial class MiniCTests
     );
 
     [TestMethod]
+    public void FunctionCallWithOneComaOneArgs() => TestMiniC(
+        "Expr",
+        "func(1,)",
+        "Call: func(1)"
+    );
+
+    [TestMethod]
+    public void FunctionCallWithTwoComasOneArgs() => TestMiniC(
+        "Expr",
+        "func(1, ,)",
+        "Call: func(1, «Error: expected Expr»)"
+    );
+
+    [TestMethod]
+    public void FunctionCallWithThreeComasComaWithTwoArgs() => TestMiniC(
+        "Expr",
+        "func(1, , , 2)",
+        "Call: func(1, «Error: expected Expr», «Error: expected Expr», 2)"
+    );
+
+    [TestMethod]
     public void FunctionCallWithArgs() => TestMiniC(
         "Expr",
         "func(1, 2, 3)",
