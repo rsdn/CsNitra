@@ -203,8 +203,8 @@ public record NotPredicate(Rule PredicateRule, Rule MainRule) : Rule("!")
 public record SeparatedList(
     Rule Element,
     Rule Separator,
-    bool IsSeparatorOptional,
-    bool CanBeEmpty,
+    bool IsSeparatorOptional = true,
+    bool CanBeEmpty = true,
     string? Kind = null
 ) : Rule(Kind ?? nameof(SeparatedList))
 {
