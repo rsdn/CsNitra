@@ -1,14 +1,11 @@
-﻿#nullable enable
+﻿using Dot;
 
-using System;
-using System.IO;
-using System.Linq;
-using System.Text;
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.Text;
-using ExtensibleParaser;
-using Dot;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Text;
+
+using System.Collections.Immutable;
+using System.Text;
 
 namespace WorkflowGenerator;
 
@@ -22,72 +19,141 @@ public class WfGenerator : IIncrementalGenerator
                 "Workflow.WorkflowAttribute",
                 (node, _) => node is ClassDeclarationSyntax,
                 (ctx, _) => (
-                    Class: (INamedTypeSymbol)ctx.TargetSymbol,
-                    DotFileName: ctx.Attributes[0].ConstructorArguments[0].Value!.ToString()
+                    Symbol: (INamedTypeSymbol)ctx.TargetSymbol,
+                    FileName: GetAttributeFileName(ctx.Attributes, "WorkflowAttribute"),
+                    Syntax: (ClassDeclarationSyntax)ctx.TargetNode
                 ))
-            .Where(t => t.DotFileName != null);
+            .Where(t => t.FileName != null);
 
         var eventRecords = context.SyntaxProvider
             .ForAttributeWithMetadataName(
                 "Workflow.WorkflowEventAttribute",
                 (node, _) => node is RecordDeclarationSyntax,
-                (ctx, _) => (Record: (INamedTypeSymbol)ctx.TargetSymbol, ctx));
+                (ctx, _) => (
+                    Symbol: (INamedTypeSymbol)ctx.TargetSymbol,
+                    FileName: GetAttributeFileName(ctx.Attributes, "WorkflowEventAttribute"),
+                    Syntax: (RecordDeclarationSyntax)ctx.TargetNode,
+                    Context: ctx
+                ));
 
         var additionalTexts = context.AdditionalTextsProvider.Collect();
 
         context.RegisterSourceOutput(workflowClasses.Combine(additionalTexts),
-            (spc, source) => ProcessWorkflow(spc, source.Left, source.Right));
+            (spc, source) => ProcessSymbolWithDotFile(
+                spc,
+                source.Left.Symbol,
+                source.Left.FileName!,
+                source.Right,
+                source.Left.Syntax,
+                GenerateStateMachine));
 
         context.RegisterSourceOutput(eventRecords.Combine(additionalTexts),
-            (spc, source) => ProcessEvents(spc, source.Left, source.Right));
+            (spc, source) => ProcessSymbolWithDotFile(
+                spc,
+                source.Left.Symbol,
+                source.Left.FileName!,
+                source.Right,
+                source.Left.Syntax,
+                (ctx, symbol, graph) => GenerateEventRecords(ctx, symbol, graph)));
     }
 
-    private void ProcessWorkflow(
-        SourceProductionContext context,
-        (INamedTypeSymbol Class, string DotFileName) workflow,
-        System.Collections.Immutable.ImmutableArray<AdditionalText> additionalTexts)
+    private static string? GetAttributeFileName(ImmutableArray<AttributeData> attributes, string attributeName)
     {
-        var dotFile = additionalTexts.FirstOrDefault(f =>
-            Path.GetFileName(f.Path) == workflow.DotFileName);
+        if (attributes.Length == 0)
+            return null;
 
-        if (dotFile == null) return;
+        var attribute = attributes[0];
+        if (attribute.ConstructorArguments.Length != 1)
+            return null;
+
+        return attribute.ConstructorArguments[0].Value?.ToString();
+    }
+
+    private void ProcessSymbolWithDotFile(
+        SourceProductionContext context,
+        INamedTypeSymbol symbol,
+        string dotFileName,
+        ImmutableArray<AdditionalText> additionalTexts,
+        SyntaxNode syntaxNode,
+        Action<SourceProductionContext, INamedTypeSymbol, DotGraph> generateAction)
+    {
+        if (!ValidateFileName(context, dotFileName, syntaxNode))
+            return;
+
+        var dotFile = FindDotFile(context, dotFileName, additionalTexts, syntaxNode);
+        if (dotFile == null)
+            return;
 
         try
         {
             var parser = new DotParser();
             var graph = parser.ParseDotGraph(dotFile.GetText()!.ToString());
-            GenerateStateMachine(context, workflow.Class, graph);
+            generateAction(context, symbol, graph);
         }
         catch (Exception ex)
         {
-            context.ReportDiagnostic(Diagnostic.Create(
-                new DiagnosticDescriptor("WF002", "Error", ex.Message, "Workflow", DiagnosticSeverity.Error, true),
-                Location.None));
+            ReportError(context, "WF002", $"Error processing DOT file: {ex.Message}", syntaxNode);
         }
     }
 
-    private void ProcessEvents(
+    private static bool ValidateFileName(
         SourceProductionContext context,
-        (INamedTypeSymbol Record, GeneratorAttributeSyntaxContext Context) eventRecord,
-        System.Collections.Immutable.ImmutableArray<AdditionalText> additionalTexts)
+        string fileName,
+        SyntaxNode syntaxNode)
+    {
+        if (string.IsNullOrEmpty(fileName))
+        {
+            ReportError(context, "WF003",
+                "File name argument cannot be null or empty",
+                syntaxNode);
+            return false;
+        }
+        return true;
+    }
+
+    private static AdditionalText? FindDotFile(
+        SourceProductionContext context,
+        string dotFileName,
+        ImmutableArray<AdditionalText> additionalTexts,
+        SyntaxNode syntaxNode)
     {
         var dotFile = additionalTexts.FirstOrDefault(f =>
-            Path.GetFileName(f.Path) == "wf.dot");
+            Path.GetFileName(f.Path) == dotFileName);
 
-        if (dotFile == null) return;
+        if (dotFile == null)
+        {
+            var attributeSyntax = syntaxNode.DescendantNodes()
+                .OfType<AttributeSyntax>()
+                .FirstOrDefault();
 
-        try
-        {
-            var parser = new DotParser();
-            var graph = parser.ParseDotGraph(dotFile.GetText()!.ToString());
-            GenerateEventRecords(context, eventRecord.Record, graph);
+            ReportError(context, "WF001",
+                $"Workflow definition file '{dotFileName}' not found. If the file exists, " +
+                "ensure its 'Build Action' is set to 'C# analyzer additional file'",
+                attributeSyntax?.ArgumentList?.Arguments.FirstOrDefault() ?? syntaxNode);
         }
-        catch (Exception ex)
-        {
-            context.ReportDiagnostic(Diagnostic.Create(
-                new DiagnosticDescriptor("WF002", "Error", ex.Message, "Workflow", DiagnosticSeverity.Error, true),
-                Location.None));
-        }
+
+        return dotFile;
+    }
+
+    private static void ReportError(
+        SourceProductionContext context,
+        string id,
+        string message,
+        SyntaxNode? syntaxNode)
+    {
+        var location = syntaxNode != null
+            ? syntaxNode.GetLocation()
+            : Location.None;
+
+        context.ReportDiagnostic(Diagnostic.Create(
+            new DiagnosticDescriptor(
+                id,
+                "Error",
+                message,
+                "Workflow",
+                DiagnosticSeverity.Error,
+                true),
+            location));
     }
 
     private void GenerateStateMachine(
@@ -194,7 +260,6 @@ public class WfGenerator : IIncrementalGenerator
             
             {{automaton}}
             """;
-
         context.AddSource($"{workflowClass.Name}.g.cs", SourceText.From(fullCode, Encoding.UTF8));
     }
 
