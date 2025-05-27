@@ -5,6 +5,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Text;
 
 namespace WorkflowGenerator;
@@ -86,6 +87,7 @@ public class WfGenerator : IIncrementalGenerator
 
         try
         {
+            //Debugger.Launch();
             var parser = new DotParser();
             var graph = parser.ParseDotGraph(dotFile.GetText()!.ToString());
             generateAction(context, symbol, graph);
@@ -191,7 +193,7 @@ public class WfGenerator : IIncrementalGenerator
             """;
 
         var switchCases = new StringBuilder();
-        var eventMethods = new StringBuilder();
+        var eventMethodMap = new Dictionary<string, string>();
         foreach (var t in transitions)
         {
             var eventName = SanitizeName(t.Event);
@@ -203,10 +205,12 @@ public class WfGenerator : IIncrementalGenerator
                             return isAccepted ? WfState.{{t.To}} : WfState.{{t.From}};
             """);
 
-            eventMethods.AppendLine($$"""
-                partial void On{{eventName}}({{eventType}} @event, WfState oldState, WfState newState, ref bool isAccepted);
-            """);
+            if (!eventMethodMap.ContainsKey(eventName))
+                eventMethodMap.Add(eventName, $$"""
+                        partial void On{{eventName}}({{eventType}} @event, WfState oldState, WfState newState, ref bool isAccepted);
+                    """);
         }
+        var eventMethods = string.Join("\n", eventMethodMap.OrderBy(x => x.Key).Select(x => x.Value));
 
         var automaton = $$"""
             {{accessibility}} sealed partial class {{workflowClass.Name}}
