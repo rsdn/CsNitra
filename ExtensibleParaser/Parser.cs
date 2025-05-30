@@ -705,14 +705,3 @@ public class Parser(Terminal trivia, Log? log = null)
         );
     }
 }
-
-public static class Ext
-{
-    public static Result WithRecoveryState(this Result result, int errorPos)
-    {
-        if (result.TryGetSuccess(out var node, out var pos))
-            return Result.Success(node, pos, Math.Max(result.MaxFailPos, errorPos));
-
-        return Result.Failure(Math.Max(result.MaxFailPos, errorPos));
-    }
-}
