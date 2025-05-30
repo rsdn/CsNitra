@@ -9,6 +9,7 @@ namespace ExtensibleParaser;
 
 public class Parser(Terminal trivia, Log? log = null)
 {
+#pragma warning disable IDE0079 // Remove unnecessary suppression
 #pragma warning disable CA2211 // Non-constant fields should not be visible
     /// <summary>
     /// Используется только для отладки. Позволяет отображать разобранный код в наследниках Node не храня в нем входной строки.
@@ -17,8 +18,11 @@ public class Parser(Terminal trivia, Log? log = null)
     [Obsolete("This field should be used for debugging purposes only. Do not use it in the visitor parser itself.")]
     public static string? Input;
 #pragma warning restore CA2211 // Non-constant fields should not be visible
+#pragma warning restore IDE0079 // Remove unnecessary suppression
 
     public int ErrorPos { get; private set; }
+    public FatalError ErrorInfo { get; private set; }
+
     private int _recoverySkipPos = -1;
     private FollowSetCalculator? _followCalculator;
 
@@ -30,7 +34,7 @@ public class Parser(Terminal trivia, Log? log = null)
 
     [Conditional("TRACE")]
     private void Log(string message, LogImportance importance = LogImportance.Normal, [CallerMemberName] string? memberName = null, [CallerLineNumber] int line = 0) =>
-        Logger?.Info($"{memberName} ({line}): {message}", importance);
+        Logger?.Info($"{memberName} {line}: {message}", importance);
 
     public Dictionary<string, Rule[]> Rules { get; } = new();
     public Dictionary<string, TdoppRule> TdoppRules { get; } = new();
@@ -154,22 +158,22 @@ public class Parser(Terminal trivia, Log? log = null)
             Log($"Starting at {currentStartPos} i={i} parse for rule '{startRule}' _recoverySkipPos={_recoverySkipPos}");
             var normalResult = ParseRule(startRule, minPrecedence: 0, startPos: currentStartPos, input);
 
-            if (normalResult.TryGetSuccess(out var node, out var newPos) && newPos == input.Length)
+            if (normalResult.TryGetSuccess(out _, out var newPos) && newPos == input.Length)
                 return normalResult;
 
+            ErrorInfo = (input, ErrorPos, Location: input.PositionToLineCol(ErrorPos), _expected.ToArray());
 
             if (ErrorPos <= oldErrorPos)
             {
                 // Recovery in recovery rules mode failed.
                 // TODO: Implement panic mode recovery for this case.
-
                 var debugInfos = MemoizationVisualazer(input);
 
                 Log($"Parse failed. Memoization table:");
                 foreach (var info in debugInfos)
                     Log($"    {info.Info}");
                 Log($"and of memoization table.");
-                Guard.IsTrue(ErrorPos > oldErrorPos, $"ErrorPos ({ErrorPos}) > oldErrorPos ({oldErrorPos})");
+                return normalResult;
             }
 
             _recoverySkipPos = ErrorPos;
@@ -478,7 +482,7 @@ public class Parser(Terminal trivia, Log? log = null)
         return Result.Success(new SeqNode(zeroOrMany.Kind ?? "ZeroOrMany", elements, startPos, currentPos), currentPos, maxFailPos);
     }
 
-    private static ReadOnlySpan<char> Preview(string input, int pos, int len = 5) => pos >= input.Length
+    private static ChatRef Preview(string input, int pos, int len = 5) => pos >= input.Length
         ? "«»"
         : $"«{input.AsSpan(pos, Math.Min(input.Length - pos, len))}»";
 

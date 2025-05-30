@@ -7,8 +7,6 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 
 using Regex;
-
-using System.Diagnostics;
 using System.Text;
 
 namespace TerminalGenerator
@@ -86,10 +84,16 @@ namespace TerminalGenerator
                         var methodModifiers = methodSyntax.Modifiers.ToString(); // "public" и т.д.
                         var returnType = methodSyntax.ReturnType;
                         //Debugger.Launch();
+                        if (regexPattern == @"//[^\n]*(\n|$)|\s)*")
+                        {
+                            //Debugger.Launch();
+                        }
+
                         var parser = new RegexParser(regexPattern);
                         var regexNode = parser.Parse();
                         var nfa = new NfaBuilder().Build(regexNode);
                         var dfa = new DfaBuilder(log).Build(nfa.StartState);
+
 
                         var code = GenerateDfaCode(dfa, startIndent: 3);
 
@@ -196,16 +200,16 @@ namespace TerminalGenerator
             """);
 
             sb.AppendLine($$"""
-            }
-            if (!transitionFound)
-                break;
-        }
+                    }
+                    if (!transitionFound)
+                        break;
+                }
 
-        if (lastAccept != -1)
-            return lastAccept - startPos;
+                if (lastAccept != -1)
+                    return lastAccept - startPos;
 
-        return {{(start.IsFinal ? $"currentState == {start.Id} /* start.Id && start.IsFinal */ ? 0 : -1;" : "-1;")}}
-        """);
+                return {{(start.IsFinal ? $"currentState == {start.Id} /* start.Id && start.IsFinal */ ? 0 : -1;" : "-1;")}}
+                """);
 
             return indent.Apply(sb).ToString();
 
@@ -216,15 +220,15 @@ namespace TerminalGenerator
                 {
                     var condition = generateTransitionCondition(transition.Condition);
                     sb.AppendLine($$"""
-            if ({{condition}})
-            {
-                currentState = {{transition.Target.Id}};
-                currentPos++;
-                {{(transition.Target.IsFinal ? "lastAccept = currentPos;" : "")}}
-                transitionFound = true;
-                continue;
-            }
-            """);
+                        if ({{condition}})
+                        {
+                            currentState = {{transition.Target.Id}};
+                            currentPos++;
+                            {{(transition.Target.IsFinal ? "lastAccept = currentPos;" : "")}}
+                            transitionFound = true;
+                            continue;
+                        }
+                        """);
                 }
                 sb.Append("transitionFound = false;");
                 return indent.Apply(sb).ToString();
@@ -235,6 +239,7 @@ namespace TerminalGenerator
                     {
                         RegexChar rc => $"""c == '{EscapeChar(rc.Value)}'""",
                         RegexAnyChar => "true",
+                        RangesCharClass rcc when rcc.ToString() == "[^[\\n]]" => "c != '\\n'",
                         RangesCharClass rcc => GenerateRangeCondition(rcc),
                         WordCharClass wcc => $"""{(wcc.Negated ? "!" : "")}(char.IsLetterOrDigit(c) || c == '_')""",
                         DigitCharClass dcc => $"""{(dcc.Negated ? "!" : "")}char.IsDigit(c)""",
@@ -248,6 +253,9 @@ namespace TerminalGenerator
 
         private static string GenerateRangeCondition(RangesCharClass rcc)
         {
+            if (rcc.ToString() == "[^[\\n]]") // Специальный случай для [^\n]
+                return rcc.Negated ? "c == '\\n'" : "c != '\\n'";
+
             var conditions = rcc.Ranges
                 .Select(r => r.From == r.To
                     ? $"""c == '{EscapeChar(r.From)}'"""

@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿
+using System.Diagnostics;
 
 namespace ExtensibleParaser;
 
@@ -9,7 +10,7 @@ public interface ISyntaxNode
     int EndPos { get; }
     bool IsRecovery { get; }
     void Accept(ISyntaxVisitor visitor);
-    ReadOnlySpan<char> AsSpan(string input);
+    ChatRef AsSpan(string input);
     string ToString(string input);
 }
 
@@ -27,7 +28,7 @@ public interface ISyntaxVisitor
 public abstract record Node(string Kind, int StartPos, int EndPos, bool IsRecovery = false) : ISyntaxNode
 {
     public int Length => EndPos - StartPos;
-    public virtual ReadOnlySpan<char> AsSpan(string input) => input.AsSpan(StartPos, EndPos - StartPos);
+    public virtual ChatRef AsSpan(string input) => input.AsSpan(StartPos, EndPos - StartPos);
     public virtual string ToString(string input) => input[StartPos..EndPos];
     public abstract void Accept(ISyntaxVisitor visitor);
 
@@ -65,7 +66,7 @@ public abstract record Node(string Kind, int StartPos, int EndPos, bool IsRecove
 
 public record TerminalNode(string Kind, int StartPos, int EndPos, int ContentLength, bool IsRecovery = false) : Node(Kind, StartPos, EndPos, IsRecovery)
 {
-    public override ReadOnlySpan<char> AsSpan(string input) => input.AsSpan(StartPos, ContentLength);
+    public override ChatRef AsSpan(string input) => input.AsSpan(StartPos, ContentLength);
     public override string ToString(string input) => input.Substring(StartPos, ContentLength);
     public override void Accept(ISyntaxVisitor visitor) => visitor.Visit(this);
     public override string ToString() => $"{Kind}Terminal([{StartPos},{StartPos + ContentLength}), «{DebugContent() ?? Kind}»)";

@@ -29,22 +29,8 @@ public class DfaToDot
         return dot.ToString();
     }
 
-    public static void GenerateSvg(DfaState startState, string regexPattern, string outputPath)
-    {
-        var dotContent = GenerateDot(startState, regexPattern);
-        var tempDotFile = Path.GetTempFileName();
-
-        try
-        {
-            File.WriteAllText(tempDotFile, dotContent);
-            Dot.GenerateSvg(tempDotFile, outputPath);
-        }
-        finally
-        {
-            if (File.Exists(tempDotFile))
-                File.Delete(tempDotFile);
-        }
-    }
+    public static void GenerateSvg(DfaState startState, string regexPattern, string outputPath) =>
+        Dot.Dot2Svg("DFA", GenerateDot(startState, regexPattern), outputPath);
 
     private static void VisitState(DfaState state, StringBuilder dot, HashSet<int> visited)
     {

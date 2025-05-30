@@ -15,5 +15,13 @@ public static class Guard
             throw new InvalidOperationException($"Assertion failed. Expression [{expr}] bust be true!");
     }
 
+    public static void AreEqual<T>(T? expected, T? actual, [CallerArgumentExpression(nameof(actual))] string? actualExpr = null)
+    {
+        if (!Equals(expected, actual))
+        {
+            throw new InvalidOperationException($"Assertion failed for: «{actualExpr}». Expected «{expected}» Actual: «{actual}».");
+        }
+    }
+
     public static void Fail(string message) => throw new InvalidOperationException(message);
 }

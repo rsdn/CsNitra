@@ -5,7 +5,7 @@ VisualStudioVersion = 17.13.35825.156
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ExtensibleParaser", "ExtensibleParaser\ExtensibleParaser.csproj", "{DA07822B-4292-43D0-BF14-DBA54FFC042C}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Tests", "Tests\Tests.csproj", "{F4425031-73A3-42A6-92B1-4877832C18B2}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ParaserTests", "Tests\ParaserTests\ParaserTests.csproj", "{F4425031-73A3-42A6-92B1-4877832C18B2}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{02EA681E-C7D8-13C7-8484-4AC65E1B71E8}"
 	ProjectSection(SolutionItems) = preProject
@@ -16,6 +16,14 @@ EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TerminalGenerator", "TerminalGenerator\TerminalGenerator.csproj", "{688DD31C-5C27-4FB9-851C-21DE6A83E624}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Regex", "Regex\Regex\Regex.csproj", "{2F33393E-1EC0-55C8-592E-3F21F33DBC23}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RegexTests", "Tests\RegexTests\RegexTests.csproj", "{B9E7A277-8B03-4B58-B46E-F489F34BC7DB}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{BFC5E780-F61A-4D8B-84BF-939EB831FD84}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Psrsers", "Psrsers", "{CAB1ED79-7BF8-4523-A747-DB4DB117D1D3}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DotParser", "Parsers\DotParser\DotParser.csproj", "{6D15C9FA-85B9-454C-BDD3-1023839374D4}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -57,9 +65,30 @@ Global
 		{2F33393E-1EC0-55C8-592E-3F21F33DBC23}.Release|Any CPU.Build.0 = Release|Any CPU
 		{2F33393E-1EC0-55C8-592E-3F21F33DBC23}.Release|x64.ActiveCfg = Release|Any CPU
 		{2F33393E-1EC0-55C8-592E-3F21F33DBC23}.Release|x64.Build.0 = Release|Any CPU
+		{B9E7A277-8B03-4B58-B46E-F489F34BC7DB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B9E7A277-8B03-4B58-B46E-F489F34BC7DB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B9E7A277-8B03-4B58-B46E-F489F34BC7DB}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{B9E7A277-8B03-4B58-B46E-F489F34BC7DB}.Debug|x64.Build.0 = Debug|Any CPU
+		{B9E7A277-8B03-4B58-B46E-F489F34BC7DB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B9E7A277-8B03-4B58-B46E-F489F34BC7DB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B9E7A277-8B03-4B58-B46E-F489F34BC7DB}.Release|x64.ActiveCfg = Release|Any CPU
+		{B9E7A277-8B03-4B58-B46E-F489F34BC7DB}.Release|x64.Build.0 = Release|Any CPU
+		{6D15C9FA-85B9-454C-BDD3-1023839374D4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6D15C9FA-85B9-454C-BDD3-1023839374D4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6D15C9FA-85B9-454C-BDD3-1023839374D4}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{6D15C9FA-85B9-454C-BDD3-1023839374D4}.Debug|x64.Build.0 = Debug|Any CPU
+		{6D15C9FA-85B9-454C-BDD3-1023839374D4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6D15C9FA-85B9-454C-BDD3-1023839374D4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6D15C9FA-85B9-454C-BDD3-1023839374D4}.Release|x64.ActiveCfg = Release|Any CPU
+		{6D15C9FA-85B9-454C-BDD3-1023839374D4}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{F4425031-73A3-42A6-92B1-4877832C18B2} = {BFC5E780-F61A-4D8B-84BF-939EB831FD84}
+		{B9E7A277-8B03-4B58-B46E-F489F34BC7DB} = {BFC5E780-F61A-4D8B-84BF-939EB831FD84}
+		{6D15C9FA-85B9-454C-BDD3-1023839374D4} = {CAB1ED79-7BF8-4523-A747-DB4DB117D1D3}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {1CFBB9ED-FF57-4990-B1C7-F31EB1F3BDAB}
