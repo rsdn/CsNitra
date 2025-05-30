@@ -104,7 +104,6 @@ public partial class MiniCTests
                 "RecoveryEmptyOperator" => makeMissingBinaryOperator(children),
                 "Neg" => new UnaryExpr("-", (Expr)children[1]!),
                 "AssignmentExpr" => new BinaryExpr("=", (Expr)children[0]!, (Expr)children[2]!),
-                "ArgsRest" => children[1]!, // Just return the expression part (skip the comma)
                 "ParamsRest" => children[1]!, // Just return the parameter part (skip the comma)
                 _ => throw new InvalidOperationException($"Unknown sequence: {node}: «{node.AsSpan(Input)}»")
             };
@@ -160,29 +159,45 @@ public partial class MiniCTests
             static List<Expr> getCallArguments(IReadOnlyList<Ast?> children)
             {
                 var args = new List<Expr>();
-                // First argument is after '('
-                if (children.Count > 2 && children[2] is Expr firstArg)
+                if (children.Count == 4 && children[2] is Args listArgs)
                 {
-                    args.Add(firstArg);
+                    args.AddRange(listArgs.Arguments);
                 }
 
-                // Additional arguments are in ZeroOrMany nodes
-                for (int i = 3; i < children.Count - 1; i++)
-                {
-                    if (children[i] is Block block)
-                    {
-                        args.AddRange(block.Statements.OfType<Expr>());
-                    }
-                    else if (children[i] is Expr expr)
-                    {
-                        args.Add(expr);
-                    }
-                }
                 return args;
             }
         }
 
+        public void Visit(ListNode node)
+        {
+            var items = VisitListItems<Expr>(node.Elements)
+                .ToList();
+
+            Result = node.Kind switch
+            {
+                "ParamsRest" => new Params(items.OfType<Identifier>().ToList()),
+                "ArgsRest" => new Args(items.OfType<Expr>().ToList()),
+                _ => throw new InvalidOperationException($"Unknown sequence: {node}: «{node.AsSpan(Input)}»")
+            };
+
+            Trace.WriteLine($"Processed list with {items.Count} elements");
+        }
+
         public void Visit(SomeNode node) => node.Value.Accept(this);
         public void Visit(NoneNode node) => Result = null;
+
+        private IEnumerable<Ast> VisitListItems<TAst>(IEnumerable<ISyntaxNode> nodes)
+            where TAst : Ast
+        {
+            foreach (var element in nodes)
+            {
+                element.Accept(this);
+
+                if (Result is TAst expr)
+                {
+                    yield return expr;
+                }
+            }
+        }
     }
 }
