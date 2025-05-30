@@ -203,18 +203,18 @@ public record NotPredicate(Rule PredicateRule, Rule MainRule) : Rule("!")
 public record SeparatedList(
     Rule Element,
     Rule Separator,
-    bool IsSeparatorOptional = true,
+    bool IsEndSeparatorOptional = true,
     bool CanBeEmpty = true,
     string? Kind = null
 ) : Rule(Kind ?? nameof(SeparatedList))
 {
-    public override string ToString() => $"({Element}; {Separator}{(IsSeparatorOptional ? "?" : "")})*{(CanBeEmpty ? "" : "+")}";
+    public override string ToString() => $"({Element}; {Separator}{(IsEndSeparatorOptional ? "?" : "")})*{(CanBeEmpty ? "" : "+")}";
 
     public override Rule InlineReferences(Dictionary<string, Rule> inlineableRules)
     {
         var inlinedElement = Element.InlineReferences(inlineableRules);
         var inlinedSeparator = Separator.InlineReferences(inlineableRules);
-        return new SeparatedList(inlinedElement, inlinedSeparator, IsSeparatorOptional, CanBeEmpty, Kind);
+        return new SeparatedList(inlinedElement, inlinedSeparator, IsEndSeparatorOptional, CanBeEmpty, Kind);
     }
 
     public override IEnumerable<Rule> GetSubRules<T>()

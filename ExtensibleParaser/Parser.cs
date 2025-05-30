@@ -632,34 +632,28 @@ public class Parser(Terminal trivia, Log? log = null)
 
         var elements = new List<ISyntaxNode>();
         int currentPos = startPos;
-        int maxFailPos = startPos;
-        var recoveryMode = currentPos == _recoverySkipPos;
-
-        // Обработка пустого списка
-        if (listRule.CanBeEmpty)
-        {
-            var firstElementResult = ParseAlternative(listRule.Element, currentPos, input);
-            if (firstElementResult.MaxFailPos > maxFailPos)
-                maxFailPos = firstElementResult.MaxFailPos;
-
-            if (!firstElementResult.IsSuccess)
-                return Result.Success(new ListNode(listRule.Kind, elements, startPos, currentPos), currentPos, maxFailPos);
-        }
 
         // Первый элемент
         var firstResult = ParseAlternative(listRule.Element, currentPos, input);
-        if (firstResult.MaxFailPos > maxFailPos)
-            maxFailPos = firstResult.MaxFailPos;
 
-        if (!firstResult.TryGetSuccess(out var firstNode, out currentPos))
+        if (!firstResult.TryGetSuccess(out var firstNode, out var newPos))
         {
             if (listRule.CanBeEmpty)
-                return Result.Success(new ListNode(listRule.Kind, elements, startPos, startPos), startPos, maxFailPos);
+            {
+                // Обработка пустого списка
+                return Result.Success(
+                    new ListNode(listRule.Kind, elements, startPos, startPos),
+                    newPos: startPos,
+                    maxFailPos: startPos);
+            }
 
             Log($"SeparatedList: first element required at {currentPos}");
-            return Result.Failure(maxFailPos).WithRecoveryState(ErrorPos);
+            return Result.Failure(firstResult.MaxFailPos);
         }
+
+        var maxFailPos = firstResult.MaxFailPos;
         elements.Add(firstNode);
+        currentPos = newPos;
 
         // Последующие элементы
         while (true)
@@ -669,57 +663,41 @@ public class Parser(Terminal trivia, Log? log = null)
             if (sepResult.MaxFailPos > maxFailPos)
                 maxFailPos = sepResult.MaxFailPos;
 
-            if (!sepResult.TryGetSuccess(out var sepNode, out var sepPos))
+            if (!sepResult.TryGetSuccess(out var sepNode, out newPos))
             {
-                if (listRule.IsSeparatorOptional)
+                if (listRule.IsEndSeparatorOptional)
                 {
-                    // В режиме восстановления пропускаем проверку разделителя
-                    if (recoveryMode) break;
-
-                    // Пытаемся найти элемент без разделителя
-                    var elemResult1 = ParseAlternative(listRule.Element, currentPos, input);
-                    if (elemResult1.MaxFailPos > maxFailPos)
-                        maxFailPos = elemResult1.MaxFailPos;
-
-                    if (!elemResult1.TryGetSuccess(out var elemNode1, out _))
-                        break;
-
-                    elements.Add(elemNode1);
+                    break;
                 }
                 else
                 {
-                    Log($"Missing separator at {currentPos}. Recovery mode: {recoveryMode}");
+                    Log($"Missing separator at {currentPos}.");
                     return Result.Failure(maxFailPos);
                 }
-                continue;
             }
 
+            // Добавляем разделитель как часть AST
+            elements.Add(sepNode);
+            currentPos = newPos;
+
             // Парсинг элемента после разделителя
-            var elemResult = ParseAlternative(listRule.Element, sepPos, input);
+            var elemResult = ParseAlternative(listRule.Element, currentPos, input);
             if (elemResult.MaxFailPos > maxFailPos)
                 maxFailPos = elemResult.MaxFailPos;
 
-            if (!elemResult.TryGetSuccess(out var elemNode, out currentPos))
+            if (!elemResult.TryGetSuccess(out var elemNode, out newPos))
             {
-                // Восстановление: создаем ошибку для пропущенного элемента
-                var errorNode = new TerminalNode("Error", sepPos, sepPos, 0, IsRecovery: true);
-                elements.Add(errorNode);
-                Log($"Missing element after separator at {sepPos}");
-                return Result.Success(
-                    new ListNode(listRule.Kind, elements, startPos, sepPos),
-                    sepPos,
-                    maxFailPos
-                ).WithRecoveryState(ErrorPos);
+                break;
             }
 
-            elements.Add(sepNode); // Добавляем разделитель как часть AST
             elements.Add(elemNode);
+            currentPos = newPos;
         }
 
         return Result.Success(
             new ListNode(listRule.Kind, elements, startPos, currentPos),
-            currentPos,
-            maxFailPos
+            newPos: currentPos,
+            maxFailPos: maxFailPos
         );
     }
 }

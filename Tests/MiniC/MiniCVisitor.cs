@@ -170,39 +170,34 @@ public partial class MiniCTests
 
         public void Visit(ListNode node)
         {
-            var cleanedElements = new List<Ast>();
-            bool expectValue = true;
-
-            foreach (var element in node.Elements)
-            {
-                element.Accept(this);
-
-                if (expectValue)
-                {
-                    if (Result is Expr expr)
-                    {
-                        cleanedElements.Add(expr);
-                        expectValue = false;
-                    }
-                }
-                else
-                {
-                    // Пропускаем разделители
-                    expectValue = true;
-                }
-            }
+            var items = VisitListItems<Expr>(node.Elements)
+                .ToList();
 
             Result = node.Kind switch
             {
-                "ParamsRest" => new Params(cleanedElements.OfType<Identifier>().ToList()),
-                "ArgsRest" => new Args(cleanedElements.OfType<Expr>().ToList()),
+                "ParamsRest" => new Params(items.OfType<Identifier>().ToList()),
+                "ArgsRest" => new Args(items.OfType<Expr>().ToList()),
                 _ => throw new InvalidOperationException($"Unknown sequence: {node}: «{node.AsSpan(Input)}»")
             };
 
-            Trace.WriteLine($"Processed list with {cleanedElements.Count} elements");
+            Trace.WriteLine($"Processed list with {items.Count} elements");
         }
 
         public void Visit(SomeNode node) => node.Value.Accept(this);
         public void Visit(NoneNode node) => Result = null;
+
+        private IEnumerable<Ast> VisitListItems<TAst>(IEnumerable<ISyntaxNode> nodes)
+            where TAst : Ast
+        {
+            foreach (var element in nodes)
+            {
+                element.Accept(this);
+
+                if (Result is TAst expr)
+                {
+                    yield return expr;
+                }
+            }
+        }
     }
 }
