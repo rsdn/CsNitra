@@ -201,27 +201,27 @@ public class WfGenerator : IIncrementalGenerator
 
             switchCases.AppendLine($$"""
                         case (WfState.{{t.From}}, {{eventType}} e):
-                            On{{eventName}}(e, WfState.{{t.From}}, WfState.{{t.To}}, ref isAccepted);
+                            isAccepted = await On{{eventName}}(e, WfState.{{t.From}}, WfState.{{t.To}});
                             return isAccepted ? WfState.{{t.To}} : WfState.{{t.From}};
             """);
 
             if (!eventMethodMap.ContainsKey(eventName))
                 eventMethodMap.Add(eventName, $$"""
-                        partial void On{{eventName}}({{eventType}} @event, WfState oldState, WfState newState, ref bool isAccepted);
+                        protected virtual Task<bool> On{{eventName}}({{eventType}} @event, WfState oldState, WfState newState) => Task.FromResult(true);
                     """);
         }
         var eventMethods = string.Join("\n", eventMethodMap.OrderBy(x => x.Key).Select(x => x.Value));
 
         var automaton = $$"""
-            {{accessibility}} sealed partial class {{workflowClass.Name}}
+            {{accessibility}} abstract partial class {{workflowClass.Name}}Base
             {
-                private WfState _currentState = WfState.{{states.First()}};
+                protected WfState _currentState = WfState.{{states.First()}};
                 
                 public event Action<WfState, WfState, WfEvent>? StateChanged;
                 
                 public WfState CurrentState => _currentState;
 
-                private WfState Transition(WfState current, WfEvent @event)
+                private async Task<WfState> Transition(WfState current, WfEvent @event)
                 {
                     bool isAccepted = true;
                     
@@ -229,15 +229,15 @@ public class WfGenerator : IIncrementalGenerator
                     {
             {{switchCases}}
                         default:
-                            OnNoTransition(ref current, @event);
+                            await OnNoTransition(current, @event);
                             return current;
                     }
                 }
 
-                public bool ProcessEvent(WfEvent @event)
+                public async Task<bool> ProcessEvent(WfEvent @event)
                 {
                     var oldState = _currentState;
-                    var newState = Transition(oldState, @event);
+                    var newState = await Transition(oldState, @event);
                     
                     if (newState == oldState)
                         return false;
@@ -250,7 +250,7 @@ public class WfGenerator : IIncrementalGenerator
                 // Event handlers
             {{eventMethods}}
                 
-                partial void OnNoTransition(ref WfState currentState, WfEvent @event);
+                protected virtual Task OnNoTransition(WfState currentState, WfEvent @event) => Task.CompletedTask;
             }
             """;
 
@@ -264,7 +264,7 @@ public class WfGenerator : IIncrementalGenerator
             
             {{automaton}}
             """;
-        context.AddSource($"{workflowClass.Name}.g.cs", SourceText.From(fullCode, Encoding.UTF8));
+        context.AddSource($"{workflowClass.Name}Base.g.cs", SourceText.From(fullCode, Encoding.UTF8));
     }
 
     private void GenerateEventRecords(
