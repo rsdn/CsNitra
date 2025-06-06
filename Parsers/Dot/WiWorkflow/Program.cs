@@ -14,6 +14,11 @@ internal sealed partial class WiWorkflow : WiWorkflowBase
     {
         return base.OnAcceptTask(@event, oldState, newState);
     }
+
+    protected override void OnAllTransition(WfState oldState, WfEvent @event, WfState newState)
+    {
+        base.OnAllTransition(oldState, @event, newState);
+    }
 }
 
 [WorkflowEvent("wf.dot")]

@@ -238,7 +238,9 @@ public class WfGenerator : IIncrementalGenerator
                 {
                     var oldState = _currentState;
                     var newState = await Transition(oldState, @event);
-                    
+
+                    OnAllTransition(oldState, @event, newState);
+
                     if (newState == oldState)
                         return false;
 
@@ -251,6 +253,7 @@ public class WfGenerator : IIncrementalGenerator
             {{eventMethods}}
                 
                 protected virtual Task OnNoTransition(WfState currentState, WfEvent @event) => Task.CompletedTask;
+                protected virtual void OnAllTransition(WfState oldState, WfEvent @event, WfState newState) { }
             }
             """;
 
