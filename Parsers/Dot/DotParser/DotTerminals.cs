@@ -8,14 +8,16 @@ public sealed partial class DotTerminals
     [Regex(@"[\l_]\w*")]
     public static partial Terminal Identifier();
 
-    //[Regex(@"""[^""]*""")]
+    //[Regex("""
+    //    "[^"]*"
+    //    """)]
     //public static partial Terminal QuotedString();
     public static Terminal QuotedString() => _quotedString;
 
     [Regex(@"\d+")]
     public static partial Terminal Number();
 
-    //[Regex(@"(\s*(\/\/[^\n]*)|\s+)*")]
+    //[Regex(@"(//[^\n]*|\s+)*")]
     //public static partial Terminal Trivia();
     public static Terminal Trivia() => _trivia;
 
