@@ -47,6 +47,11 @@ public class CalcTests
             };
         }
 
+        public void Visit(ListNode node)
+        {
+            throw new NotImplementedException("It is skipped in this language..");
+        }
+
         public void Visit(SomeNode node) => node.Value.Accept(this);
         public void Visit(NoneNode node) => Result = null;
     }
