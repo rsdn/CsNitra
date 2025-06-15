@@ -5,3 +5,5 @@
 
 En:
 
+This catalog of tests is used to test the Nitra language constructs themselves.
+These examples are not good examples of programming languages.
