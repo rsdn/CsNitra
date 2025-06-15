@@ -203,18 +203,18 @@ public record NotPredicate(Rule PredicateRule, Rule MainRule) : Rule("!")
 public record SeparatedList(
     Rule Element,
     Rule Separator,
-    bool IsEndSeparatorOptional = true,
-    bool CanBeEmpty = true,
-    string? Kind = null
-) : Rule(Kind ?? nameof(SeparatedList))
+    string Kind,
+    SeparatorEndBehavior EndBehavior = SeparatorEndBehavior.Optional,
+    bool CanBeEmpty = true)
+    : Rule(Kind)
 {
-    public override string ToString() => $"({Element}; {Separator}{(IsEndSeparatorOptional ? "?" : "")})*{(CanBeEmpty ? "" : "+")}";
+    public override string ToString() => $"({Element}; {Separator} {EndBehavior})*{(CanBeEmpty ? "" : "+")}";
 
     public override Rule InlineReferences(Dictionary<string, Rule> inlineableRules)
     {
         var inlinedElement = Element.InlineReferences(inlineableRules);
         var inlinedSeparator = Separator.InlineReferences(inlineableRules);
-        return new SeparatedList(inlinedElement, inlinedSeparator, IsEndSeparatorOptional, CanBeEmpty, Kind);
+        return new SeparatedList(inlinedElement, inlinedSeparator, Kind, EndBehavior, CanBeEmpty);
     }
 
     public override IEnumerable<Rule> GetSubRules<T>()
@@ -228,6 +228,22 @@ public record SeparatedList(
         foreach (var subRule in Separator.GetSubRules<T>())
             yield return subRule;
     }
+}
+
+public enum SeparatorEndBehavior
+{
+    /// <summary>
+    /// опциональный - конечный разделитель может быть, а может не быть
+    /// </summary>
+    Optional,
+    /// <summary>
+    /// обязательный - разделитель должен быть в конце обязательно
+    /// </summary>
+    Required,
+    /// <summary>
+    /// запрещён - разделитель должен в конце обязательно отсутствовать
+    /// </summary>
+    Forbidden
 }
 
 public abstract record RecoveryTerminal(string Kind) : Terminal(Kind);

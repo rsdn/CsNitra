@@ -68,6 +68,10 @@ public partial class MiniCTests
                 "Return" => new ReturnStmt((Expr)children[1]!),
                 "ExprStmt" => new ExprStmt((Expr)children[0]!),
                 "VarDecl" => new VarDecl((Token)children[0]!, (Identifier)children[1]!),
+                "ArrayDecl" => new ArrayDecl(
+                    (Token)children[0]!,
+                    (Identifier)children[3]!,
+                    children[6] is ArrayDeclItems p ? p.Numbers : new List<Number>()),
                 "IfStmt" => new IfStatement(
                     (Expr)children[2]!,
                     wrapInBlockIfNeeded(children[4]!),
@@ -105,6 +109,8 @@ public partial class MiniCTests
                 "Neg" => new UnaryExpr("-", (Expr)children[1]!),
                 "AssignmentExpr" => new BinaryExpr("=", (Expr)children[0]!, (Expr)children[2]!),
                 "ParamsRest" => children[1]!, // Just return the parameter part (skip the comma)
+                "ArgsRest" => children[1]!, // Just return the parameter part (skip the comma)
+                "ArrayDeclItems" => children[1]!, //Just return the parameter part (skip the comma)
                 _ => throw new InvalidOperationException($"Unknown sequence: {node}: «{node.AsSpan(Input)}»")
             };
 
@@ -156,10 +162,12 @@ public partial class MiniCTests
 
                 return new Params(parameters);
             }
-            static List<Expr> getCallArguments(IReadOnlyList<Ast?> children)
+            static List<Expr> getCallArguments(Ast?[] children)
             {
+                Guard.AreEqual(4, children.Length);
+
                 var args = new List<Expr>();
-                if (children.Count == 4 && children[2] is Args listArgs)
+                if (children[2] is Args listArgs)
                 {
                     args.AddRange(listArgs.Arguments);
                 }
@@ -170,34 +178,27 @@ public partial class MiniCTests
 
         public void Visit(ListNode node)
         {
-            var items = VisitListItems<Expr>(node.Elements)
-                .ToList();
+            var items = node.Elements
+                .Select(e =>
+                {
+                    e.Accept(this);
+                    return Result;
+                })
+                .Where(r => r != null)
+                .ToArray();
 
             Result = node.Kind switch
             {
                 "ParamsRest" => new Params(items.OfType<Identifier>().ToList()),
                 "ArgsRest" => new Args(items.OfType<Expr>().ToList()),
+                "ArrayDeclItems" => new ArrayDeclItems(items.OfType<Number>().ToList()),
                 _ => throw new InvalidOperationException($"Unknown sequence: {node}: «{node.AsSpan(Input)}»")
             };
 
-            Trace.WriteLine($"Processed list with {items.Count} elements");
+            Trace.WriteLine($"Processed list with {items.Length} elements");
         }
 
         public void Visit(SomeNode node) => node.Value.Accept(this);
         public void Visit(NoneNode node) => Result = null;
-
-        private IEnumerable<Ast> VisitListItems<TAst>(IEnumerable<ISyntaxNode> nodes)
-            where TAst : Ast
-        {
-            foreach (var element in nodes)
-            {
-                element.Accept(this);
-
-                if (Result is TAst expr)
-                {
-                    yield return expr;
-                }
-            }
-        }
     }
 }

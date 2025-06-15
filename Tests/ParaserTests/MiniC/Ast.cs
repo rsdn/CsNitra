@@ -9,9 +9,14 @@ public abstract record Ast
     public abstract override string ToString();
 }
 
-public record VarDecl(Token Type, Identifier Name) : Ast
+public record VarDecl(Token Type, Identifier Name) : Decl
 {
     public override string ToString() => $"VarDecl: {Name}";
+}
+
+public record ArrayDecl(Token Type, Identifier Name, IReadOnlyList<Number> Parameters) : Decl
+{
+    public override string ToString() => $"ArrayDecl: {Type}[] {Name} = {{{string.Join(",", Parameters)}}}";
 }
 
 public record Number(int Value) : Expr
@@ -54,7 +59,7 @@ public record ExprStmt(Expr Expr) : Ast
     public override string ToString() => $"ExprStmt: {Expr}";
 }
 
-public record FunctionDecl(Identifier Name, IReadOnlyList<Identifier> Parameters, Block Body) : Ast
+public record FunctionDecl(Identifier Name, IReadOnlyList<Identifier> Parameters, Block Body) : Decl
 {
     public override string ToString() =>
         $"FunctionDecl: {Name}({string.Join(", ", Parameters)}) {Body}";
@@ -65,14 +70,19 @@ public record CallExpr(Identifier Name, Args Arguments) : Expr
     public override string ToString() => $"Call: {Name}({Arguments})";
 }
 
-public record Args(IReadOnlyList<Expr> Arguments) : Ast
+public record Args(IReadOnlyList<Expr> Arguments) : AstListItems
 {
     public override string ToString() => string.Join(", ", Arguments);
 }
 
-public record Params(IReadOnlyList<Identifier> Parameters) : Ast
+public record Params(IReadOnlyList<Identifier> Parameters) : AstListItems
 {
     public override string ToString() => $"Params: ({string.Join(", ", Parameters)})";
+}
+
+public record ArrayDeclItems(IReadOnlyList<Number> Numbers) : AstListItems
+{
+    public override string ToString() => string.Join(", ", Numbers);
 }
 
 public record Block(IReadOnlyList<Ast> Statements, bool HasBraces = false) : Ast
@@ -99,5 +109,9 @@ public record ReturnStmt(Expr Value) : Ast
 {
     public override string ToString() => $"Return({Value})";
 }
+
+public abstract record AstListItems : Ast;
+
+public abstract record Decl : Ast;
 
 public abstract record Expr : Ast;

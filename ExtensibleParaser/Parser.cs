@@ -630,11 +630,29 @@ public class Parser(Terminal trivia, Log? log = null)
         return Result.Success(new SeqNode(seq.Kind ?? "Seq", elements, startPos, newPos), newPos, maxFailPos);
     }
 
-    private Result ParseSeparatedList(SeparatedList listRule, int startPos, string input)
+    // пока сделал разделение что было наглядно на ревью, по идее нужно объединить после обсуждения норм или не норм.
+    private Result ParseSeparatedList(SeparatedList listRule, int startPos, string input) =>
+        listRule.EndBehavior switch
+        {
+            // разделитель в конце может быть, а может не быть
+            SeparatorEndBehavior.Optional => ParseSeparatedListOptional(listRule, startPos, input),
+
+            // разделитель в конце должен быть обязательно
+            SeparatorEndBehavior.Required => ParseSeparatedListRequired(listRule, startPos, input),
+
+            // разделитель в конце должен обязательно отсутствовать
+            SeparatorEndBehavior.Forbidden => ParseSeparatedListForbidden(listRule, startPos, input),
+
+            _ => throw new NotImplementedException(),
+        };
+
+    private Result ParseSeparatedListOptional(SeparatedList listRule, int startPos, string input)
     {
         Log($"Parsing at {startPos} SeparatedList: {listRule}");
 
         var elements = new List<ISyntaxNode>();
+        var delimiters = new List<ISyntaxNode>();
+
         int currentPos = startPos;
 
         // Первый элемент
@@ -646,7 +664,7 @@ public class Parser(Terminal trivia, Log? log = null)
             {
                 // Обработка пустого списка
                 return Result.Success(
-                    new ListNode(listRule.Kind, elements, startPos, startPos),
+                    new ListNode(listRule.Kind, elements, delimiters, startPos, startPos),
                     newPos: startPos,
                     maxFailPos: startPos);
             }
@@ -669,19 +687,146 @@ public class Parser(Terminal trivia, Log? log = null)
 
             if (!sepResult.TryGetSuccess(out var sepNode, out newPos))
             {
-                if (listRule.IsEndSeparatorOptional)
-                {
-                    break;
-                }
-                else
-                {
-                    Log($"Missing separator at {currentPos}.");
-                    return Result.Failure(maxFailPos);
-                }
+                break;
             }
 
-            // Добавляем разделитель как часть AST
-            elements.Add(sepNode);
+            // Добавляем разделитель
+            delimiters.Add(sepNode);
+            currentPos = newPos;
+
+            // Парсинг элемента после разделителя
+            var elemResult = ParseAlternative(listRule.Element, currentPos, input);
+            if (elemResult.MaxFailPos > maxFailPos)
+                maxFailPos = elemResult.MaxFailPos;
+
+            if (!elemResult.TryGetSuccess(out var elemNode, out newPos))
+                break;
+
+            elements.Add(elemNode);
+            currentPos = newPos;
+        }
+
+        return Result.Success(
+            new ListNode(listRule.Kind, elements, delimiters, startPos, currentPos),
+            newPos: currentPos,
+            maxFailPos: maxFailPos
+        );
+    }
+
+    private Result ParseSeparatedListRequired(SeparatedList listRule, int startPos, string input)
+    {
+        Log($"Parsing at {startPos} SeparatedList: {listRule}");
+
+        var elements = new List<ISyntaxNode>();
+        var delimiters = new List<ISyntaxNode>();
+
+        int currentPos = startPos;
+
+        // Первый элемент
+        var firstResult = ParseAlternative(listRule.Element, currentPos, input);
+
+        if (!firstResult.TryGetSuccess(out var firstNode, out var newPos))
+        {
+            if (listRule.CanBeEmpty)
+            {
+                // Обработка пустого списка
+                return Result.Success(
+                    new ListNode(listRule.Kind, elements, delimiters, startPos, startPos),
+                    newPos: startPos,
+                    maxFailPos: startPos);
+            }
+
+            Log($"SeparatedList: first element required at {currentPos}");
+            return Result.Failure(firstResult.MaxFailPos);
+        }
+
+        var maxFailPos = firstResult.MaxFailPos;
+        elements.Add(firstNode);
+        currentPos = newPos;
+
+        // Последующие элементы
+        while (true)
+        {
+            // Парсинг разделителя
+            var sepResult = ParseAlternative(listRule.Separator, currentPos, input);
+            if (sepResult.MaxFailPos > maxFailPos)
+                maxFailPos = sepResult.MaxFailPos;
+
+            if (!sepResult.TryGetSuccess(out var sepNode, out newPos))
+            {
+                Log($"Missing separator at {currentPos}.");
+                return Result.Failure(maxFailPos);
+            }
+
+            // Добавляем разделитель
+            delimiters.Add(sepNode);
+            currentPos = newPos;
+
+            // Парсинг элемента после разделителя
+            var elemResult = ParseAlternative(listRule.Element, currentPos, input);
+            if (elemResult.MaxFailPos > maxFailPos)
+                maxFailPos = elemResult.MaxFailPos;
+
+            if (!elemResult.TryGetSuccess(out var elemNode, out newPos))
+                break;
+
+            elements.Add(elemNode);
+            currentPos = newPos;
+        }
+
+        return Result.Success(
+            new ListNode(listRule.Kind, elements, delimiters, startPos, currentPos),
+            newPos: currentPos,
+            maxFailPos: maxFailPos
+        );
+    }
+
+    private Result ParseSeparatedListForbidden(SeparatedList listRule, int startPos, string input)
+    {
+        Log($"Parsing at {startPos} SeparatedList: {listRule}");
+
+        var elements = new List<ISyntaxNode>();
+        var delimiters = new List<ISyntaxNode>();
+
+        int currentPos = startPos;
+
+        // Первый элемент
+        var firstResult = ParseAlternative(listRule.Element, currentPos, input);
+
+        if (!firstResult.TryGetSuccess(out var firstNode, out var newPos))
+        {
+            if (listRule.CanBeEmpty)
+            {
+                // Обработка пустого списка
+                return Result.Success(
+                    new ListNode(listRule.Kind, elements, delimiters, startPos, startPos),
+                    newPos: startPos,
+                    maxFailPos: startPos);
+            }
+
+            Log($"SeparatedList: first element required at {currentPos}");
+            return Result.Failure(firstResult.MaxFailPos);
+        }
+
+        var maxFailPos = firstResult.MaxFailPos;
+        elements.Add(firstNode);
+        currentPos = newPos;
+
+        // Последующие элементы
+        while (true)
+        {
+            // Парсинг разделителя
+            var sepResult = ParseAlternative(listRule.Separator, currentPos, input);
+            if (sepResult.MaxFailPos > maxFailPos)
+                maxFailPos = sepResult.MaxFailPos;
+
+            if (!sepResult.TryGetSuccess(out var sepNode, out newPos))
+            {
+                break;
+            }
+
+            // Добавляем разделитель
+            delimiters.Add(sepNode);
             currentPos = newPos;
 
             // Парсинг элемента после разделителя
@@ -691,15 +836,30 @@ public class Parser(Terminal trivia, Log? log = null)
 
             if (!elemResult.TryGetSuccess(out var elemNode, out newPos))
             {
-                break;
+                Log($"End sepearator should not be present {currentPos}.");
+                return Result.Failure(maxFailPos);
             }
 
             elements.Add(elemNode);
             currentPos = newPos;
         }
 
+        if (listRule.EndBehavior == SeparatorEndBehavior.Forbidden)
+        {
+            // Парсинг разделителя
+            var sepResult = ParseAlternative(listRule.Separator, currentPos, input);
+            if (sepResult.MaxFailPos > maxFailPos)
+                maxFailPos = sepResult.MaxFailPos;
+
+            if (sepResult.TryGetSuccess(out var sepNode, out newPos))
+            {
+                Log($"End sepearator should not be present {currentPos}.");
+                return Result.Failure(maxFailPos);
+            }
+        }
+
         return Result.Success(
-            new ListNode(listRule.Kind, elements, startPos, currentPos),
+            new ListNode(listRule.Kind, elements, delimiters, startPos, currentPos),
             newPos: currentPos,
             maxFailPos: maxFailPos
         );

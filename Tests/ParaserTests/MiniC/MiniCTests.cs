@@ -1,4 +1,4 @@
-﻿#nullable enable
+﻿ #nullable enable
 
 using Diagnostics;
 using ExtensibleParaser;
@@ -25,7 +25,7 @@ public partial class MiniCTests
             Terminals.Ident(),
             new Seq([new Literal("("), new Ref("Expr"), ], "Parens"),
             new Seq([Terminals.Ident(), new Literal("("), closingBracket], "CallNoArgs"),
-            new Seq([Terminals.Ident(), new Literal("("), new SeparatedList(new Ref("Expr"), new Literal(","), Kind: "ArgsRest"), closingBracket], "Call"),
+            new Seq([Terminals.Ident(), new Literal("("), new SeparatedList(new Ref("Expr"), new Literal(","), Kind: "ArgsRest", EndBehavior: SeparatorEndBehavior.Forbidden ), closingBracket], "Call"),
             new Seq([new Literal("-"), new ReqRef("Expr", 300)], "Neg"),
 
             new Seq([new Ref("Expr"), new Literal("*"),  new ReqRef("Expr", 200)], "Mul"),
@@ -52,6 +52,11 @@ public partial class MiniCTests
         _parser.Rules["Statement"] = new Rule[]
         {
             new Seq([new Literal("int"), Terminals.Ident(), new OftenMissed(new Literal(";"))], "VarDecl"),
+            new Seq([
+                new Literal("int"), new Literal("["), new Literal("]"), Terminals.Ident(), new Literal("="), new Literal("{"),
+                new SeparatedList(Terminals.Number(), new Literal(","), Kind: "ArrayDeclItems", EndBehavior: SeparatorEndBehavior.Optional),
+                closingParenthesis, new OftenMissed(new Literal(";"))
+            ], "ArrayDecl"),
             new Seq([new Ref("Expr"), new OftenMissed(new Literal(";"))], "ExprStmt"),
             new Seq([new Literal("if"), new Literal("("), new Ref("Expr"), closingBracket,
                     new Ref("Block")], "IfStmt"),
@@ -68,7 +73,7 @@ public partial class MiniCTests
         ];
 
         _parser.Rules["Params"] = [
-            new Seq([Terminals.Ident(), new ZeroOrMany(new Seq([new Literal(","), Terminals.Ident()], Kind: "ParamsRest"))], "ParamsList"),
+            new SeparatedList(Terminals.Ident(), new Literal(","), Kind: "ParamsRest", EndBehavior: SeparatorEndBehavior.Forbidden, CanBeEmpty: false),
             new Literal("void", "VoidParams"),
         ];
 
@@ -106,6 +111,7 @@ public partial class MiniCTests
         {
             return 0;
         }
+
         """,
             "FunctionDecl: func1() { Return(1) }; FunctionDecl: func2(x) { Return(x) }; FunctionDecl: main() { Return(0) }"
         );
@@ -372,7 +378,6 @@ public partial class MiniCTests
         "Call: func()"
     );
 
-
     [TestMethod]
     public void FunctionCallWithOneArgs() => TestMiniC(
         "Expr",
@@ -384,14 +389,14 @@ public partial class MiniCTests
     public void FunctionCallWithOneComaOneArgs() => TestMiniC(
         "Expr",
         "func(1,)",
-        "Call: func(1)"
+        "Call: func(1, «Error: expected Expr»)"
     );
 
     [TestMethod]
     public void FunctionCallWithTwoComasOneArgs() => TestMiniC(
         "Expr",
         "func(1, ,)",
-        "Call: func(1, «Error: expected Expr»)"
+        "Call: func(1, «Error: expected Expr», «Error: expected Expr»)"
     );
 
     [TestMethod]
@@ -465,6 +470,41 @@ public partial class MiniCTests
         Assert.AreEqual(3, triviaLen);
         Assert.AreEqual("123", node.ToString("   123   "));
     }
+
+    [TestMethod]
+    public void ArrayDeclNoArgs() => TestMiniC(
+        "Statement",
+        "int[] x = { };",
+        "ArrayDecl: int[] x = {}"
+    );
+
+    [TestMethod]
+    public void ArrayDeclWithOneArgs() => TestMiniC(
+        "Statement",
+        "int[] x = { 1 };",
+        "ArrayDecl: int[] x = {1}"
+    );
+
+    [TestMethod]
+    public void ArrayDeclWithOneComaOneArgs() => TestMiniC(
+        "Statement",
+        "int[] x = { 1, };",
+        "ArrayDecl: int[] x = {1}"
+    );
+
+    [TestMethod]
+    public void ArrayDeclWithTwoArgs() => TestMiniC(
+        "Statement",
+        "int[] x = { 1, 2 };",
+        "ArrayDecl: int[] x = {1,2}"
+    );
+
+    [TestMethod]
+    public void ArrayDeclWithArgs() => TestMiniC(
+        "Statement",
+        "int[] x = { 1, 2, 3, };",
+        "ArrayDecl: int[] x = {1,2,3}"
+    );
 
     private void TestMiniC(string startRule, string input, string expectedAst)
     {

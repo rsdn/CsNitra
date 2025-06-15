@@ -125,27 +125,11 @@ public class DotVisitor(string input) : ISyntaxVisitor
 
     public void Visit(ListNode node)
     {
-        var children = VisitListItems<Node>(node.Elements);
-
-        throw new NotImplementedException("Not required in this language.");
+        throw new NotImplementedException("It is skipped in this language.");
     }
 
     private record DotStatementList(IReadOnlyList<DotStatement> Statements) : DotAst
     {
         public override string ToString() => string.Join("\n", Statements);
-    }
-
-    private IEnumerable<Node> VisitListItems<TAst>(IEnumerable<ISyntaxNode> nodes)
-            where TAst : Node
-    {
-        foreach (var element in nodes)
-        {
-            element.Accept(this);
-
-            if (Result is TAst expr)
-            {
-                yield return expr;
-            }
-        }
     }
 }

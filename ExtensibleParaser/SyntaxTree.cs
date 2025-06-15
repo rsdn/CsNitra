@@ -77,7 +77,7 @@ public record SeqNode(string Kind, IReadOnlyList<ISyntaxNode> Elements, int Star
     public override void Accept(ISyntaxVisitor visitor) => visitor.Visit(this);
 }
 
-public record ListNode(string Kind, IReadOnlyList<ISyntaxNode> Elements, int StartPos, int EndPos, bool HasTrailingSeparator = false, bool IsRecovery = false)
+public record ListNode(string Kind, IReadOnlyList<ISyntaxNode> Elements, IReadOnlyList<ISyntaxNode> Delimiters, int StartPos, int EndPos, bool HasTrailingSeparator = false, bool IsRecovery = false)
     : Node(Kind, StartPos, EndPos, IsRecovery)
 {
     public override void Accept(ISyntaxVisitor visitor) => visitor.Visit(this);

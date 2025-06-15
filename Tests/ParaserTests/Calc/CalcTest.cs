@@ -28,7 +28,13 @@ public class CalcTests
 
         public void Visit(SeqNode node)
         {
-            var children = VisitListItems<Expr>(node.Elements).ToList();
+            var children = new List<Expr>();
+            foreach (var element in node.Elements)
+            {
+                element.Accept(this);
+                if (Result != null)
+                    children.Add(Result);
+            }
 
             Result = children switch
             {
@@ -43,27 +49,11 @@ public class CalcTests
 
         public void Visit(ListNode node)
         {
-            var children = VisitListItems<Expr>(node.Elements);
-
-            throw new NotImplementedException("Not required in this language.");
+            throw new NotImplementedException("It is skipped in this language..");
         }
 
         public void Visit(SomeNode node) => node.Value.Accept(this);
         public void Visit(NoneNode node) => Result = null;
-
-        private IEnumerable<Expr> VisitListItems<TAst>(IEnumerable<ISyntaxNode> nodes)
-            where TAst : Expr
-        {
-            foreach (var element in nodes)
-            {
-                element.Accept(this);
-
-                if (Result is TAst expr)
-                {
-                    yield return expr;
-                }
-            }
-        }
     }
 
     private readonly Parser _parser = new(Terminals.Trivia(), new Log(LogImportance.Non));
