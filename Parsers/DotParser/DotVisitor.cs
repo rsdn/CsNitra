@@ -123,6 +123,11 @@ public class DotVisitor(string input) : ISyntaxVisitor
         CurrentResult = null;
     }
 
+    public void Visit(ListNode node)
+    {
+        throw new NotImplementedException("It is skipped in this language.");
+    }
+
     private record DotStatementList(IReadOnlyList<DotStatement> Statements) : DotAst
     {
         public override string ToString() => string.Join("\n", Statements);
