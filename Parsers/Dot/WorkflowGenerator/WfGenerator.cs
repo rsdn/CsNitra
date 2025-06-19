@@ -221,7 +221,7 @@ public class WfGenerator : IIncrementalGenerator
                     """);
 
                 afterEventMethodMap.Add(eventName, $$"""
-                        protected virtual Task After{{eventName}}({{eventType}} @event, WfState oldState, WfState newState) => Task.CompletedTask;
+                        protected virtual async Task After{{eventName}}({{eventType}} @event, WfState oldState, WfState newState) => await AfterUnprocessedTransition(oldState, newState, @event);
                     """);
             }
         }
@@ -260,6 +260,8 @@ public class WfGenerator : IIncrementalGenerator
                             break;
                     }
                 }
+
+                protected virtual Task AfterUnprocessedTransition(WfState oldState, WfState newState, WfEvent @event) => Task.CompletedTask;
 
                 public async Task<bool> ProcessEvent(WfEvent @event)
                 {
