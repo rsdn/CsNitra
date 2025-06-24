@@ -21,7 +21,7 @@ public class WfGenerator : IIncrementalGenerator
                 (node, _) => node is ClassDeclarationSyntax,
                 (ctx, _) => (
                     Symbol: (INamedTypeSymbol)ctx.TargetSymbol,
-                    FileName: GetAttributeFileName(ctx.Attributes, "WorkflowAttribute"),
+                    FileName: GetAttributeFileName(ctx.Attributes),
                     Syntax: (ClassDeclarationSyntax)ctx.TargetNode
                 ))
             .Where(t => t.FileName != null);
@@ -32,7 +32,7 @@ public class WfGenerator : IIncrementalGenerator
                 (node, _) => node is RecordDeclarationSyntax,
                 (ctx, _) => (
                     Symbol: (INamedTypeSymbol)ctx.TargetSymbol,
-                    FileName: GetAttributeFileName(ctx.Attributes, "WorkflowEventAttribute"),
+                    FileName: GetAttributeFileName(ctx.Attributes),
                     Syntax: (RecordDeclarationSyntax)ctx.TargetNode,
                     Context: ctx
                 ));
@@ -58,7 +58,7 @@ public class WfGenerator : IIncrementalGenerator
                 (ctx, symbol, graph) => GenerateEventRecords(ctx, symbol, graph)));
     }
 
-    private static string? GetAttributeFileName(ImmutableArray<AttributeData> attributes, string attributeName)
+    private static string? GetAttributeFileName(ImmutableArray<AttributeData> attributes)
     {
         if (attributes.Length == 0)
             return null;
@@ -163,15 +163,21 @@ public class WfGenerator : IIncrementalGenerator
         INamedTypeSymbol workflowClass,
         DotGraph graph)
     {
-        var states = graph.Statements
+        var nodeStatements = graph.Statements
             .OfType<DotNodeStatement>()
-            .Select(n => n.Name)
             .Concat(graph.Statements
                 .OfType<DotSubgraph>()
-                .SelectMany(s => s.Statements.OfType<DotNodeStatement>().Select(n => n.Name)))
-            .Distinct()
-            .OrderBy(s => s)
+                .SelectMany(s => s.Statements.OfType<DotNodeStatement>()))
+            .Where(x => !char.IsLower(x.Name.First()))
             .ToList();
+
+        if (hasErrors(context, nodeStatements))
+            return;
+
+        var states = nodeStatements
+            .Select(n => (n.Name, Id: ((DotNumber)n.Attributes.First(a => a.Name == "id").Value).Value))
+            .OrderBy(x => x.Id)
+            .ToArray();
 
         var transitions = graph.Statements
             .OfType<DotEdgeStatement>()
@@ -188,7 +194,7 @@ public class WfGenerator : IIncrementalGenerator
         var stateEnum = $$"""
             {{accessibility}} enum WfState
             {
-                {{string.Join(",\n    ", states)}}
+                {{string.Join(",\n    ", states.Select(x => $"{x.Name} = {x.Id}"))}}
             }
             """;
 
@@ -197,20 +203,20 @@ public class WfGenerator : IIncrementalGenerator
         var eventMethodMap = new Dictionary<string, string>();
         var afterEventMethodMap = new Dictionary<string, string>();
 
-        foreach (var t in transitions)
+        foreach (var (from, to, e) in transitions)
         {
-            var eventName = SanitizeName(t.Event);
+            var eventName = SanitizeName(e);
             var eventType = $"WfEvent.{eventName}";
 
             switchCases.AppendLine($$"""
-                        case (WfState.{{t.From}}, {{eventType}} e):
-                            isAccepted = await On{{eventName}}(e, WfState.{{t.From}}, WfState.{{t.To}});
-                            return isAccepted ? WfState.{{t.To}} : WfState.{{t.From}};
+                        case (WfState.{{from}}, {{eventType}} e):
+                            isAccepted = await On{{eventName}}(e, WfState.{{from}}, WfState.{{to}});
+                            return isAccepted ? WfState.{{to}} : WfState.{{from}};
             """);
 
             afterSwitchCases.AppendLine($$"""
-                        case (WfState.{{t.From}}, {{eventType}} e) when newState == WfState.{{t.To}}:
-                            await After{{eventName}}(e, WfState.{{t.From}}, WfState.{{t.To}});
+                        case (WfState.{{from}}, {{eventType}} e) when newState == WfState.{{to}}:
+                            await After{{eventName}}(e, WfState.{{from}}, WfState.{{to}});
                             break;
             """);
 
@@ -232,7 +238,7 @@ public class WfGenerator : IIncrementalGenerator
         var automaton = $$"""
             {{accessibility}} abstract partial class {{workflowClass.Name}}Base
             {
-                protected WfState _currentState = WfState.{{states.First()}};
+                protected WfState _currentState = WfState.{{states.First().Name}};
                 
                 public event Action<WfState, WfState, WfEvent>? StateChanged;
                 
@@ -302,6 +308,49 @@ public class WfGenerator : IIncrementalGenerator
             {{automaton}}
             """;
         context.AddSource($"{workflowClass.Name}Base.g.cs", SourceText.From(fullCode, Encoding.UTF8));
+
+        static bool hasErrors(SourceProductionContext context, List<DotNodeStatement> nodeStatements)
+        {
+            var hasError = false;
+            var idMap = new Dictionary<int, string>();
+
+            foreach (var node in nodeStatements)
+            {
+                var idAttr = node.Attributes.FirstOrDefault(a => a.Name == "id");
+                if (idAttr == null)
+                {
+                    ReportError(context, "WF004",
+                        $"Node '{node.Name}' is missing required 'id' attribute",
+                        null);
+                    hasError = true;
+                    continue;
+                }
+
+                if (idAttr.Value is not DotNumber number)
+                {
+                    ReportError(context, "WF005",
+                        $"Invalid id value for node '{node.Name}'. Must be an integer without quotes.",
+                        null);
+                    hasError = true;
+                    continue;
+                }
+
+                var id = number.Value;
+
+                if (idMap.ContainsKey(id))
+                {
+                    ReportError(context, "WF006",
+                        $"Duplicate id {id} found for nodes '{idMap[id]}' and '{node.Name}'",
+                        null);
+                    hasError = true;
+                    continue;
+                }
+
+                idMap[id] = node.Name;
+            }
+
+            return hasError;
+        }
     }
 
     private void GenerateEventRecords(

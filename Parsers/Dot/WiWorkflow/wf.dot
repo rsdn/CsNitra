@@ -4,16 +4,16 @@ digraph BugTrackingProcess
     node [shape=box, style="rounded,filled"];
     edge [fontsize=10];
     
-    NewBug [label="Новый баг", fillcolor="white", style="filled", StateInfo=Start];
-    Closed [label="Закрыто", fillcolor="lightgreen", style="filled", StateInfo=Finish];
+    NewBug [label="Новый баг", fillcolor="white", style="filled", StateInfo=Start, id=1];
+    Closed [label="Закрыто", fillcolor="lightgreen", style="filled", StateInfo=Finish, id=2];
 
     subgraph cluster_management
     {
         label="Management Process";
         style=filled;
-        UnderTriage [label="Анализ разгребальщиком"];
-        AssignedToDev [label="Назначен разработчику"];
-        Escalated [label="Эскалация"];
+        UnderTriage [label="Анализ разгребальщиком", id=3];
+        AssignedToDev [label="Назначен разработчику", id=4];
+        Escalated [label="Эскалация", id=5];
     }
 
     // Кластер для процесса разработки
@@ -22,10 +22,10 @@ digraph BugTrackingProcess
         label="Development Process";
         style=filled;
         fillcolor=lightgrey;
-        DevWorking [label="Разработчик разбирается с багом"];
-        DevTimeout [label="Таймаут разработки"];
-        PRInMaster [label="PR в master", fillcolor="lightyellow", style="filled"];
-        PRInRelease [label="PR в релизную ветку", fillcolor="lightyellow", style="filled"];
+        DevWorking [label="Разработчик разбирается с багом", id=6];
+        DevTimeout [label="Таймаут разработки", id=7];
+        PRInMaster [label="PR в master", fillcolor="lightyellow", style="filled", id=8];
+        PRInRelease [label="PR в релизную ветку", fillcolor="lightyellow", style="filled", id=9];
     }
 
     // Кластер для Cherry-pick
@@ -34,10 +34,10 @@ digraph BugTrackingProcess
         label="Cherry-pick Process (отдельный BUG)";
         style=filled;
         fillcolor=lightgrey;
-        AutoCherrypick [label="Автоматический cherry-pick", fillcolor="lightyellow", style="filled"];
-        ManualCherrypick [label="Ручной cherry-pick", fillcolor="lightyellow"];
-        PRCherrypickInRelease [label="PR в релизную ветку", fillcolor="lightyellow", style="filled"];
-        ManualCherrypickTimeout [label="Таймаут ручного cherry-pick", fillcolor="lightyellow"];
+        AutoCherrypick [label="Автоматический cherry-pick", fillcolor="lightyellow", style="filled", id=10];
+        ManualCherrypick [label="Ручной cherry-pick", fillcolor="lightyellow", id=11];
+        PRCherrypickInRelease [label="PR в релизную ветку", fillcolor="lightyellow", style="filled", id=12];
+        ManualCherrypickTimeout [label="Таймаут ручного cherry-pick", fillcolor="lightyellow", id=13];
     }
 
     // Кластер для ожидания релизного билда
@@ -46,9 +46,9 @@ digraph BugTrackingProcess
         label="Release Build Process";
         style=filled;
         fillcolor=lightgrey;
-        BuildStarted [label="Сборка запущена"];
-        BuildReady [label="Сборка готова"];
-        ModuleReady [label="Модуль готов"];
+        BuildStarted [label="Сборка запущена", id=14];
+        BuildReady [label="Сборка готова", id=15];
+        ModuleReady [label="Модуль готов", id=16];
     }
 
     // Кластер для тестирования
@@ -57,8 +57,8 @@ digraph BugTrackingProcess
         label="Testing Process";
         style=filled;
         fillcolor=lightgrey;
-        QATesting [label="Тестирование"];
-        QATimeout [label="Таймаут тестирования"];
+        QATesting [label="Тестирование", id=17];
+        QATimeout [label="Таймаут тестирования", id=18];
     }
 
     // Основные переходы (черные)

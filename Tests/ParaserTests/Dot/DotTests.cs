@@ -65,7 +65,7 @@ public class DotTests
         // Проверка количества узлов в основном графе (исключая управляющие конструкции)
         var mainNodes = graph.Statements
             .OfType<DotNodeStatement>()
-            .Where(n => !n.Name.StartsWith("node") && !n.Name.StartsWith("edge"))
+            .Where(n => n.Name != "node" && n.Name != "edge")
             .ToList();
 
         assertStatementsCount(
