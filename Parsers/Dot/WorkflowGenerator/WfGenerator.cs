@@ -276,14 +276,11 @@ public class WfGenerator : IIncrementalGenerator
 
                     OnAllTransition(oldState, @event, newState);
 
-                    if (newState == oldState)
-                        return false;
-
                     _currentState = newState;
                     StateChanged?.Invoke(oldState, newState, @event);
                     
                     await AfterTransition(oldState, newState, @event);
-                    return true;
+                    return newState != oldState;
                 }
 
                 // Event handlers
