@@ -13,6 +13,8 @@ namespace WorkflowGenerator;
 [Generator]
 public class WfGenerator : IIncrementalGenerator
 {
+    private const string ReplayColor = "deeppink";
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var workflowClasses = context.SyntaxProvider
@@ -184,7 +186,8 @@ public class WfGenerator : IIncrementalGenerator
             .Select(e => (
                 From: e.FromNode,
                 To: e.ToNode,
-                Event: e.Attributes.FirstOrDefault(a => a.Name == "event")?.Value.ToString().Trim('"')!
+                Event: e.Attributes.FirstOrDefault(a => a.Name == "event")?.Value.ToString().Trim('"')!,
+                Color: e.Attributes.FirstOrDefault(a => a.Name == "color" && a.Value.ToString() == ReplayColor)?.Value.ToString().Trim('"')
             ))
             .Where(t => t.Event != null)
             .ToList();
@@ -198,12 +201,51 @@ public class WfGenerator : IIncrementalGenerator
             }
             """;
 
+        var replyEvents = transitions
+            .Where(t => t.Color == ReplayColor)
+            .Select(t => t.Event)
+            .Distinct()
+            .OrderBy(e => e)
+            .ToList();
+
+        var replyEnum = $$"""
+            {{accessibility}} enum Reply
+            {
+                {{string.Join(",\n    ", replyEvents.Select(SanitizeName))}}
+            }
+            """;
+
+        var handleReplyMethod = new StringBuilder();
+        handleReplyMethod.AppendLine($$"""
+            public virtual async Task HandleReply(Reply reply)
+            {
+                switch (reply)
+                {
+        """);
+
+        foreach (var replyEvent in replyEvents)
+        {
+            var eventName = SanitizeName(replyEvent);
+            handleReplyMethod.AppendLine($$"""
+                    case Reply.{{eventName}}:
+                        await ProcessEvent(new WfEvent.{{eventName}}());
+                        break;
+        """);
+        }
+
+        handleReplyMethod.AppendLine($$"""
+                    default:
+                        throw new ArgumentOutOfRangeException($"{reply} в состоянии {CurrentState} не обработан");
+                }
+            }
+        """);
+
         var switchCases = new StringBuilder();
         var afterSwitchCases = new StringBuilder();
         var eventMethodMap = new Dictionary<string, string>();
         var afterEventMethodMap = new Dictionary<string, string>();
 
-        foreach (var (from, to, e) in transitions)
+        foreach (var (from, to, e, _) in transitions)
         {
             var eventName = SanitizeName(e);
             var eventType = $"WfEvent.{eventName}";
@@ -283,10 +325,10 @@ public class WfGenerator : IIncrementalGenerator
                     return newState != oldState;
                 }
 
-                // Event handlers
+            {{handleReplyMethod}}
+
             {{eventMethods}}
                 
-                // After event handlers
             {{afterEventMethods}}
                 
                 protected virtual Task OnNoTransition(WfState currentState, WfEvent @event) => Task.CompletedTask;
@@ -301,6 +343,8 @@ public class WfGenerator : IIncrementalGenerator
             namespace {{workflowClass.ContainingNamespace.ToDisplayString()}};
             
             {{stateEnum}}
+            
+            {{replyEnum}}
             
             {{automaton}}
             """;
@@ -383,5 +427,5 @@ public class WfGenerator : IIncrementalGenerator
     }
 
     private static string SanitizeName(string name) =>
-        new string(name.Where(c => char.IsLetterOrDigit(c)).ToArray());
+        new(name.Where(c => char.IsLetterOrDigit(c)).ToArray());
 }
