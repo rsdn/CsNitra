@@ -294,7 +294,6 @@ public class WfGenerator : IIncrementalGenerator
             {{accessibility}} abstract partial class {{workflowClass.Name}}Base
             {
                 protected WfState _currentState = WfState.{{states.First().Name}};
-                public event Action<WfState, WfState, WfEvent>? StateChanged;
                 
                 public WfState CurrentState => _currentState;
 
@@ -305,6 +304,39 @@ public class WfGenerator : IIncrementalGenerator
             {{schedulingMethod}}
 
             {{handleReplyMethod}}
+
+                public async Task<bool> ProcessEvent(WfEvent @event)
+                {
+                    var oldState = _currentState;
+                    var newState = await Transition(oldState, @event);
+
+                    OnAllTransition(oldState, @event, newState);
+
+                    _currentState = newState;
+                    
+                    await AfterTransition(oldState, newState, @event);
+                    return newState != oldState;
+                }
+
+                protected virtual Task AfterUnprocessedTransition(WfState oldState, WfState newState, WfEvent @event) => Task.CompletedTask;
+
+            {{eventMethods}}
+                
+            {{afterEventMethods}}
+                
+                protected abstract void LogInfo(string message, [CallerMemberName] string? member = null);
+                protected virtual Task OnNoTransition(WfState currentState, WfEvent @event) => Task.CompletedTask;
+                protected virtual void OnAllTransition(WfState oldState, WfEvent @event, WfState newState) { }
+
+                protected virtual async Task AfterTransition(WfState oldState, WfState newState, WfEvent @event)
+                {
+                    switch (oldState, @event)
+                    {
+            {{afterSwitchCases}}
+                        default:
+                            break;
+                    }
+                }
 
                 private async Task<WfState> Transition(WfState current, WfEvent @event)
                 {
@@ -318,40 +350,6 @@ public class WfGenerator : IIncrementalGenerator
                             return current;
                     }
                 }
-
-                private async Task AfterTransition(WfState oldState, WfState newState, WfEvent @event)
-                {
-                    switch (oldState, @event)
-                    {
-            {{afterSwitchCases}}
-                        default:
-                            break;
-                    }
-                }
-
-                protected virtual Task AfterUnprocessedTransition(WfState oldState, WfState newState, WfEvent @event) => Task.CompletedTask;
-
-                public async Task<bool> ProcessEvent(WfEvent @event)
-                {
-                    var oldState = _currentState;
-                    var newState = await Transition(oldState, @event);
-
-                    OnAllTransition(oldState, @event, newState);
-
-                    _currentState = newState;
-                    StateChanged?.Invoke(oldState, newState, @event);
-                    
-                    await AfterTransition(oldState, newState, @event);
-                    return newState != oldState;
-                }
-
-            {{eventMethods}}
-                
-            {{afterEventMethods}}
-                
-                protected abstract void LogInfo(string message, [CallerMemberName] string? member = null);
-                protected virtual Task OnNoTransition(WfState currentState, WfEvent @event) => Task.CompletedTask;
-                protected virtual void OnAllTransition(WfState oldState, WfEvent @event, WfState newState) { }
             }
             """;
 
