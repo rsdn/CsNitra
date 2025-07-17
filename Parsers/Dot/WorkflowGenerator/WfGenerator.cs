@@ -296,10 +296,10 @@ public class WfGenerator : IIncrementalGenerator
                 protected WfState _currentState = WfState.{{states.First().Name}};
                 
                 public WfState CurrentState => _currentState;
-
+                public abstract IEmployee Responsible { get; }
+                public abstract DateTime ResponsibilityTransferTime { get; }
+            
                 protected abstract ISchedulingService Scheduler { get; }
-                protected abstract IEmployee Responsible { get; }
-                protected abstract DateTime ResponsibilityTransferTime { get; }
             
             {{schedulingMethod}}
 
