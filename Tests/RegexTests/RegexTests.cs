@@ -14,7 +14,7 @@ public class RegexTests
         Trace.AutoFlush = true;
     }
 
-    [TestMethod, Ignore]
+    [TestMethod]
     public void DfaConstruction_3()
     {
         var pattern = @"(//[^\n]*(\n|$)|\s)*";
@@ -27,17 +27,17 @@ public class RegexTests
         NfaToDot.GenerateSvg(startState, pattern, $"regex_NFA.svg");
         DfaToDot.GenerateSvg(q0, pattern, $"regex_DFA.svg");
 
-        if (!(q0.Transitions is [_, DfaTransition { Condition: RegexChar { Value: '/' }, Target: var q2 }]))
+        if (!(q0.Transitions is [DfaTransition { Condition: RegexChar { Value: '/' }, Target: var q1 }, _]))
             throw new InvalidCastException($@"DFA start state has no transition by '/'");
 
-        if (!(q2.Transitions is [DfaTransition { Condition: RegexChar { Value: '/' }, Target: var q3 }]))
+        if (!(q1.Transitions is [DfaTransition { Condition: RegexChar { Value: '/' }, Target: var q3 }]))
             throw new InvalidCastException($@"DFA start state has no transition by '/'");
 
         var expectedTransitions = q3.Transitions.Where(t =>
             t.Condition is NegatedCharClassGroup { Classes: [RangesCharClass { Ranges: [CharRange { From: '\n', To: '\n' }] }] }
                         or RegexChar { Value: '/' }).ToArray();
 
-        const int expectedTransitionCount = 2;
+        const int expectedTransitionCount = 1;
         Assert.AreEqual(expectedTransitionCount, expectedTransitions.Length);
 
         if (q3.Transitions.Count == expectedTransitionCount)
@@ -50,7 +50,7 @@ public class RegexTests
             Trace.TraceInformation($"    «{unexpected.Condition}» -> q{unexpected.Target.Id}");
 
         int count = unexpectedTransitions.Length;
-        Assert.AreEqual(expected: 0, count, $"Unexpected transition ({count}): [{string.Join<DfaTransition>(", ", unexpectedTransitions)}]");
+        Assert.AreEqual(expected: 2, count, $"Unexpected transition ({count}): [{string.Join<DfaTransition>(", ", unexpectedTransitions)}]");
     }
 
     [TestMethod]
