@@ -48,6 +48,21 @@ public static class DfaInterpreter
             }
         }
 
+        // Проверяем соответствие конца строки
+        foreach (var transition in current.Transitions)
+        {
+            if (transition.Condition is RegexEndOfLine)
+            {
+                current = transition.Target;
+                if (current.IsFinal)
+                {
+                    maxLen = currentLen;
+                    log?.Info($"End of line matched, updating maxLen to {maxLen}");
+                }
+                break;
+            }
+        }
+
         // Если не было ни одного совпадения, но начальное состояние финальное
         if (maxLen == -1 && start.IsFinal)
         {
