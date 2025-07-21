@@ -165,10 +165,18 @@ public class RegexTests
     {
         var testCases = new[]
         {
-            (Start: 0, Pattern: @"(//[^\n]*(\n|$)|\s)*",  Input: "  // Top to Bottom",       Expected: 18),
-            (Start: 1, Pattern: @"(//[^\n]*(\n|$)|\s)*",  Input: ";  // Top to Bottom\r\n    n", Expected: 24),
                                                                  //012345678901234567 8 901234567890
                                                                  //          10          20
+            (Start: 0, Pattern: @"(//[^\n]*|\s)*",  Input: "  /// Top to Bottom",       Expected: 19),
+            (Start: 0, Pattern: @"(//[^\n]*|\s)*",  Input: "  // Top to Bottom",       Expected: 18),
+            (Start: 0, Pattern: @"(//[^\n]*|\s)*",  Input: "  // Top to Bottom",       Expected: 18),
+            (Start: 1, Pattern: @"(//[^\n]*|\s)*",  Input: ";  // Top to Bottom\r\n    n", Expected: 24),
+            (Start: 0, Pattern: @"(//[^\n]*|\s)*",  Input: "  // Top to Bottom\r\n/ ", Expected: 20),
+            (Start: 0, Pattern: @"(//[^\n]*|\s)*",  Input: "  // Top to Bottom\r\n ",  Expected: 21),
+            (Start: 0, Pattern: @"(//[^\n]*|\s)*",  Input: "  // Top to Bottom\n ",    Expected: 20),
+
+            (Start: 0, Pattern: @"(//[^\n]*(\n|$)|\s)*",  Input: "  // Top to Bottom",       Expected: 18),
+            (Start: 1, Pattern: @"(//[^\n]*(\n|$)|\s)*",  Input: ";  // Top to Bottom\r\n    n", Expected: 24),
             (Start: 0, Pattern: @"(//[^\n]*(\n|$)|\s)*",  Input: "  // Top to Bottom\r\n/ ", Expected: 20),
             (Start: 0, Pattern: @"(//[^\n]*(\n|$)|\s)*",  Input: "  // Top to Bottom\r\n ",  Expected: 21),
             (Start: 0, Pattern: @"(//[^\n]*(\n|$)|\s)*",  Input: "  // Top to Bottom\n ",    Expected: 20),

@@ -1,4 +1,4 @@
-﻿#nullable enable 
+#nullable enable 
 
 using Diagnostics;
 using Microsoft.CodeAnalysis;
@@ -175,18 +175,20 @@ namespace TerminalGenerator
             }
 
             sb.AppendLine($$"""
-        int currentPos = startPos;
-        int length = input.Length;
-        int currentState = {{start.Id}};
-        int lastAccept = -1;
+        var currentPos = startPos;
+        var length = input.Length;
+        var currentState = {{start.Id}};
+        var lastAccept = -1;
         {{(start.IsFinal ? "lastAccept = currentPos;" : "")}}
-        """);
+        //System.Diagnostics.Debugger.Launch();
 
-            sb.AppendLine("""
-        while (currentPos < length)
+        while (currentPos <= length)
         {
-            char c = input[currentPos];
-            bool transitionFound = false;
+            var c = currentPos < length ? input[currentPos] : '\0';
+            if (c == '\0')
+            {
+            }
+            var transitionFound = false;
             switch (currentState)
             {
         """);
@@ -216,6 +218,7 @@ namespace TerminalGenerator
             static string generateStateTransitions(DfaState state, IndentHelper indent)
             {
                 var sb = new StringBuilder();
+
                 foreach (var transition in state.Transitions)
                 {
                     var condition = generateTransitionCondition(transition.Condition);
@@ -223,7 +226,7 @@ namespace TerminalGenerator
                         if ({{condition}})
                         {
                             currentState = {{transition.Target.Id}};
-                            currentPos++;
+                            {{(transition.Condition is RegexEndOfLine ? "" : "currentPos++;")}}
                             {{(transition.Target.IsFinal ? "lastAccept = currentPos;" : "")}}
                             transitionFound = true;
                             continue;
@@ -237,15 +240,16 @@ namespace TerminalGenerator
                 {
                     return node switch
                     {
-                        RegexChar rc => $"""c == '{EscapeChar(rc.Value)}'""",
-                        RegexAnyChar => "true",
-                        RangesCharClass rcc when rcc.ToString() == "[^[\\n]]" => "c != '\\n'",
+                        RegexEndOfLine x => $@"c == '\0' /* {x} */",
+                        RegexChar rc => $"""c == '{EscapeChar(rc.Value)}'  /* {rc} */""",
+                        RegexAnyChar => "true /* RegexAnyChar */",
+                        NegatedCharClassGroup rcc when rcc.ToString() == $@"[^[\n]]" => $@"c is not '\n' and not '\0' /* {rcc} */",
                         RangesCharClass rcc => GenerateRangeCondition(rcc),
                         WordCharClass wcc => $"""{(wcc.Negated ? "!" : "")}(char.IsLetterOrDigit(c) || c == '_')""",
                         DigitCharClass dcc => $"""{(dcc.Negated ? "!" : "")}char.IsDigit(c)""",
                         WhitespaceCharClass scc => $"""{(scc.Negated ? "!" : "")}char.IsWhiteSpace(c)""",
                         LetterCharClass lcc => $"""{(lcc.Negated ? "!" : "")}char.IsLetter(c)""",
-                        _ => "false"
+                        _ => $"false /* {node} ({node.GetType().Name}) */"
                     };
                 }
             }
@@ -253,8 +257,8 @@ namespace TerminalGenerator
 
         private static string GenerateRangeCondition(RangesCharClass rcc)
         {
-            if (rcc.ToString() == "[^[\\n]]") // Специальный случай для [^\n]
-                return rcc.Negated ? "c == '\\n'" : "c != '\\n'";
+            if (rcc.ToString() == @"[^[\n]]") // Специальный случай для [^\n]
+                return rcc.Negated ? @"c == '\n'" : @"c != '\n'";
 
             var conditions = rcc.Ranges
                 .Select(r => r.From == r.To

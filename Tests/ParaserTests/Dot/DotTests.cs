@@ -11,6 +11,7 @@ public class DotTests
     {
         var matcher = DotTerminals.Trivia();
 
+        test(startPos: 0, expectedLen: 19, "  /// Top to Bottom");
         test(startPos: 0, expectedLen: 18, "  // Top to Bottom");
         test(startPos: 1, expectedLen: 24, ";  // Top to Bottom\r\n    n");
         test(startPos: 0, expectedLen: 20, "  // Top to Bottom\r\n/ ");
