@@ -15,9 +15,9 @@ public sealed partial class DotTerminals
     [Regex(@"\d+")]
     public static partial Terminal Number();
 
-    //[Regex(@"(\s*(\/\/[^\n]*)|\s+)*")]
-    //public static partial Terminal Trivia();
-    public static Terminal Trivia() => _trivia;
+    [Regex(@"(//[^\n]*(\n|$)|\s)*")]
+    public static partial Terminal Trivia();
+    //public static Terminal Trivia() => _trivia;
 
     private sealed record QuotedStringMatcher() : Terminal(Kind: "QuotedString")
     {
@@ -56,34 +56,34 @@ public sealed partial class DotTerminals
 
     private static readonly Terminal _quotedString = new QuotedStringMatcher();
 
-    private sealed record TriviaMatcher() : Terminal(Kind: "Trivia")
-    {
-        public override int TryMatch(string input, int startPos)
-        {
-            var i = startPos;
-            for (; i < input.Length; i++)
-            {
-                var c = input[i];
-
-                if (char.IsWhiteSpace(c))
-                    continue;
-
-                if (c == '/' && peek() == '/')
-                {
-                    for (i += 2; i < input.Length && (c = input[i]) != '\n'; i++)
-                        ;
-                    i--;
-                }
-                else
-                    return i - startPos;
-            }
-
-            return i - startPos;
-            char peek() => i + 1 < input.Length ? input[i + 1] : '\0';
-        }
-
-        public override string ToString() => @"Trivia";
-    }
-
-    private static readonly Terminal _trivia = new TriviaMatcher();
+    //private sealed record TriviaMatcher() : Terminal(Kind: "Trivia")
+    //{
+    //    public override int TryMatch(string input, int startPos)
+    //    {
+    //        var i = startPos;
+    //        for (; i < input.Length; i++)
+    //        {
+    //            var c = input[i];
+    //
+    //            if (char.IsWhiteSpace(c))
+    //                continue;
+    //
+    //            if (c == '/' && peek() == '/')
+    //            {
+    //                for (i += 2; i < input.Length && (c = input[i]) != '\n'; i++)
+    //                    ;
+    //                i--;
+    //            }
+    //            else
+    //                return i - startPos;
+    //        }
+    //
+    //        return i - startPos;
+    //        char peek() => i + 1 < input.Length ? input[i + 1] : '\0';
+    //    }
+    //
+    //    public override string ToString() => @"Trivia";
+    //}
+    //
+    //private static readonly Terminal _trivia = new TriviaMatcher();
 }
