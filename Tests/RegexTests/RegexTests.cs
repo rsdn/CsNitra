@@ -165,7 +165,7 @@ public class RegexTests
     {
         var testCases = new[]
         {
-            //(Start: 0, Pattern: @"(//[^\n]*(\n|$)|\s)*",  Input: "  // Top to Bottom",       Expected: 18),
+            (Start: 0, Pattern: @"(//[^\n]*(\n|$)|\s)*",  Input: "  // Top to Bottom",       Expected: 18),
             (Start: 1, Pattern: @"(//[^\n]*(\n|$)|\s)*",  Input: ";  // Top to Bottom\r\n    n", Expected: 24),
                                                                  //012345678901234567 8 901234567890
                                                                  //          10          20

@@ -19,8 +19,7 @@ public class DfaBuilder(Log? log = null)
         var initial = EpsilonClosure([start]);
         log?.Info($"Initial ε-closure: [{string.Join(", ", initial.Select(s => s.Id))}]");
 
-        bool isInitialFinal = initial.Any(s => s.IsFinal) && !IsEmptyPattern(start);
-        var dfaStart = new DfaState(0, isInitialFinal);
+        var dfaStart = new DfaState(0, initial.Any(s => s.IsFinal));
         mapping[initial] = dfaStart;
         queue.Enqueue(initial);
 
@@ -66,12 +65,6 @@ public class DfaBuilder(Log? log = null)
         return dfaStart;
     }
 
-    private bool IsEmptyPattern(NfaState start)
-    {
-        bool isEmpty = start.IsFinal && start.Transitions.Count == 0;
-        log?.Info($"Checking empty pattern: {isEmpty}");
-        return isEmpty;
-    }
 
     private Dictionary<RegexNode, HashSet<NfaState>> GetTransitions(HashSet<NfaState> states)
     {
