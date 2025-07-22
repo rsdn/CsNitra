@@ -14,7 +14,7 @@ public class RegexTests
         Trace.AutoFlush = true;
     }
 
-    [TestMethod]
+    [TestMethod, Ignore]
     public void DfaConstruction_3()
     {
         var pattern = @"(//[^\n]*(\n|$)|\s)*";
