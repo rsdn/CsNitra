@@ -15,6 +15,15 @@ public class WfGenerator : IIncrementalGenerator
 {
     private const string ReplayColor = "deeppink";
 
+    private static readonly DiagnosticDescriptor MissingTimeoutHandlerDescriptor =
+        new(
+            "WF010",
+            "Missing timeout handlers",
+            "Missing handler for timeout event: {0}",
+            "Workflow",
+            DiagnosticSeverity.Warning,
+            true);
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var workflowClasses = context.SyntaxProvider
@@ -24,7 +33,8 @@ public class WfGenerator : IIncrementalGenerator
                 (ctx, _) => (
                     Symbol: (INamedTypeSymbol)ctx.TargetSymbol,
                     FileName: GetAttributeFileName(ctx.Attributes),
-                    Syntax: (ClassDeclarationSyntax)ctx.TargetNode
+                    Syntax: (ClassDeclarationSyntax)ctx.TargetNode,
+                    Context: ctx
                 ))
             .Where(t => t.FileName != null);
 
@@ -42,13 +52,21 @@ public class WfGenerator : IIncrementalGenerator
         var additionalTexts = context.AdditionalTextsProvider.Collect();
 
         context.RegisterSourceOutput(workflowClasses.Combine(additionalTexts),
-            (spc, source) => ProcessSymbolWithDotFile(
-                spc,
-                source.Left.Symbol,
-                source.Left.FileName!,
-                source.Right,
-                source.Left.Syntax,
-                GenerateStateMachine));
+            (spc, source) =>
+            {
+                var (left, right) = source;
+                ProcessSymbolWithDotFile(
+                    spc,
+                    left.Symbol,
+                    left.FileName!,
+                    right,
+                    left.Syntax,
+                    (ctx, symbol, graph) =>
+                    {
+                        GenerateStateMachine(ctx, symbol, graph);
+                        CheckMissingTimeoutHandlers(ctx, symbol, graph, left.Context);
+                    });
+            });
 
         context.RegisterSourceOutput(eventRecords.Combine(additionalTexts),
             (spc, source) => ProcessSymbolWithDotFile(
@@ -57,7 +75,54 @@ public class WfGenerator : IIncrementalGenerator
                 source.Left.FileName!,
                 source.Right,
                 source.Left.Syntax,
-                (ctx, symbol, graph) => GenerateEventRecords(ctx, symbol, graph)));
+                GenerateEventRecords));
+    }
+
+    private void CheckMissingTimeoutHandlers(
+        SourceProductionContext context,
+        INamedTypeSymbol workflowClass,
+        DotGraph graph,
+        GeneratorAttributeSyntaxContext syntaxContext)
+    {
+        var timeoutTransitions = graph.Statements
+            .OfType<DotEdgeStatement>()
+            .Where(e => e.Attributes.Any(a => a.Name == "timeout"))
+            .Select(e => e.Attributes.First(a => a.Name == "event").Value.ToString().Trim('"'))
+            .Distinct()
+            .ToList();
+
+        if (timeoutTransitions.Count == 0)
+            return;
+
+        var handlerNames = new HashSet<string>();
+        foreach (var member in workflowClass.GetMembers())
+        {
+            if (member is IMethodSymbol method)
+            {
+                if (method.Name.StartsWith("After"))
+                {
+                    handlerNames.Add(method.Name.Substring("After".Length));
+                }
+                else if (method.Name.StartsWith("On"))
+                {
+                    handlerNames.Add(method.Name.Substring("On".Length));
+                }
+            }
+        }
+
+        foreach (var eventName in timeoutTransitions)
+        {
+            var sanitized = SanitizeName(eventName);
+            if (!handlerNames.Contains(sanitized))
+            {
+                var location = syntaxContext.TargetNode.GetLocation();
+                context.ReportDiagnostic(
+                    Diagnostic.Create(
+                        MissingTimeoutHandlerDescriptor,
+                        location,
+                        eventName));
+            }
+        }
     }
 
     private static string? GetAttributeFileName(ImmutableArray<AttributeData> attributes)
