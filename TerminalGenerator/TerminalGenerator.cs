@@ -244,13 +244,12 @@ namespace TerminalGenerator
                         RegexChar rc => $"""c == '{EscapeChar(rc.Value)}'  /* {rc} */""",
                         RegexAnyChar => "true /* RegexAnyChar */",
                         NegatedCharClassGroup rcc when rcc.ToString() == $@"[^[\n]]" => $@"c is not '\n' and not '\0' /* {rcc} */",
-                        NegatedCharClassGroup x when x.Classes.Any(x => x is RangesCharClass) => $@"!({string.Join(" && ", x.Classes.Select(generateTransitionCondition))}) && c != '\0'",
                         RangesCharClass rcc => GenerateRangeCondition(rcc),
                         WordCharClass wcc => $"""{(wcc.Negated ? "!" : "")}(char.IsLetterOrDigit(c) || c == '_')""",
                         DigitCharClass dcc => $"""{(dcc.Negated ? "!" : "")}char.IsDigit(c)""",
                         WhitespaceCharClass scc => $"""{(scc.Negated ? "!" : "")}char.IsWhiteSpace(c)""",
                         LetterCharClass lcc => $"""{(lcc.Negated ? "!" : "")}char.IsLetter(c)""",
-                        NegatedCharClassGroup x => $@"false /* {x} ({x.GetType().Name}) {string.Join(" && ", x.Classes.Select(x => $"{x} ({x.GetType().Name})"))} */",
+                        NegatedCharClassGroup x => $@"!({string.Join(" || ", x.Classes.Select(generateTransitionCondition))}) && c != '\0'",
                         _ => $"false /* {node} ({node.GetType().Name}) */"
                     };
                 }
