@@ -16,6 +16,7 @@ namespace TerminalGenerator
     {
         private const string RegexAttrName = "Regex";
         private const string RegexAttrFullName = RegexAttrName + "Attribute";
+        private const string Any = "true /* . (RegexAnyChar) */";
 
         public void Initialize(IncrementalGeneratorInitializationContext context)
         {
@@ -180,14 +181,10 @@ namespace TerminalGenerator
         var currentState = {{start.Id}};
         var lastAccept = -1;
         {{(start.IsFinal ? "lastAccept = currentPos;" : "")}}
-        //System.Diagnostics.Debugger.Launch();
 
         while (currentPos <= length)
         {
             var c = currentPos < length ? input[currentPos] : '\0';
-            if (c == '\0')
-            {
-            }
             var transitionFound = false;
             switch (currentState)
             {
@@ -198,7 +195,6 @@ namespace TerminalGenerator
                 sb.AppendLine($$"""
                     case {{state.Id}}:
                         {{generateStateTransitions(state, indent)}}
-                        break;
             """);
 
             sb.AppendLine($$"""
@@ -218,10 +214,11 @@ namespace TerminalGenerator
             static string generateStateTransitions(DfaState state, IndentHelper indent)
             {
                 var sb = new StringBuilder();
-
+                var hasAny = false;
                 foreach (var transition in state.Transitions)
                 {
                     var condition = generateTransitionCondition(transition.Condition);
+                    hasAny |= condition == Any;
                     sb.AppendLine($$"""
                         if ({{condition}})
                         {
@@ -233,7 +230,15 @@ namespace TerminalGenerator
                         }
                         """);
                 }
-                sb.Append("transitionFound = false;");
+
+                if (!hasAny)
+                {
+                    sb.Append("""
+                        transitionFound = false;
+                        break;
+                        """);
+                }
+
                 return indent.Apply(sb).ToString();
 
                 static string generateTransitionCondition(RegexNode node)
@@ -242,7 +247,7 @@ namespace TerminalGenerator
                     {
                         RegexEndOfLine x => $@"c == '\0' /* {x} */",
                         RegexChar rc => $"""c == '{EscapeChar(rc.Value)}'  /* {rc} */""",
-                        RegexAnyChar => "true /* RegexAnyChar */",
+                        RegexAnyChar => Any,
                         NegatedCharClassGroup rcc when rcc.ToString() == $@"[^[\n]]" => $@"c is not '\n' and not '\0' /* {rcc} */",
                         RangesCharClass rcc => GenerateRangeCondition(rcc),
                         WordCharClass wcc => $"""{(wcc.Negated ? "!" : "")}(char.IsLetterOrDigit(c) || c == '_')""",
