@@ -40,14 +40,20 @@ public class DotTests
     {
         var matcher = DotTerminals.QuotedString();
 
-        test(startPos: 0, expectedLen: -1, "123");
-        test(startPos: 0, expectedLen: 10, "\"23456789\"");
-        test(startPos: 1, expectedLen: 10, " \"23456789\"");
+        test(startPos: 1, expectedLen: 16, """
+            ="23\"\n4\r56789"
+            """);
         test(startPos: 1, expectedLen: 12, """
              "23\"456789""23\"456789"
             """);
-        test(startPos: 1, expectedLen: 16, """
-            ="23\"\n4\r56789"
+        test(startPos: 0, expectedLen: -1, "123");
+        test(startPos: 0, expectedLen: 10, "\"23456789\"");
+        test(startPos: 1, expectedLen: 10, " \"23456789\"");
+        test(startPos: 1, expectedLen: -1, """
+             "23456789\
+            """);
+        test(startPos: 1, expectedLen: -1, """
+             "23456789
             """);
 
         return;
