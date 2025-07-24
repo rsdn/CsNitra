@@ -10,6 +10,8 @@ using System.Text;
 
 namespace WorkflowGenerator;
 
+#pragma warning disable RS2008 // Enable analyzer release tracking
+
 [Generator]
 public class WfGenerator : IIncrementalGenerator
 {
@@ -22,6 +24,15 @@ public class WfGenerator : IIncrementalGenerator
             "Missing handler for timeout event: {0}",
             "Workflow",
             DiagnosticSeverity.Warning,
+            true);
+
+    private static readonly DiagnosticDescriptor DuplicateTimeoutForStateDescriptor =
+        new(
+            "WF011",
+            "Duplicate timeout for state",
+            "State '{0}' has multiple timeout transitions (events: {1}). Only one timeout per state is supported. Please check transitions from state '{0}' in your workflow definition.",
+            "Workflow",
+            DiagnosticSeverity.Error,
             true);
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
@@ -257,14 +268,30 @@ public class WfGenerator : IIncrementalGenerator
                     .Where(t => t.Event != null)
                     .ToList();
 
-        var timeoutTransitions = transitions
+        // Check for duplicate timeouts per state
+        var timeoutTransitionsByState = transitions
             .Where(t => t.Timeout != null)
             .GroupBy(t => t.From)
+            .ToList();
+
+        foreach (var group in timeoutTransitionsByState)
+        {
+            if (group.Count() > 1)
+            {
+                var eventNames = string.Join(", ", group.Select(t => t.Event));
+                context.ReportDiagnostic(Diagnostic.Create(
+                    DuplicateTimeoutForStateDescriptor,
+                    Location.None,
+                    group.Key,
+                    eventNames));
+                return; // Stop generation if duplicate timeouts found
+            }
+        }
+
+        var timeoutTransitions = timeoutTransitionsByState
             .ToDictionary(
                 g => g.Key,
-                g => g.Select(t => (t.Event, Timeout: t.Timeout!)).ToList());
-
-        //System.Diagnostics.Debugger.Launch();
+                g => g.Select(t => (t.Event, Timeout: t.Timeout!)).First());
 
         var accessibility = workflowClass.DeclaredAccessibility.ToString().ToLower();
         var schedulingServiceInterface = generateSchedulingServiceInterface(timeoutTransitions);
@@ -482,17 +509,14 @@ public class WfGenerator : IIncrementalGenerator
 
             return hasError;
         }
-        string generateSchedulingServiceInterface(Dictionary<string, List<(string Event, string Timeout)>> timeoutTransitions)
+        string generateSchedulingServiceInterface(Dictionary<string, (string Event, string Timeout)> timeoutTransitions)
         {
             var methods = new StringBuilder();
 
-            foreach (var (state, transitions) in timeoutTransitions)
+            foreach (var state in timeoutTransitions.Keys)
             {
-                foreach (var (eventName, timeout) in transitions)
-                {
-                    var methodName = $"Is{SanitizeName(state)}TimedOut";
-                    methods.AppendLine($"    bool {methodName}(DateTime responsibilityTransferTime);");
-                }
+                var methodName = $"Is{SanitizeName(state)}TimedOut";
+                methods.AppendLine($"    bool {methodName}(DateTime responsibilityTransferTime);");
             }
 
             // Добавляем стандартные методы таймаутов
@@ -507,7 +531,7 @@ public class WfGenerator : IIncrementalGenerator
             }
             """;
         }
-        string generateSchedulingServiceClass(Dictionary<string, List<(string Event, string Timeout)>> timeoutTransitions)
+        string generateSchedulingServiceClass(Dictionary<string, (string Event, string Timeout)> timeoutTransitions)
         {
             var fields = new StringBuilder();
             var methods = new StringBuilder();
@@ -517,25 +541,23 @@ public class WfGenerator : IIncrementalGenerator
                 public bool IsReplyTimedOut(DateTime responsibilityTransferTime) => Now - responsibilityTransferTime > ReplyTimeout;
                 private DateTime Now => Clock.Now;
             """);
+
             // Генерируем константы для таймаутов
-            foreach (var (state, transitions) in timeoutTransitions)
+            foreach (var (state, (eventName, timeout)) in timeoutTransitions)
             {
-                foreach (var (eventName, timeout) in transitions)
-                {
-                    var fieldName = $"{SanitizeName(state)}Timeout";
-                    var builder = new StringBuilder();
-                    var timeSpan = TimeSpan.Parse(timeout, CultureInfo.InvariantCulture);
-                    var days = timeSpan.Days > 0 ? $"days: {timeSpan.Days}, " : null;
+                var fieldName = $"{SanitizeName(state)}Timeout";
+                var builder = new StringBuilder();
+                var timeSpan = TimeSpan.Parse(timeout, CultureInfo.InvariantCulture);
+                var days = timeSpan.Days > 0 ? $"days: {timeSpan.Days}, " : null;
 
-                    fields.AppendLine($"""
-                        public static readonly TimeSpan {fieldName} = new TimeSpan({days}hours: {timeSpan.Hours}, minutes: {timeSpan.Minutes}, seconds: {timeSpan.Seconds});
-                    """);
-
-                    var methodName = $"Is{SanitizeName(state)}TimedOut";
-                    methods.AppendLine($$"""
-                    public bool {{methodName}}(DateTime responsibilityTransferTime) => Now - responsibilityTransferTime > {{fieldName}};
+                fields.AppendLine($"""
+                    public static readonly TimeSpan {fieldName} = new TimeSpan({days}hours: {timeSpan.Hours}, minutes: {timeSpan.Minutes}, seconds: {timeSpan.Seconds});
                 """);
-                }
+
+                var methodName = $"Is{SanitizeName(state)}TimedOut";
+                methods.AppendLine($$"""
+                public bool {{methodName}}(DateTime responsibilityTransferTime) => Now - responsibilityTransferTime > {{fieldName}};
+            """);
             }
 
             return $$"""
@@ -549,24 +571,21 @@ public class WfGenerator : IIncrementalGenerator
             }
             """;
         }
-        string generateSchedulingMethod(Dictionary<string, List<(string Event, string Timeout)>> timeoutTransitions)
+        string generateSchedulingMethod(Dictionary<string, (string Event, string Timeout)> timeoutTransitions)
         {
             var cases = new StringBuilder();
 
-            foreach (var (state, transitions) in timeoutTransitions)
+            foreach (var (state, (eventName, timeout)) in timeoutTransitions)
             {
-                foreach (var (eventName, timeout) in transitions)
-                {
-                    var methodName = $"Is{SanitizeName(state)}TimedOut";
-                    var eventType = $"WfEvent.{SanitizeName(eventName)}";
+                var methodName = $"Is{SanitizeName(state)}TimedOut";
+                var eventType = $"WfEvent.{SanitizeName(eventName)}";
 
-                    cases.AppendLine($$"""
-                        case WfState.{{state}} when Scheduler.{{methodName}}(ResponsibilityTransferTime):
-                            LogInfo($"Планировщик инициировал событие {{eventName}} так как {Responsible.DisplayName} не успел обработать состояние {{state}} в отведенное время.");
-                            await ProcessEvent(new {{eventType}}());
-                            break;
-                """);
-                }
+                cases.AppendLine($$"""
+                    case WfState.{{state}} when Scheduler.{{methodName}}(ResponsibilityTransferTime):
+                        LogInfo($"Планировщик инициировал событие {{eventName}} так как {Responsible.DisplayName} не успел обработать состояние {{state}} в отведенное время.");
+                        await ProcessEvent(new {{eventType}}());
+                        break;
+            """);
             }
 
             return $$"""
@@ -622,7 +641,7 @@ public class WfGenerator : IIncrementalGenerator
         
         {{accessibility}} abstract partial record {{baseRecord.Name}}(bool IsReply)
         {
-            {{records}}
+        {{records}}
         }
         """;
 
