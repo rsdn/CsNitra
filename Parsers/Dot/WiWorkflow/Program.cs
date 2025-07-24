@@ -1,10 +1,22 @@
-﻿using Workflow;
+﻿using BugWatcher.Employees.Interfaces;
+using System.Runtime.CompilerServices;
+using Workflow;
 
 namespace WiWorkflow;
 
 [Workflow("wf.dot")]
 internal sealed partial class WiWorkflow : WiWorkflowBase
 {
+    public override IEmployee Responsible { get; } = new Employee();
+
+    public override DateTime ResponsibilityTransferTime { get; }
+
+    protected override ISchedulingService Scheduler => throw new NotImplementedException();
+
+    protected override void LogInfo(string message, [CallerMemberName] string? member = null)
+    {
+    }
+
     // Логика Workflow генерируются автоматически по файлу указанному в атрибуте.
     // Перейдите на определение, чтобы увидить сгенерированаю часть этого тип.
     // Если в этом классе объявить метод OnИмяСобытия(WfEvent.AssignTriage @event, WfState oldState, WfState newState, ref bool isAccepted)
@@ -18,6 +30,11 @@ internal sealed partial class WiWorkflow : WiWorkflowBase
     protected override void OnAllTransition(WfState oldState, WfEvent @event, WfState newState)
     {
         base.OnAllTransition(oldState, @event, newState);
+    }
+
+    protected override Task AfterTriggerDevTimeout(WfEvent.TriggerDevTimeout @event, WfState oldState, WfState newState)
+    {
+        return base.AfterTriggerDevTimeout(@event, oldState, newState);
     }
 }
 

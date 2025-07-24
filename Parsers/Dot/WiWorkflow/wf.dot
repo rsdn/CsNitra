@@ -67,7 +67,7 @@ digraph BugTrackingProcess
     AssignedToDev -> DevWorking [label="Разработчик принял задачу", event="AcceptTask"];
     
     // Процесс разработки
-    DevWorking -> DevTimeout [label="Таймаут 2 часа", event="TriggerDevTimeout"];
+    DevWorking -> DevTimeout [label="Таймаут 2 часа", event="TriggerDevTimeout", timeout="02:00:00"];
     DevTimeout -> DevWorking [label="Запрошено доп. время", event="RequestDevExtension"];
     
     // Результатом работы программиста может быть:
@@ -85,7 +85,7 @@ digraph BugTrackingProcess
     
     // Процесс ручного cherry-pick
     ManualCherrypick -> ManualCherrypickTimeout [label="Таймаут 2 часа", event="TriggerManualCherrypickTimeout"];
-    ManualCherrypickTimeout -> ManualCherrypick [label="Запрошено доп. время", event="RequestCherrypickExtension"];
+    ManualCherrypickTimeout -> ManualCherrypick [label="Запрошено доп. время", event="RequestCherrypickExtension", color=deeppink, fontcolor=deeppink];
     ManualCherrypickTimeout -> Escalated [label="Нет ответа (1 час)", color=red, fontcolor=red, event="EscalateCherrypick"];
     ManualCherrypick -> PRCherrypickInRelease [label="Создан PR в релизную ветку", event="CreateCherrypickPr"];
     PRCherrypickInRelease -> BuildStarted [label="Cherry-pick-PR прошёл успешно (ResolvedFixed)", event="MergeCherrypickPr"];
