@@ -1,4 +1,6 @@
-﻿using ExtensibleParaser;
+﻿global using Error = (string Input, int Pos, (int Line, int Col) Location, ExtensibleParaser.Terminal[] Expecteds);
+
+using ExtensibleParaser;
 
 namespace Dot;
 
@@ -103,7 +105,15 @@ public class DotParser
         _parser.BuildTdoppRules();
     }
 
-    public DotGraph Parse(string input)
+    public Result Parse(string input)
+    {
+        var result = _parser.Parse(input, "Graph", out _);
+        if (result.TryGetSuccess(out var node, out _))
+            return new Result.Success(node);
+        return new Result.Failure(_parser.ErrorInfo);
+    }
+
+    public DotGraph ParseDotGraph(string input)
     {
         var result = _parser.Parse(input, "Graph", out _);
         if (!result.TryGetSuccess(out var node, out _))
@@ -113,4 +123,11 @@ public class DotParser
         node.Accept(visitor);
         return visitor.Result.AssertIsNonNull();
     }
+
+    public abstract record Result
+    {
+        public sealed record Success(ISyntaxNode RootNode) : Result;
+        public sealed record Failure(Error Error) : Result;
+    }
 }
+

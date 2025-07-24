@@ -1,0 +1,122 @@
+digraph BugTrackingProcess
+{
+    rankdir=TB;  // Top to Bottom
+    node [shape=box, style="rounded,filled"];
+    edge [fontsize=10];
+    
+    NewBug [label="Новый баг", fillcolor="white", style="filled", StateInfo=Start, id=1];
+    Closed [label="Закрыто", fillcolor="lightgreen", style="filled", StateInfo=Finish, id=2];
+
+    subgraph cluster_management
+    {
+        label="Management Process";
+        style=filled;
+        UnderTriage [label="Анализ разгребальщиком", id=3];
+        AssignedToDev [label="Назначен разработчику", id=4];
+        Escalated [label="Эскалация", id=5];
+    }
+
+    // Кластер для процесса разработки
+    subgraph cluster_development
+    {
+        label="Development Process";
+        style=filled;
+        fillcolor=lightgrey;
+        DevWorking [label="Разработчик разбирается с багом", id=6];
+        DevTimeout [label="Таймаут разработки", id=7];
+        PRInMaster [label="PR в master", fillcolor="lightyellow", style="filled", id=8];
+        PRInRelease [label="PR в релизную ветку", fillcolor="lightyellow", style="filled", id=9];
+    }
+
+    // Кластер для Cherry-pick
+    subgraph cluster_cherrypick
+    {
+        label="Cherry-pick Process (отдельный BUG)";
+        style=filled;
+        fillcolor=lightgrey;
+        AutoCherrypick [label="Автоматический cherry-pick", fillcolor="lightyellow", style="filled", id=10];
+        ManualCherrypick [label="Ручной cherry-pick", fillcolor="lightyellow", id=11];
+        PRCherrypickInRelease [label="PR в релизную ветку", fillcolor="lightyellow", style="filled", id=12];
+        ManualCherrypickTimeout [label="Таймаут ручного cherry-pick", fillcolor="lightyellow", id=13];
+    }
+
+    // Кластер для ожидания релизного билда
+    subgraph cluster_build
+    {
+        label="Release Build Process";
+        style=filled;
+        fillcolor=lightgrey;
+        BuildStarted [label="Сборка запущена", id=14];
+        BuildReady [label="Сборка готова", id=15];
+        ModuleReady [label="Модуль готов", id=16];
+    }
+
+    // Кластер для тестирования
+    subgraph cluster_testing
+    {
+        label="Testing Process";
+        style=filled;
+        fillcolor=lightgrey;
+        QATesting [label="Тестирование", id=17];
+        QATimeout [label="Таймаут тестирования", id=18];
+    }
+
+    // Основные переходы (черные)
+    NewBug -> UnderTriage [label="Назначен разгребальщик", event="AssignTriage"];
+    UnderTriage -> AssignedToDev [label="Назначен разработчик", event="AssignDeveloper"];
+    AssignedToDev -> DevWorking [label="Разработчик принял задачу", event="AcceptTask"];
+    
+    // Процесс разработки
+    DevWorking -> DevTimeout [label="Таймаут 2 часа", event="TriggerDevTimeout"];
+    DevTimeout -> DevWorking [label="Запрошено доп. время", event="RequestDevExtension"];
+    
+    // Результатом работы программиста может быть:
+    DevWorking -> QATesting [label="Баг не требует исправления (ResolvedNotFixed)", color=green, fontcolor=green, event="ResolveNotFixed"];
+    DevWorking -> PRInMaster [label="PR в master", event="CreatePrToMaster"];
+    DevWorking -> PRInRelease [label="PR в релизную ветку", event="CreatePrToRelease"];
+    
+    // Процесс PR в master
+    PRInMaster -> AutoCherrypick [label="PR master прошёл успешно", ТестовыйАтрибут=42, event="MergePrToMaster"];
+    PRInMaster -> DevWorking [label="PR упал", fontcolor=goldenrod, color=goldenrod, event="FailPrToMaster"];
+    
+    // Процесс автоматического cherry-pick
+    AutoCherrypick -> PRCherrypickInRelease [label="Cherry-pick успешен", event="ApplyAutoCherrypick"];
+    AutoCherrypick -> ManualCherrypick [label="Автоматический Cherry-pick упал", event="FailAutoCherrypick"];
+    
+    // Процесс ручного cherry-pick
+    ManualCherrypick -> ManualCherrypickTimeout [label="Таймаут 2 часа", event="TriggerManualCherrypickTimeout"];
+    ManualCherrypickTimeout -> ManualCherrypick [label="Запрошено доп. время", event="RequestCherrypickExtension"];
+    ManualCherrypickTimeout -> Escalated [label="Нет ответа (1 час)", color=red, fontcolor=red, event="EscalateCherrypick"];
+    ManualCherrypick -> PRCherrypickInRelease [label="Создан PR в релизную ветку", event="CreateCherrypickPr"];
+    PRCherrypickInRelease -> BuildStarted [label="Cherry-pick-PR прошёл успешно (ResolvedFixed)", event="MergeCherrypickPr"];
+
+    
+    // Процесс PR в релизной ветке
+    PRInRelease -> BuildStarted [label="PR прошёл успешно (ResolvedFixed)", event="MergePrToRelease"];
+    PRInRelease -> DevWorking [label="PR упал", fontcolor=goldenrod, color=goldenrod, event="FailPrToRelease"];
+    
+    // Процесс сборки
+    BuildStarted -> BuildReady [label="Сборка успешна", event="CompleteBuild"];
+    BuildStarted -> ModuleReady [label="Собрался нужный модуль", event="CompleteModuleBuild"];
+    BuildReady -> QATesting [label="Передача тестеру сборки", color=blue, fontcolor=blue, event="NotifyQABuild"];
+    ModuleReady -> QATesting [label="Передача тестеру модуля", color=blue, fontcolor=blue, event="NotifyQAModule"];
+    
+    // Процесс тестирования
+    QATesting -> QATimeout [label="Таймаут 30 мин", event="TriggerQATimeout"];
+    QATimeout -> QATesting [label="Запрошено доп. время", event="RequestQAExtension"];
+    QATesting -> Closed [label="Закрыто", color=green, fontcolor=green, event="CloseBug"];
+    QATesting -> DevWorking [label="Отклонено (Вернули разработчику)", fontcolor=goldenrod, color=goldenrod, event="RejectByQA"];
+    
+    // Эскалации (все красные)
+    DevTimeout -> Escalated [label="Нет ответа (1 час)", color=red, fontcolor=red, event="EscalateDev"];
+    UnderTriage -> Escalated [label="Таймаут 30 мин", color=red, fontcolor=red, event="EscalateTriage"];
+    AssignedToDev -> Escalated [label="Таймаут 30 мин", color=red, fontcolor=red, event="EscalateAssignment"];
+    BuildStarted -> Escalated [label="Таймаут 4 часа", color=red, fontcolor=red, event="EscalateBuild"];
+    QATimeout -> Escalated [label="Нет ответа (30 мин)", color=red, fontcolor=red, event="EscalateQA"];
+    
+    // Обработка эскалации
+    Escalated -> UnderTriage [label="Решение руководителя", event="ReassignToTriage"];
+    Escalated -> DevWorking [label="Решение руководителя", event="ReassignToDev"];
+    Escalated -> QATesting [label="Решение руководителя", event="ReassignToQA"];
+    Escalated -> Closed [label="Руководитель закрыл баг", color=green, fontcolor=green, event="ForceCloseBug"];
+}

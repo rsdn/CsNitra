@@ -67,12 +67,12 @@ public class DotTests
     public void ParseDotGraph()
     {
         var parser = new DotParser();
-        var graph = parser.Parse(ParseComplexGraph_DotText);
+        var graph = parser.ParseDotGraph(ParseComplexGraph_DotText);
 
         // Проверка количества узлов в основном графе (исключая управляющие конструкции)
         var mainNodes = graph.Statements
             .OfType<DotNodeStatement>()
-            .Where(n => !n.NodeId.StartsWith("node") && !n.NodeId.StartsWith("edge"))
+            .Where(n => n.Name != "node" && n.Name != "edge")
             .ToList();
 
         assertStatementsCount(
@@ -120,7 +120,7 @@ public class DotTests
             "Переход PRInMaster -> AutoCherrypick");
 
         // Проверка атрибутов узла Closed
-        var closedNode = mainNodes.FirstOrDefault(n => n.NodeId == "Closed");
+        var closedNode = mainNodes.FirstOrDefault(n => n.Name == "Closed");
         Assert.IsNotNull(closedNode, "Не найден узел Closed");
 
         checkAttributes(
