@@ -586,17 +586,14 @@ public class Parser(Terminal trivia, Log? log = null)
         foreach (var ruleName in _ruleStack)
         {
             anchors.UnionWith(followCalculator.GetFollowSet(ruleName));
-
-            // This part is tricky because we don't have direct access to the rule object here, only its name.
-            // We'd need to look up the rule from the name to check if it's a looping construct.
-            // For now, let's just use the Follow sets.
         }
 
-        // Also add common statement starters as anchors
         var statementFirsts = followCalculator.GetFirstSet("Statement");
         anchors.UnionWith(statementFirsts);
         var functionFirsts = followCalculator.GetFirstSet("Function");
         anchors.UnionWith(functionFirsts);
+
+        Logger?.Info($"Anchors: {string.Join(", ", anchors.Select(a => a.Kind))}", LogImportance.High);
 
         return anchors;
     }

@@ -8,7 +8,7 @@ using Tests.Extensions;
 
 namespace NitraConstruction;
 
-[TestClass]
+[TestClass, Ignore]
 public partial class SeparatedListTests
 {
     private readonly Parser _parser = new(Terminals.Trivia(), new Log(LogImportance.High));

@@ -10,13 +10,12 @@ public partial class MiniCTests
 {
     private class MiniCVisitor(string input) : ISyntaxVisitor
     {
-        private readonly List<Ast> _results = new();
         public Ast? Result { get; private set; }
         public string Input { get; } = input;
 
         public void Visit(TerminalNode node)
         {
-            var result = node.Kind switch
+            Result = node.Kind switch
             {
                 "ErrorOperator" => new UnexpectedOperator(node),
                 "Error" => new Error(node),
@@ -24,8 +23,6 @@ public partial class MiniCTests
                 "Ident" => new Identifier(node.ToString(Input)),
                 _ => new Token(node.AsSpan(Input).ToString())
             };
-            _results.Add(result);
-            Result = result;
             Trace.WriteLine($"TerminalNode: {node.Kind} -> {Result}");
         }
 
@@ -60,6 +57,10 @@ public partial class MiniCTests
                     children.Select(c => c!).ToList(),
                     HasBraces: false
                 ),
+                "Module" => new Block(
+                    children.Select(c => c!).ToList(),
+                    HasBraces: false
+                ),
                 "CallNoArgs" => new CallExpr(
                     (Identifier)children[0]!,
                     new Args(new List<Expr>())
@@ -89,7 +90,7 @@ public partial class MiniCTests
                     children
                         .Skip(1)
                         .Take(children.Length - 2)
-                        .SelectMany(c => c is Block b ? b.Statements : new List<Ast> { c! })
+                        .SelectMany(c => c is Block b ? b.Statements : (c is Token t && t.Value == "«Skipped»" ? new List<Ast> { t } : new List<Ast> { c! }))
                         .ToList(),
                     HasBraces: true),
                 "SimplBlock" => wrapInBlockIfNeeded(children[0]!),
@@ -203,12 +204,10 @@ public partial class MiniCTests
 
         public void Visit(SomeNode node) => node.Value.Accept(this);
         public void Visit(NoneNode node) => Result = null;
+
     public void Visit(SkippedNode node)
     {
-        // For testing purposes, we represent skipped nodes as a simple token.
-        // In a real scenario, this might involve more complex logic,
-        // like attaching the skipped text as a diagnostic.
-        _results.Add(new Token("«Skipped»"));
+        Result = new Token("«Skipped»");
     }
     }
 }
