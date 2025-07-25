@@ -2,6 +2,7 @@
 
 public abstract record Rule(string Kind)
 {
+    public bool IsStatementLike { get; set; }
     public abstract override string ToString();
     public virtual Rule InlineReferences(Dictionary<string, Rule> inlineableRules) => this;
     public abstract IEnumerable<Rule> GetSubRules<T>() where T : Rule;

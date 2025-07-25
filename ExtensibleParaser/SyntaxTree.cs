@@ -21,6 +21,7 @@ public interface ISyntaxVisitor
     void Visit(ListNode node);
     void Visit(SomeNode node);
     void Visit(NoneNode node);
+    void Visit(SkippedNode node);
 }
 
 [DebuggerDisplay("{Kind}: [{StartPos}-{EndPos}) {Length} {Debug()} ({GetType().Name})")]

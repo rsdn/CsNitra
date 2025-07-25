@@ -54,6 +54,7 @@ public class CalcTests
 
         public void Visit(SomeNode node) => node.Value.Accept(this);
         public void Visit(NoneNode node) => Result = null;
+        public void Visit(SkippedNode node) { }
     }
 
     private readonly Parser _parser = new(Terminals.Trivia(), new Log(LogImportance.Non));

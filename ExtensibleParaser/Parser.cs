@@ -4,8 +4,16 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using Diagnostics;
+using ExtensibleParaser;
 
 namespace ExtensibleParaser;
+
+public record SkippedNode(int StartPos, int EndPos) : Node("Skipped", StartPos, EndPos, true)
+{
+    public override void Accept(ISyntaxVisitor visitor) => visitor.Visit(this);
+    public override string ToString(string input) => input.Substring(StartPos, EndPos - StartPos);
+    public override string ToString() => $"«Skipped: {DebugContent()}»";
+}
 
 public class Parser(Terminal trivia, Log? log = null)
 {
@@ -24,7 +32,7 @@ public class Parser(Terminal trivia, Log? log = null)
     public FatalError ErrorInfo { get; private set; }
 
     private int _recoverySkipPos = -1;
-    private FollowSetCalculator? _followCalculator;
+    private FollowSetCalculatorV2? _followCalculator;
 
 
     private readonly Stack<string> _ruleStack = new();
@@ -53,7 +61,7 @@ public class Parser(Terminal trivia, Log? log = null)
                 .ToArray();
 
         BuildTdoppRulesInternal();
-        _followCalculator = new FollowSetCalculator(Rules);
+        _followCalculator = new FollowSetCalculatorV2(Rules);
     }
 
     private void BuildTdoppRulesInternal()
@@ -151,47 +159,47 @@ public class Parser(Terminal trivia, Log? log = null)
 
         Log($"Starting at {currentStartPos} parse for rule '{startRule}'");
 
-        for (int i = 0; ; i++)
+        var rootNode = new SeqNode(startRule, new List<ISyntaxNode>(), 0, 0);
+        var nodes = new List<ISyntaxNode>();
+        int oldErrorPos = -1;
+
+        while (currentStartPos < input.Length)
         {
-            var oldErrorPos = ErrorPos;
-
-            Log($"Starting at {currentStartPos} i={i} parse for rule '{startRule}' _recoverySkipPos={_recoverySkipPos}");
-            var normalResult = ParseRule(startRule, minPrecedence: 0, startPos: currentStartPos, input);
-
-            if (normalResult.TryGetSuccess(out _, out var newPos) && newPos == input.Length)
-                return normalResult;
-
-            ErrorInfo = (input, ErrorPos, Location: input.PositionToLineCol(ErrorPos), _expected.ToArray());
-
-            if (ErrorPos <= oldErrorPos)
+            oldErrorPos = ErrorPos;
+            var result = ParseRule(startRule, 0, currentStartPos, input);
+            if (result.TryGetSuccess(out var node, out var newPos))
             {
-                // Recovery in recovery rules mode failed.
-                // TODO: Implement panic mode recovery for this case.
-                var debugInfos = MemoizationVisualazer(input);
+                nodes.Add(node);
+                currentStartPos = newPos;
+            }
+            else
+            {
+                var recoveryPos = PanicMode(ErrorPos, input);
 
-                Log($"Parse failed. Memoization table:");
-                foreach (var info in debugInfos)
-                    Log($"    {info.Info}");
-                Log($"and of memoization table.");
-                return normalResult;
+                if (recoveryPos > ErrorPos)
+                {
+                    nodes.Add(new SkippedNode(ErrorPos, recoveryPos));
+                    currentStartPos = recoveryPos;
+                    ErrorPos = recoveryPos; // Move ErrorPos forward
+                }
+                else
+                {
+                    // If panic mode didn't advance, we have to skip at least one char to avoid infinite loop.
+                    nodes.Add(new SkippedNode(ErrorPos, ErrorPos + 1));
+                    currentStartPos = ErrorPos + 1;
+                    ErrorPos++;
+                }
             }
 
-            _recoverySkipPos = ErrorPos;
-
-            foreach (var x in _memo.ToArray())
+            // Clear memoization cache for the recovered region to allow fresh parsing
+            foreach (var x in _memo.Keys.Where(k => k.pos >= oldErrorPos).ToList())
             {
-                var pos = x.Key.pos;
-
-                if (!x.Value.IsSuccess)
-                    _memo.Remove(x.Key);
-
-                if (pos == currentStartPos)
-                    _memo.Remove(x.Key);
-
-                if (x.Value.NewPos == ErrorPos)
-                    _memo.Remove(x.Key);
+                _memo.Remove(x);
             }
         }
+
+        rootNode = rootNode with { Elements = nodes, EndPos = currentStartPos };
+        return Result.Success(rootNode, currentStartPos, ErrorPos);
     }
 
     private Result ParseRule(
@@ -528,75 +536,69 @@ public class Parser(Terminal trivia, Log? log = null)
             currentPos,
             maxFailPos: currentPos // ???
         );
+    }
 
-        Result panicRecovery(Terminal terminal, int startPos, string input)
+    private int PanicMode(int errorPos, string input)
+    {
+        Log($"Entering Panic Mode at {errorPos}", LogImportance.High);
+        var anchors = GetAnchorTerminals();
+
+        // First, check for anchors on new lines for statement-like rules
+        var statementStarters = Rules.Values.SelectMany(x => x).Where(r => r.IsStatementLike).ToList();
+
+        var nextPos = errorPos + 1;
+        while (nextPos < input.Length)
         {
-            Log($"Starting recovery for terminal {terminal.Kind} at position {startPos}");
-            var currentRule = _ruleStack.Peek();
-            var followSymbols = Guard.AssertIsNonNull(_followCalculator).GetFollowSet(currentRule);
+            var lineEnd = input.IndexOf('\n', nextPos);
+            if (lineEnd == -1) lineEnd = input.Length;
 
-            // Ищем первую подходящую точку восстановления
-            for (int pos = _recoverySkipPos; pos < input.Length; pos++)
+            for (int i = nextPos; i < lineEnd; i++)
             {
-                // Пропускаем тривиа
-                int triviaSkipped = Trivia.TryMatch(input, pos);
-                if (triviaSkipped > 0)
+                // Skip trivia
+                var triviaLen = Trivia.TryMatch(input, i);
+                if (triviaLen > 0)
                 {
-                    Log($"Skipping trivia at position {pos}, length {triviaSkipped}");
-                    if (pos > startPos)
-                    {
-                        var endPos = pos + triviaSkipped;
-                        var contentLength = pos - startPos;
-                        //var resultNode = new TerminalNode(
-                        //        Kind: "Error",
-                        //        StartPos: startPos,
-                        //        EndPos: endPos,
-                        //        ContentLength: contentLength,
-                        //        IsRecovery: true);
-                        //return Result.Success(resultNode, endPos);
-                    }
-
-                    pos += triviaSkipped - 1; // -1 т.к. в цикле будет pos++
+                    i += triviaLen -1;
                     continue;
                 }
 
-                // Проверяем текущий терминал
-                if (terminal.TryMatch(input, pos) > 0)
+                foreach (var anchor in anchors)
                 {
-                    Log($"Found matching terminal {terminal.Kind} at position {pos}, exiting recovery mode");
-                    _recoverySkipPos = -1;
-                    return ParseTerminal(terminal, pos, input);
-                }
-
-                // Проверяем Follow-символы
-                foreach (var followTerm in followSymbols)
-                {
-                    if (followTerm.TryMatch(input, pos) > 0 && pos > startPos)
+                    if (anchor.TryMatch(input, i) > 0)
                     {
-                        Log($"Found follow symbol {followTerm.Kind} at position {pos}, exiting recovery mode");
-                        _recoverySkipPos = -1;
-
-                        // Создаем терминал-ошибку для пропущенной части
-                        int errorLength = pos - startPos;
-                        var resultNode = new TerminalNode(
-                                Kind: "Error",
-                                StartPos: startPos,
-                                EndPos: pos,
-                                ContentLength: errorLength,
-                                IsRecovery: true
-                            );
-                        return Result.Success(
-                            resultNode,
-                            pos,
-                            maxFailPos: startPos
-                        );
+                        Log($"Found anchor '{anchor}' at {i}. Resuming parsing.", LogImportance.High);
+                        return i;
                     }
                 }
             }
-
-            Log("Recovery failed: no valid recovery point found");
-            return Result.Failure(startPos);
+            nextPos = lineEnd + 1;
         }
+
+        Log("Panic mode reached end of input.", LogImportance.High);
+        return input.Length; // Reached end of file
+    }
+
+    private IReadOnlyCollection<Terminal> GetAnchorTerminals()
+    {
+        var anchors = new HashSet<Terminal>();
+        var followCalculator = Guard.AssertIsNonNull(_followCalculator);
+
+        foreach (var ruleName in _ruleStack)
+        {
+            anchors.UnionWith(followCalculator.GetFollowSet(ruleName));
+
+            // This part is tricky because we don't have direct access to the rule object here, only its name.
+            // We'd need to look up the rule from the name to check if it's a looping construct.
+            // For now, let's just use the Follow sets.
+        }
+
+        // Also add common statement starters as anchors
+        var statementFirsts = followCalculator.GetFirstSet("Statement");
+        anchors.UnionWith(statementFirsts);
+        var functionFirsts = followCalculator.GetFirstSet("Function");
+        anchors.UnionWith(functionFirsts);
+
+        return anchors;
     }
 
     private Result ParseSeq(

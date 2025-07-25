@@ -128,6 +128,11 @@ public class DotVisitor(string input) : ISyntaxVisitor
         throw new NotImplementedException("It is skipped in this language.");
     }
 
+    public void Visit(SkippedNode node)
+    {
+        // Do nothing
+    }
+
     private record DotStatementList(IReadOnlyList<DotStatement> Statements) : DotAst
     {
         public override string ToString() => string.Join("\n", Statements);

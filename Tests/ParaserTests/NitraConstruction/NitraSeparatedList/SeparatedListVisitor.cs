@@ -104,5 +104,6 @@ public partial class SeparatedListTests
 
         public void Visit(SomeNode node) => node.Value.Accept(this);
         public void Visit(NoneNode node) => Result = null;
+        public void Visit(SkippedNode node) { }
     }
 }

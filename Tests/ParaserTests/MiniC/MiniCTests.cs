@@ -51,18 +51,18 @@ public partial class MiniCTests
         // Statement rules
         _parser.Rules["Statement"] = new Rule[]
         {
-            new Seq([new Literal("int"), Terminals.Ident(), new OftenMissed(new Literal(";"))], "VarDecl"),
+            new Seq([new Literal("int"), Terminals.Ident(), new OftenMissed(new Literal(";"))], "VarDecl") { IsStatementLike = true },
             new Seq([
                 new Literal("int"), new Literal("["), new Literal("]"), Terminals.Ident(), new Literal("="), new Literal("{"),
                 new SeparatedList(Terminals.Number(), new Literal(","), Kind: "ArrayDeclItems", EndBehavior: SeparatorEndBehavior.Optional),
                 closingParenthesis, new OftenMissed(new Literal(";"))
-            ], "ArrayDecl"),
-            new Seq([new Ref("Expr"), new OftenMissed(new Literal(";"))], "ExprStmt"),
+            ], "ArrayDecl") { IsStatementLike = true },
+            new Seq([new Ref("Expr"), new OftenMissed(new Literal(";"))], "ExprStmt") { IsStatementLike = true },
             new Seq([new Literal("if"), new Literal("("), new Ref("Expr"), closingBracket,
-                    new Ref("Block")], "IfStmt"),
+                    new Ref("Block")], "IfStmt") { IsStatementLike = true },
             new Seq([new Literal("if"), new Literal("("), new Ref("Expr"), closingBracket,
-                    new Ref("Block"), new Literal("else"), new Ref("Block")], "IfElseStmt"),
-            new Seq([new Literal("return"), new Ref("Expr"), new OftenMissed(new Literal(";"))], "Return")
+                    new Ref("Block"), new Literal("else"), new Ref("Block")], "IfElseStmt") { IsStatementLike = true },
+            new Seq([new Literal("return"), new Ref("Expr"), new OftenMissed(new Literal(";"))], "Return") { IsStatementLike = true }
         };
 
         // Block rules
@@ -86,7 +86,7 @@ public partial class MiniCTests
                 new Optional(new Ref("Params")), // Используем новый Optional
                 closingBracket,
                 new Ref("Block")
-            ], "FunctionDecl")
+            ], "FunctionDecl") { IsStatementLike = true }
         ];
 
         _parser.Rules["Module"] = [new ZeroOrMany(new Ref("Function"), "ModuleFunctions")];
@@ -505,6 +505,27 @@ public partial class MiniCTests
         "int[] x = { 1, 2, 3, };",
         "ArrayDecl: int[] x = {1,2,3}"
     );
+
+    [TestMethod]
+    public void Err_PanicModeRecovery()
+    {
+        TestMiniC(
+            "Module",
+            """
+            int func1(x, y)
+            {
+                int z = x # y; // Invalid operator
+                return z;
+            }
+
+            int func2()
+            {
+                return 123;
+            }
+            """,
+            "FunctionDecl: func1(x, y) { «Skipped» }; FunctionDecl: func2() { Return(123) }"
+        );
+    }
 
     private void TestMiniC(string startRule, string input, string expectedAst)
     {

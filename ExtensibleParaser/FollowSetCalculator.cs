@@ -24,8 +24,7 @@ public class FollowSetCalculator
     public FollowSetCalculator(Dictionary<string, Rule[]> rules)
     {
         _rules = rules ?? throw new ArgumentNullException(nameof(rules));
-        _firstSets = ComputeFirstSets();
-        ComputeFollowSets();
+        _firstSets = new Dictionary<string, HashSet<Terminal>>();
     }
 
     public HashSet<Terminal> GetFollowSet(string ruleName)
@@ -48,7 +47,12 @@ public class FollowSetCalculator
 
     private HashSet<Terminal> ComputeFirstForRule(string ruleName)
     {
+        if (_firstSets.TryGetValue(ruleName, out var cachedFirst))
+            return cachedFirst;
+
         var first = new HashSet<Terminal>();
+        _firstSets[ruleName] = first; // Add placeholder to prevent infinite recursion
+
         foreach (var rule in _rules[ruleName])
         {
             var flattened = FlattenRule(rule).ToList();
