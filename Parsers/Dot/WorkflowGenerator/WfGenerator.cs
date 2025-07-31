@@ -378,6 +378,38 @@ public class WfGenerator : IIncrementalGenerator
             }
         }
 
+        var canProcessEventMethod = new StringBuilder();
+
+        canProcessEventMethod.AppendLine($$"""
+        /// <summary>
+        /// Checks if the specified event can be processed in the current state
+        /// </summary>
+        /// <param name="event">The event to check</param>
+        /// <returns>True if the event can be processed in current state, false otherwise</returns>
+        public bool CanProcessEvent(WfEvent @event)
+        {
+            switch (CurrentState, @event)
+            {
+    """);
+
+        foreach (var (from, to, e, _, _) in transitions)
+        {
+            var eventName = SanitizeName(e);
+            var eventType = $"WfEvent.{eventName}";
+
+            canProcessEventMethod.AppendLine($$"""
+                case (WfState.{{from}}, {{eventType}} _):
+                    return true;
+        """);
+        }
+
+        canProcessEventMethod.AppendLine($$"""
+                default:
+                    return false;
+            }
+        }
+    """);
+
         var eventMethods = string.Join("\n", eventMethodMap.OrderBy(x => x.Key).Select(x => x.Value));
         var afterEventMethods = string.Join("\n", afterEventMethodMap.OrderBy(x => x.Key).Select(x => x.Value));
 
@@ -393,6 +425,8 @@ public class WfGenerator : IIncrementalGenerator
                 protected abstract ISchedulingService Scheduler { get; }
             
             {{schedulingMethod}}
+
+            {{canProcessEventMethod}}
 
             {{handleReplyMethod}}
 
