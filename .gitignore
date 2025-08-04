@@ -67,3 +67,4 @@ $tf/
 *.VC.opendb
 *.VC.VC.opendb
 wf.svg
+.dotnet/

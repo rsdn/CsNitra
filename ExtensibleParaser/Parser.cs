@@ -1,4 +1,4 @@
-﻿#nullable enable
+#nullable enable
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
@@ -41,7 +41,7 @@ public class Parser(Terminal trivia, Log? log = null)
 
     private readonly Dictionary<(int pos, string rule, int precedence), Result> _memo = new();
 
-    public void BuildTdoppRules()
+    public void BuildTdoppRules(string startRule)
     {
         var inlineableRules = TdoppRules
             .Where(kvp => kvp.Value.Postfix.Length == 0 && kvp.Value.Prefix.Length == 1)
@@ -53,7 +53,7 @@ public class Parser(Terminal trivia, Log? log = null)
                 .ToArray();
 
         BuildTdoppRulesInternal();
-        _followCalculator = new FollowSetCalculator(Rules);
+        _followCalculator = new FollowSetCalculator(Rules, startRule, Logger);
     }
 
     private void BuildTdoppRulesInternal()
@@ -89,9 +89,9 @@ public class Parser(Terminal trivia, Log? log = null)
             }
 
             TdoppRules[ruleName] = new TdoppRule(
-                new Ref(ruleName), 
-                Kind: ruleName, 
-                prefix.ToArray(), 
+                new Ref(ruleName),
+                Kind: ruleName,
+                prefix.ToArray(),
                 postfix.ToArray(),
                 recoveryPrefix.ToArray(),
                 recoveryPostfix.ToArray()
@@ -167,6 +167,21 @@ public class Parser(Terminal trivia, Log? log = null)
             {
                 // Recovery in recovery rules mode failed.
                 // TODO: Implement panic mode recovery for this case.
+                Log("--- PANIC MODE: Displaying Context ---", LogImportance.High);
+                Log($"Parse failed at position {ErrorPos}. Rule stack:", LogImportance.High);
+
+                var stackArray = _ruleStack.ToArray(); // ToArray gives me the stack from top to bottom.
+                if (_followCalculator != null)
+                {
+                    foreach (var ruleName in stackArray)
+                    {
+                        var followSet = _followCalculator.GetFollowSet(ruleName);
+                        var followSetString = string.Join(", ", followSet.Select(t => t.ToString()));
+                        Log($"  - {ruleName}, FOLLOW: {{ {followSetString} }}", LogImportance.High);
+                    }
+                }
+                Log("------------------------------------", LogImportance.High);
+
                 var debugInfos = MemoizationVisualazer(input);
 
                 Log($"Parse failed. Memoization table:");

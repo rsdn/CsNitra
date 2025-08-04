@@ -1,31 +1,35 @@
-﻿namespace ExtensibleParaser;
-
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
+using Diagnostics;
+
+namespace ExtensibleParaser;
 
 public class FollowSetCalculator
 {
-    private record EmptyTerminal() : Terminal("ε")
-    {
-        public override int TryMatch(string input, int position) => 0;
-    }
-
-    private record EofTerminal() : Terminal("EOF")
-    {
-        public override int TryMatch(string input, int position) =>
-            position >= input.Length ? 0 : -1;
-    }
+    public static readonly Terminal Epsilon = new EpsilonTerminal();
+    public static readonly Terminal Eof = new EofTerminal();
 
     private readonly Dictionary<string, Rule[]> _rules;
-    private readonly Dictionary<string, HashSet<Terminal>> _firstSets;
+    private readonly Dictionary<string, HashSet<Terminal>> _firstSets = new();
     private readonly Dictionary<string, HashSet<Terminal>> _followSets = new();
+    private readonly Log? _log;
+    private readonly string _startSymbol;
 
-    public FollowSetCalculator(Dictionary<string, Rule[]> rules)
+    public FollowSetCalculator(Dictionary<string, Rule[]> rules, string startSymbol = "Module", Log? log = null)
     {
         _rules = rules ?? throw new ArgumentNullException(nameof(rules));
-        _firstSets = ComputeFirstSets();
+        _startSymbol = startSymbol;
+        _log = log;
+
+        _log?.Info("Starting FIRST set computation.");
+        ComputeFirstSets();
+        LogSets(_firstSets, "FIRST");
+
+        _log?.Info("Starting FOLLOW set computation.");
         ComputeFollowSets();
+        LogSets(_followSets, "FOLLOW");
     }
 
     public HashSet<Terminal> GetFollowSet(string ruleName)
@@ -33,47 +37,15 @@ public class FollowSetCalculator
         if (string.IsNullOrEmpty(ruleName))
             throw new ArgumentException("Rule name cannot be null or empty", nameof(ruleName));
 
-        return _followSets.TryGetValue(ruleName, out var set) ? set : new HashSet<Terminal>();
+        return _followSets.TryGetValue(ruleName, out var set) ? set : new HashSet<Terminal>(new TerminalComparer());
     }
 
-    private Dictionary<string, HashSet<Terminal>> ComputeFirstSets()
+    private void ComputeFirstSets()
     {
-        var first = new Dictionary<string, HashSet<Terminal>>();
         foreach (var ruleName in _rules.Keys)
         {
-            first[ruleName] = ComputeFirstForRule(ruleName);
+            _firstSets[ruleName] = new HashSet<Terminal>(new TerminalComparer());
         }
-        return first;
-    }
-
-    private HashSet<Terminal> ComputeFirstForRule(string ruleName)
-    {
-        var first = new HashSet<Terminal>();
-        foreach (var rule in _rules[ruleName])
-        {
-            var flattened = FlattenRule(rule).ToList();
-            foreach (var element in flattened)
-            {
-                if (element is Terminal term)
-                {
-                    first.Add(term);
-                    break;
-                }
-                else if (element is Ref refRule)
-                {
-                    var refFirst = ComputeFirstForRule(refRule.RuleName);
-                    first.UnionWith(refFirst);
-                    if (!refFirst.Any(t => t is EmptyTerminal))
-                        break;
-                }
-            }
-        }
-        return first;
-    }
-
-    private void ComputeFollowSets()
-    {
-        _followSets["Module"] = new HashSet<Terminal> { new EofTerminal() };
 
         bool changed;
         do
@@ -81,28 +53,122 @@ public class FollowSetCalculator
             changed = false;
             foreach (var ruleName in _rules.Keys)
             {
-                foreach (var production in GetProductions(ruleName))
+                foreach (var production in _rules[ruleName])
                 {
-                    var productionList = production.ToList();
-                    for (int i = 0; i < productionList.Count; i++)
+                    var firstOfProduction = ComputeFirstForSequence(production);
+                    var currentSet = _firstSets[ruleName];
+                    var initialCount = currentSet.Count;
+                    currentSet.UnionWith(firstOfProduction);
+                    if (currentSet.Count > initialCount)
                     {
-                        if (productionList[i] is Ref aRef)
+                        changed = true;
+                    }
+                }
+            }
+        } while (changed);
+    }
+
+    private HashSet<Terminal> ComputeFirstForSequence(Rule rule)
+    {
+        var first = new HashSet<Terminal>(new TerminalComparer());
+        var sequence = GetRuleSequence(rule);
+        var nullable = true;
+
+        foreach (var item in sequence)
+        {
+            var firstOfItem = GetFirstForElement(item);
+            first.UnionWith(firstOfItem.Where(t => !t.Equals(Epsilon)));
+
+            if (!firstOfItem.Contains(Epsilon))
+            {
+                nullable = false;
+                break;
+            }
+        }
+
+        if (nullable)
+        {
+            first.Add(Epsilon);
+        }
+
+        return first;
+    }
+
+    private IEnumerable<Rule> GetRuleSequence(Rule rule)
+    {
+        return rule switch
+        {
+            Seq s => s.Elements,
+            _ => new[] { rule }
+        };
+    }
+
+
+    private HashSet<Terminal> GetFirstForElement(Rule element)
+    {
+        return element switch
+        {
+            Terminal t => new HashSet<Terminal>(new[] { t }, new TerminalComparer()),
+            Ref r => _firstSets[r.RuleName],
+            ReqRef r => _firstSets[r.RuleName],
+            OneOrMany o => GetFirstForElement(o.Element),
+            ZeroOrMany z => new HashSet<Terminal>(GetFirstForElement(z.Element).Union(new[] { Epsilon }), new TerminalComparer()),
+            Optional o => new HashSet<Terminal>(GetFirstForElement(o.Element).Union(new[] { Epsilon }), new TerminalComparer()),
+            OftenMissed o => new HashSet<Terminal>(GetFirstForElement(o.Element).Union(new[] { Epsilon }), new TerminalComparer()),
+            AndPredicate p => GetFirstForElement(p.MainRule),
+            NotPredicate n => GetFirstForElement(n.MainRule),
+            SeparatedList sl => sl.CanBeEmpty
+                ? new HashSet<Terminal>(GetFirstForElement(sl.Element).Union(new[] { Epsilon }), new TerminalComparer())
+                : GetFirstForElement(sl.Element),
+            _ => new HashSet<Terminal>(new TerminalComparer())
+        };
+    }
+
+    private void ComputeFollowSets()
+    {
+        foreach (var ruleName in _rules.Keys)
+        {
+            _followSets[ruleName] = new HashSet<Terminal>(new TerminalComparer());
+        }
+
+        if (_rules.ContainsKey(_startSymbol))
+        {
+            _followSets[_startSymbol].Add(Eof);
+        }
+
+        bool changed;
+        do
+        {
+            changed = false;
+            foreach (var ruleName in _rules.Keys)
+            {
+                foreach (var production in _rules[ruleName])
+                {
+                    var sequence = GetRuleSequence(production).ToList();
+                    for (int i = 0; i < sequence.Count; i++)
+                    {
+                        var currentRule = sequence[i];
+                        if (currentRule is not Ref and not ReqRef) continue;
+
+                        var currentRuleName = currentRule is Ref r ? r.RuleName : ((ReqRef)currentRule).RuleName;
+                        if (!_followSets.ContainsKey(currentRuleName)) continue;
+
+                        var followSet = _followSets[currentRuleName];
+                        var initialCount = followSet.Count;
+
+                        var restOfSequence = sequence.Skip(i + 1).ToList();
+                        var firstOfRest = ComputeFirstForSequence(restOfSequence);
+
+                        followSet.UnionWith(firstOfRest.Where(t => !t.Equals(Epsilon)));
+
+                        if (firstOfRest.Contains(Epsilon))
                         {
-                            var beta = productionList.Skip(i + 1).ToList();
-                            var firstBeta = ComputeFirstForSequence(beta);
-                            var followA = _followSets.GetValueOrDefault(aRef.RuleName, new HashSet<Terminal>());
+                            followSet.UnionWith(_followSets[ruleName]);
+                        }
 
-                            var beforeCount = followA.Count;
-                            followA.UnionWith(firstBeta.Where(t => !(t is EmptyTerminal)));
-
-                            if (firstBeta.Any(t => t is EmptyTerminal))
-                                followA.UnionWith(_followSets.GetValueOrDefault(ruleName, new HashSet<Terminal>()));
-
-                            if (followA.Count > beforeCount)
-                            {
-                                _followSets[aRef.RuleName] = followA;
-                                changed = true;
-                            }
+                        if (followSet.Count > initialCount)
+                        {
+                            changed = true;
                         }
                     }
                 }
@@ -110,57 +176,69 @@ public class FollowSetCalculator
         } while (changed);
     }
 
-    private List<Terminal> ComputeFirstForSequence(List<Rule> sequence)
+    private HashSet<Terminal> ComputeFirstForSequence(IReadOnlyList<Rule> sequence)
     {
-        var result = new HashSet<Terminal>();
-        for (int i = 0; i < sequence.Count; i++)
-        {
-            var rule = sequence[i];
-            var ruleFirst = GetFirstForElement(rule);
-            result.UnionWith(ruleFirst.Where(t => !(t is EmptyTerminal)));
-            if (!ruleFirst.Any(t => t is EmptyTerminal))
-                break;
-            if (i == sequence.Count - 1)
-                result.Add(new EmptyTerminal());
-        }
-        return result.ToList();
-    }
+        var first = new HashSet<Terminal>(new TerminalComparer());
+        var nullable = true;
 
-    private HashSet<Terminal> GetFirstForElement(Rule element)
-    {
-        return element switch
+        foreach (var item in sequence)
         {
-            Terminal t => new HashSet<Terminal> { t },
-            Ref r => _firstSets[r.RuleName],
-            _ => new HashSet<Terminal>()
-        };
-    }
+            var firstOfItem = GetFirstForElement(item);
+            first.UnionWith(firstOfItem.Where(t => !t.Equals(Epsilon)));
 
-    private List<List<Rule>> GetProductions(string ruleName)
-    {
-        var productions = new List<List<Rule>>();
-        foreach (var rule in _rules[ruleName])
-        {
-            foreach (var prod in ExpandRule(rule))
+            if (!firstOfItem.Contains(Epsilon))
             {
-                productions.Add(prod.ToList());
+                nullable = false;
+                break;
             }
         }
-        return productions;
+
+        if (nullable)
+        {
+            first.Add(Epsilon);
+        }
+
+        return first;
     }
 
-    private List<List<Rule>> ExpandRule(Rule rule) => rule switch
-    {
-        Seq seq => new List<List<Rule>> { seq.Elements.SelectMany(FlattenRule).ToList() },
-        _ => new List<List<Rule>> { FlattenRule(rule).ToList() }
-    };
 
-    private List<Rule> FlattenRule(Rule rule) => rule switch
+    private void LogSets(Dictionary<string, HashSet<Terminal>> sets, string setName)
     {
-        OneOrMany oom => FlattenRule(oom.Element),
-        ZeroOrMany zom => FlattenRule(zom.Element),
-        Optional opt => FlattenRule(opt.Element),
-        OftenMissed x => FlattenRule(x.Element),
-        _ => new List<Rule> { rule }
-    };
+        if (_log == null) return;
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"Computed {setName} sets:");
+        foreach (var kvp in sets.OrderBy(kv => kv.Key))
+        {
+            sb.AppendLine($"  {kvp.Key}: {{ {string.Join(", ", kvp.Value.Select(t => t.ToString()))} }}");
+        }
+        _log.Info(sb.ToString());
+    }
+
+    private class TerminalComparer : IEqualityComparer<Terminal>
+    {
+        public bool Equals(Terminal x, Terminal y)
+        {
+            if (ReferenceEquals(x, y)) return true;
+            if (x is null || y is null) return false;
+            return x.Kind == y.Kind;
+        }
+
+        public int GetHashCode(Terminal obj)
+        {
+            return obj.Kind.GetHashCode();
+        }
+    }
+}
+
+internal sealed record EpsilonTerminal() : Terminal("ε")
+{
+    public override int TryMatch(string input, int position) => 0;
+    public override string ToString() => "ε";
+}
+
+internal sealed record EofTerminal() : Terminal("EOF")
+{
+    public override int TryMatch(string input, int position) =>
+        position >= input.Length ? 0 : -1;
 }

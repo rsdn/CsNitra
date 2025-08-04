@@ -1,17 +1,12 @@
-﻿
 using ExtensibleParaser;
 
 namespace Calc;
 
-[TerminalMatcher]
 public static partial class Terminals
 {
-    [Regex(@"\d+")]
-    public static partial Terminal Number();
+    public static Terminal Number() => new Literal("0", "Number");
 
-    [Regex(@"[_\l]\w*")]
-    public static partial Terminal Ident();
+    public static Terminal Ident() => new Literal("a", "Ident");
 
-    [Regex(@"\s*")]
-    public static partial Terminal Trivia();
+    public static Terminal Trivia() => new EmptyTerminal("Trivia");
 }

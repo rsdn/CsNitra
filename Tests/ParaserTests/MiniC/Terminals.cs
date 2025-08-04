@@ -1,23 +1,18 @@
-﻿using ExtensibleParaser;
+using ExtensibleParaser;
 
 namespace MiniC;
 
-[TerminalMatcher]
 public sealed partial class Terminals
 {
-    [Regex(@"\d+")]
-    public static partial Terminal Number();
+    public static Terminal Number() => new Literal("0", "Number");
 
-    [Regex(@"[_\l]\w*")]
-    public static partial Terminal Ident(); 
+    public static Terminal Ident() => new Literal("a", "Ident");
 
-    [Regex(@"\s*")]
-    public static partial Terminal Trivia();
+    public static Terminal Trivia() => new EmptyTerminal("Trivia");
 
-    [Regex(@"[\\\/*+\-<=>!@#$%^&]+")]
-    public static partial RecoveryTerminal ErrorOperator();
+    public static RecoveryTerminal ErrorOperator() => new EmptyTerminal("ErrorOperator");
 
     public static Terminal ErrorEmpty() => _error;
 
-    private static Terminal _error = new EmptyTerminal("Error");
+    private static readonly Terminal _error = new EmptyTerminal("Error");
 }
