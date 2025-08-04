@@ -102,7 +102,7 @@ public class DotParser
             DotTerminals.Number()
         ];
 
-        _parser.BuildTdoppRules();
+        _parser.BuildTdoppRules("Graph");
     }
 
     public Result Parse(string input)

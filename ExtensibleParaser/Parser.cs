@@ -41,7 +41,7 @@ public class Parser(Terminal trivia, Log? log = null)
 
     private readonly Dictionary<(int pos, string rule, int precedence), Result> _memo = new();
 
-    public void BuildTdoppRules()
+    public void BuildTdoppRules(string startRule)
     {
         var inlineableRules = TdoppRules
             .Where(kvp => kvp.Value.Postfix.Length == 0 && kvp.Value.Prefix.Length == 1)
