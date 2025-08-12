@@ -26,7 +26,7 @@ jobs:
       with:
         dotnet-version: ${{ matrix.dotnet-version }}
     - name: Install GraphViz ${{ matrix.dotnet-version }}
-      uses: ./install_graphviz.yaml
+      uses: ./.github/workflows/install_graphviz.yaml
     - name: Restore dependencies
       run: dotnet restore
     - name: Test
