@@ -7,7 +7,7 @@ runs:
       if: runner.os == 'Windows'
       run: |
           choco install graphviz -y
-          echo "C:\Program Files\Graphviz\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+          echo "C:\\Program Files\\Graphviz\\bin" >> "$GITHUB_PATH"
       shell: bash
 
     - name: Install Graphviz on Linux
