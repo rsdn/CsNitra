@@ -18,9 +18,4 @@
         <ProjectReference Include="..\..\..\TerminalGenerator\TerminalGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     </ItemGroup>
 
-    <ItemGroup>
-      <Folder Include="Shared\" />
-      <Folder Include="Shared\" />
-    </ItemGroup>
-
 </Project>
