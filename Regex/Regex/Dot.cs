@@ -19,7 +19,7 @@ public static class Dot
     {
         var processStartInfo = new ProcessStartInfo
         {
-            FileName = "dot.exe",
+            FileName = "dot",
             Arguments = $"-Tsvg \"{dotFilePath}\" -o \"{outputSvgPath}\"",
             RedirectStandardOutput = true,
             RedirectStandardError = true,

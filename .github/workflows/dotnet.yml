@@ -25,6 +25,8 @@ jobs:
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: ${{ matrix.dotnet-version }}
+    - name: Install GraphViz ${{ matrix.dotnet-version }}
+      uses: ./.github/actions/install-graphviz
     - name: Restore dependencies
       run: dotnet restore
     - name: Test
