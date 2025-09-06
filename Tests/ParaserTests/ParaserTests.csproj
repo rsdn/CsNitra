@@ -26,6 +26,10 @@
 
     <ProjectReference Include="..\..\Parsers\Dot\DotParser\DotParser.csproj" />
 
+    <ProjectReference Include="..\..\Parsers\Json\Json.csproj" />
+
+    <ProjectReference Include="..\..\Parsers\Json\JsonDeepseek\Json\Json.csproj" />
+
     <ProjectReference Include="..\..\Regex\Regex\Regex.csproj" OutputItemType="Analyzer" />
     <ProjectReference Include="..\..\TerminalGenerator\TerminalGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\..\ExtensibleParaser\ExtensibleParaser.csproj" />
