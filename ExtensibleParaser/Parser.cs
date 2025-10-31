@@ -27,7 +27,10 @@ public class Parser(Terminal trivia, Log? log = null)
     private FollowSetCalculator? _followCalculator;
 
 
-    private readonly Stack<string> _ruleStack = new();
+    // Структура для хранения информации о положении в правиле
+    private record struct RuleStackEntry(string RuleName, string? ParentRule, int? SeqIndex, int? AltIndex, int? LoopDepth);
+
+    private readonly Stack<RuleStackEntry> _ruleStack = new();
     private readonly HashSet<Terminal> _expected = [];
     public Terminal Trivia { get; private set; } = trivia;
     public Log? Logger { get; set; } = log;
@@ -166,7 +169,14 @@ public class Parser(Terminal trivia, Log? log = null)
             if (ErrorPos <= oldErrorPos)
             {
                 // Recovery in recovery rules mode failed.
-                // TODO: Implement panic mode recovery for this case.
+                // Выводим стек правил с метаинформацией
+                Log($"--- RULE STACK TRACE ---", LogImportance.High);
+                foreach (var entry in _ruleStack.Reverse())
+                {
+                    Log($"  Rule: {entry.RuleName}, Parent: {entry.ParentRule}, SeqIndex: {entry.SeqIndex}, AltIndex: {entry.AltIndex}, LoopDepth: {entry.LoopDepth}", LogImportance.High);
+                }
+                Log($"------------------------", LogImportance.High);
+
                 var debugInfos = MemoizationVisualazer(input);
 
                 Log($"Parse failed. Memoization table:");
@@ -227,7 +237,7 @@ public class Parser(Terminal trivia, Log? log = null)
         var prefixRules = isRecoveryPos ? tdoppRule.RecoveryPrefix : tdoppRule.Prefix;
         var maxFailPos = startPos;
 
-        _ruleStack.Push(ruleName);
+        _ruleStack.Push(new RuleStackEntry(ruleName, null, null, null, null));
 
         foreach (var prefix in prefixRules)
         {
@@ -533,7 +543,7 @@ public class Parser(Terminal trivia, Log? log = null)
         {
             Log($"Starting recovery for terminal {terminal.Kind} at position {startPos}");
             var currentRule = _ruleStack.Peek();
-            var followSymbols = Guard.AssertIsNonNull(_followCalculator).GetFollowSet(currentRule);
+            var followSymbols = Guard.AssertIsNonNull(_followCalculator).GetFollowSet(currentRule.ParentRule);
 
             // Ищем первую подходящую точку восстановления
             for (int pos = _recoverySkipPos; pos < input.Length; pos++)
