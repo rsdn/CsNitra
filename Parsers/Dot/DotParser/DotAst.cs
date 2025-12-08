@@ -7,14 +7,14 @@ public abstract record DotAst
     public abstract override string ToString();
 }
 
-public record DotGraph(string Name, IReadOnlyList<DotStatement> Statements) : DotAst
+public sealed record DotGraph(string Name, IReadOnlyList<DotStatement> Statements) : DotAst
 {
     public override string ToString() => $"digraph {Name} {{\n{string.Join("\n", Statements)}\n}}";
 }
 
 public abstract record DotStatement : DotAst;
 
-public record DotNodeStatement(string Name, IReadOnlyList<DotAttribute> Attributes) : DotStatement
+public sealed record DotNodeStatement(string Name, IReadOnlyList<DotAttribute> Attributes) : DotStatement
 {
     public override string ToString() => $"{Name} {AttributesToString()};";
     private string AttributesToString() => Attributes.Count > 0
@@ -22,7 +22,7 @@ public record DotNodeStatement(string Name, IReadOnlyList<DotAttribute> Attribut
         : "";
 }
 
-public record DotEdgeStatement(string FromNode, string ToNode, IReadOnlyList<DotAttribute> Attributes) : DotStatement
+public sealed record DotEdgeStatement(string FromNode, string ToNode, IReadOnlyList<DotAttribute> Attributes) : DotStatement
 {
     public override string ToString() => $"{FromNode} -> {ToNode} {AttributesToString()};";
     private string AttributesToString() => Attributes.Count > 0
@@ -30,29 +30,29 @@ public record DotEdgeStatement(string FromNode, string ToNode, IReadOnlyList<Dot
         : "";
 }
 
-public record DotSubgraph(string Name, IReadOnlyList<DotStatement> Statements) : DotStatement
+public sealed record DotSubgraph(string Name, IReadOnlyList<DotStatement> Statements) : DotStatement
 {
     public override string ToString() => $"subgraph {Name} {{\n{string.Join("\n", Statements)}\n}}";
 }
 
-public record DotAttribute(string Name, DotTerminalNode Value) : DotAst
+public sealed record DotAttribute(string Name, DotTerminalNode Value) : DotAst
 {
     public override string ToString() => $"{Name}={Value}";
 }
 
-public record DotAssignment(string Name, string Value) : DotStatement
+public sealed record DotAssignment(string Name, string Value) : DotStatement
 {
     public override string ToString() => $"{Name}={Value};";
 }
 
 public abstract record DotTerminalNode(string Kind, int StartPos, int EndPos) : DotAst;
 
-public record DotIdentifier(string Value, int StartPos, int EndPos) : DotTerminalNode("Identifier", StartPos, EndPos)
+public sealed record DotIdentifier(string Value, int StartPos, int EndPos) : DotTerminalNode("Identifier", StartPos, EndPos)
 {
     public override string ToString() => Value;
 }
 
-public record DotQuotedString(string Value, string RawValue, int StartPos, int EndPos)
+public sealed record DotQuotedString(string Value, string RawValue, int StartPos, int EndPos)
     : DotTerminalNode(Kind: "QuotedString", StartPos: StartPos, EndPos: EndPos)
 {
     public DotQuotedString(ChatRef span, int startPos, int endPos)
@@ -116,18 +116,18 @@ public record DotQuotedString(string Value, string RawValue, int StartPos, int E
     public override string ToString() => $"\"{RawValue}\"";
 }
 
-public record DotNumber(int Value, int StartPos, int EndPos) : DotTerminalNode("Number", StartPos, EndPos)
+public sealed record DotNumber(int Value, int StartPos, int EndPos) : DotTerminalNode("Number", StartPos, EndPos)
 {
     public override string ToString() => Value.ToString();
 }
 
-public record DotLiteral(string Value, int StartPos, int EndPos) : DotTerminalNode("Literal", StartPos, EndPos)
+public sealed record DotLiteral(string Value, int StartPos, int EndPos) : DotTerminalNode("Literal", StartPos, EndPos)
 {
     public override string ToString() => Value;
 }
 
-public record DotAttributeList(IReadOnlyList<DotAttribute> Attributes) : DotAst
+public sealed record DotAttributeList(IReadOnlyList<DotAttribute> Attributes) : DotAst
 {
     public override string ToString() => $"[{string.Join(", ", Attributes)}]";
 }
-public record DotAttributeRest(DotAttribute Attribute) : DotAst;
+public sealed record DotAttributeRest(DotAttribute Attribute) : DotAst;
