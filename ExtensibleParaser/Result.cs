@@ -81,8 +81,8 @@ public readonly record struct Result
     private sealed class DebugView(Result result)
     {
         [DebuggerBrowsable(DebuggerBrowsableState.RootHidden)]
-        public Tree[] Elements => Parser.Input == null || !result.IsSuccess
-            ? []
+        public object Elements => Parser.Input == null || !result.IsSuccess
+            ? new Tree[0]
             : new Tree(Parser.Input, result.Node!).Elements;
     }
 }

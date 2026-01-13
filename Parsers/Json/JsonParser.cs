@@ -53,7 +53,7 @@ public class JsonParser
     {
         var result = _parser.Parse(input, "Json", out _);
         if (!result.TryGetSuccess(out var node, out _))
-            throw new InvalidOperationException($"Parse failed: {_parser.ErrorInfo.GetErrorText()}");
+            throw new InvalidOperationException($"Parse failed: {_parser.ErrorInfo.AssertIsNonNull().GetErrorText()}");
 
         var visitor = new JsonVisitor(input);
         node.Accept(visitor);

@@ -1,6 +1,7 @@
-﻿global using FatalError = (string Input, int Pos, (int Line, int Col) Location, ExtensibleParaser.Terminal[] Expecteds);
+﻿namespace ExtensibleParaser;
 
-namespace ExtensibleParaser;
+public sealed record FatalError(string Input, int Pos, (int Line, int Col) Location, ExtensibleParaser.Terminal[] Expecteds);
+
 
 public static class Extensions
 {

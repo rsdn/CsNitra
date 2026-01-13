@@ -513,7 +513,7 @@ public partial class MiniCTests
         var parseResult = _parser.Parse(input, startRule, out _);
         if (!parseResult.TryGetSuccess(out var node, out _))
         {
-            Trace.WriteLine($"❌ Parse FAILED. {_parser.ErrorInfo.GetErrorText()}");
+            Trace.WriteLine($"❌ Parse FAILED. {_parser.ErrorInfo.AssertIsNonNull().GetErrorText()}");
             Assert.Fail($"Parse failed for: {input}");
             return;
         }

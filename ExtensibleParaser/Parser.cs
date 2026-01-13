@@ -21,7 +21,7 @@ public class Parser(Terminal trivia, Log? log = null)
 #pragma warning restore IDE0079 // Remove unnecessary suppression
 
     public int ErrorPos { get; private set; }
-    public FatalError ErrorInfo { get; private set; }
+    public FatalError? ErrorInfo { get; private set; }
 
     private int _recoverySkipPos = -1;
     private FollowSetCalculator? _followCalculator;
@@ -137,6 +137,7 @@ public class Parser(Terminal trivia, Log? log = null)
 #pragma warning disable CS0618 // Type or member is obsolete
         Input = input;
 #pragma warning restore CS0618 // Type or member is obsolete
+        ErrorInfo = null;
         triviaLength = 0;
         ErrorPos = startPos;
         _recoverySkipPos = -1;
@@ -164,7 +165,7 @@ public class Parser(Terminal trivia, Log? log = null)
             if (normalResult.TryGetSuccess(out _, out var newPos) && newPos == input.Length)
                 return normalResult;
 
-            ErrorInfo = (input, ErrorPos, Location: input.PositionToLineCol(ErrorPos), _expected.ToArray());
+            ErrorInfo = new FatalError(input, ErrorPos, Location: input.PositionToLineCol(ErrorPos), _expected.ToArray());
 
             if (ErrorPos <= oldErrorPos)
             {

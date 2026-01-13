@@ -59,7 +59,7 @@ public abstract record Node(string Kind, int StartPos, int EndPos, bool IsRecove
     private sealed class DebugView(Node node)
     {
         [DebuggerBrowsable(DebuggerBrowsableState.RootHidden)]
-        public Tree[] Elements => Parser.Input == null ? [] : new Tree(Parser.Input, node).Elements;
+        public object Elements => Parser.Input == null ? new Tree[0] : new Tree(Parser.Input, node).Elements;
     }
 #pragma warning restore CS0618 // Type or member is obsolete
 }

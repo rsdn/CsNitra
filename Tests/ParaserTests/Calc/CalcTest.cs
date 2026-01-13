@@ -120,7 +120,7 @@ public class CalcTests
             return visitor.Result;
         }
 
-        Trace.WriteLine($"❌ Parse FAILED. {_parser.ErrorInfo.GetErrorText()}");
+        Trace.WriteLine($"❌ Parse FAILED. {_parser.ErrorInfo.AssertIsNonNull().GetErrorText()}");
         throw new InternalTestFailureException("Parse FAILED.");
     }
 

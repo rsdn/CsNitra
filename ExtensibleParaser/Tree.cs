@@ -6,17 +6,31 @@ namespace ExtensibleParaser;
 public sealed record Tree(string Input, object Element)
 {
     public override string ToString() => $"«{((ISyntaxNode)Element).ToString(Input)}»  {Element}";
-    public Tree[] Elements => (ISyntaxNode)Element switch
+    public object Elements => (ISyntaxNode)Element switch
     {
         SeqNode x => x.Elements.Select(x => new Tree(Input, x)).ToArray(),
         SomeNode x => new Tree(Input, x.Value).Elements,
-        TerminalNode x => [],
-        _ => throw new ArgumentOutOfRangeException(Element.GetType().Name)
+        TerminalNode x => new Tree[0],
+        ListNode x => ToTreeArray(x),
+        _ => $"Unsupported node type: {Element.GetType().Name}"
     };
+
+    private Tree[] ToTreeArray(ListNode listNode)
+    {
+        var result = new List<Tree>();
+        for (int i = 0; i < listNode.Elements.Count; i++)
+        {
+            result.Add(new Tree(Input, listNode.Elements[i]));
+            if (i < listNode.Delimiters.Count)
+                result.Add(new Tree(Input, listNode.Delimiters[i]));
+        }
+
+        return result.ToArray();
+    }
 
     // Внутренний класс для отображения в отладчике
     private sealed class TreeDebugView(Tree Tree)
     {
-        public Tree[] Elements => Tree.Elements;
+        public object Elements => Tree.Elements;
     }
 }

@@ -110,14 +110,14 @@ public class DotParser
         var result = _parser.Parse(input, "Graph", out _);
         if (result.TryGetSuccess(out var node, out _))
             return new Result.Success(node);
-        return new Result.Failure(_parser.ErrorInfo);
+        return new Result.Failure(_parser.ErrorInfo.AssertIsNonNull());
     }
 
     public DotGraph ParseDotGraph(string input)
     {
         var result = _parser.Parse(input, "Graph", out _);
         if (!result.TryGetSuccess(out var node, out _))
-            throw new InvalidOperationException($"❌ Parse FAILED. {_parser.ErrorInfo.GetErrorText()}");
+            throw new InvalidOperationException($"❌ Parse FAILED. {_parser.ErrorInfo.AssertIsNonNull().GetErrorText()}");
 
         var visitor = new DotVisitor(input);
         node.Accept(visitor);
@@ -127,7 +127,7 @@ public class DotParser
     public abstract record Result
     {
         public sealed record Success(ISyntaxNode RootNode) : Result;
-        public sealed record Failure(Error Error) : Result;
+        public sealed record Failure(FatalError Error) : Result;
     }
 }
 
