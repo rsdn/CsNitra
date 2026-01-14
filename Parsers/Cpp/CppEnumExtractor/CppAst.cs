@@ -12,6 +12,12 @@ public sealed record NamespaceDeclaration(string Name, CppProgram Body) : CppAst
     public override string ToString() => $"namespace {Name} {{\n{Body}\n}}";
 }
 
+// Добавляем анонимное пространство имен
+public sealed record AnonymousNamespaceDeclaration(CppProgram Body) : CppAst
+{
+    public override string ToString() => $"namespace {{\n{Body}\n}}";
+}
+
 public sealed record EnumDeclaration(string Name, List<EnumMember> Members) : CppAst
 {
     public override string ToString() =>

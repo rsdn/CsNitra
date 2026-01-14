@@ -373,7 +373,7 @@ public class CppParserTests
     {
         Trace.WriteLine($"\n=== TEST START: {input} ===");
 
-        var parseResult = _parser.Parse(input);
+        var parseResult = _parser.ParseToAst(input);
 
         Trace.WriteLine($"Parsed AST:\n{parseResult}");
         Trace.WriteLine($"Expected AST:\n{expectedAst}");
@@ -403,7 +403,7 @@ public class CppParserTests
             """;
 
         // Act
-        var parseResult = _parser.Parse(input);
+        var parseResult = _parser.ParseToAst(input);
         var resultString = parseResult.ToString();
 
         // Assert - должен быть извлечен только enum, struct и макросы должны быть проигнорированы
@@ -438,7 +438,7 @@ public class CppParserTests
             """;
 
         // Act
-        var parseResult = _parser.Parse(input);
+        var parseResult = _parser.ParseToAst(input);
 
         // Assert
         var sameNamespace = (NamespaceDeclaration)parseResult.Items[0];
@@ -564,7 +564,7 @@ public class CppParserTests
             """;
 
         // Act
-        var parseResult = _parser.Parse(input);
+        var parseResult = _parser.ParseToAst(input);
         var resultString = parseResult.ToString();
 
         // Debug output

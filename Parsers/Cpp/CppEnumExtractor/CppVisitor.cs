@@ -43,6 +43,7 @@ public class CppVisitor : ISyntaxVisitor
         {
             "ProgramItems" => ProcessProgramItems(children),
             "NamespaceDecl" => ProcessNamespaceDecl(children),
+            "AnonymousNamespaceDecl" => ProcessAnonymousNamespaceDecl(children), // Добавляем обработку анонимных пространств имен
             "EnumDecl" => ProcessEnumDecl(children),
             "EnumMember" => ProcessEnumMember(children),
             "EnumValue" => ProcessEnumValue(children),
@@ -94,6 +95,15 @@ public class CppVisitor : ISyntaxVisitor
             return new NamespaceDeclaration(namespaceName.Name, body);
 
         throw new InvalidOperationException("Invalid namespace declaration");
+    }
+
+    // Добавляем обработку анонимного пространства имен
+    private CppAst ProcessAnonymousNamespaceDecl(List<CppAst> children)
+    {
+        if (children.Count == 1 && children[0] is CppProgram body)
+            return new AnonymousNamespaceDeclaration(body);
+
+        throw new InvalidOperationException("Invalid anonymous namespace declaration");
     }
 
     private CppAst ProcessEnumDecl(List<CppAst> children)

@@ -19,6 +19,7 @@ public class CppParser
         _parser.Rules["TopLevel"] =
         [
             new Ref("NamespaceDecl"),
+            new Ref("AnonymousNamespaceDecl"), // Добавляем анонимное пространство имен
             new Ref("EnumDecl"),
             new Ref("Braces"),
             new Ref("SkipLine")
@@ -29,6 +30,7 @@ public class CppParser
         _parser.Rules["NamespaceOrEnumStartOrBrace"] =
         [
             new Ref("NamespaceDecl"),
+            new Ref("AnonymousNamespaceDecl"), // Добавляем анонимное пространство имен
             new Ref("EnumDecl"),
             new Ref("Braces"),
             new Literal("{"),
@@ -51,6 +53,16 @@ public class CppParser
                 program,
                 closingBrace
             ], "NamespaceDecl")
+        ];
+
+        // Добавляем правило для анонимного пространства имен
+        _parser.Rules["AnonymousNamespaceDecl"] = [
+            new Seq([
+                new Literal("namespace"),
+                new Literal("{"),
+                program,
+                closingBrace
+            ], "AnonymousNamespaceDecl")
         ];
 
         _parser.Rules["EnumDecl"] = [
@@ -82,7 +94,23 @@ public class CppParser
         _parser.BuildTdoppRules("Program");
     }
 
-    public CppProgram Parse(string input)
+    public ParseResult Parse(string input, string startRule = "Program")
+    {
+        var result = _parser.Parse(input, startRule, out _);
+
+        if (_parser.ErrorInfo is { } errorInfo)
+            return new Failed(errorInfo);
+
+        if (!result.TryGetSuccess(out var node, out _))
+            throw new InvalidOperationException("Failed to parse");
+
+        var visitor = new CppVisitor(input);
+        node.Accept(visitor);
+        return new Success(visitor.Result);
+    }
+
+
+    public CppProgram ParseToAst(string input)
     {
         var result = _parser.Parse(input, "Program", out _);
         if (_parser.ErrorInfo is { } error)
