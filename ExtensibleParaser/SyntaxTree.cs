@@ -1,5 +1,6 @@
 ﻿
 using System.Diagnostics;
+using System.Xml.Linq;
 
 namespace ExtensibleParaser;
 
@@ -91,12 +92,16 @@ public abstract record OptionalNode(string Kind, int StartPos, int EndPos) : Nod
 public record SomeNode(string Kind, ISyntaxNode Value, int StartPos, int EndPos)
     : OptionalNode(Kind, StartPos, EndPos)
 {
-    public override void Accept(ISyntaxVisitor visitor) => Value.Accept(visitor);
+    public override string ToString(string input) => $"SomeNode({Value.ToString(input)})";
+
+    public override void Accept(ISyntaxVisitor visitor) => visitor.Visit(this);
 }
 
 public record NoneNode(string Kind, int StartPos, int EndPos)
     : OptionalNode(Kind, StartPos, EndPos)
 {
-    public override void Accept(ISyntaxVisitor visitor) { }
+    public override string ToString(string input) => "None()";
+
+    public override void Accept(ISyntaxVisitor visitor) => visitor.Visit(this);
 }
 
