@@ -373,12 +373,12 @@ public class CppParserTests
     {
         Trace.WriteLine($"\n=== TEST START: {input} ===");
 
-        var parseResult = _parser.ParseToAst(input);
+        var ast = _parser.ParseToAst(input);
 
-        Trace.WriteLine($"Parsed AST:\n{parseResult}");
+        Trace.WriteLine($"Parsed AST:\n{ast}");
         Trace.WriteLine($"Expected AST:\n{expectedAst}");
 
-        Assert.AreEqual(expectedAst.NormalizeEol(), parseResult.ToString().NormalizeEol());
+        Assert.AreEqual(expectedAst.NormalizeEol(), ast.ToString().NormalizeEol());
     }
 
     [TestMethod]
@@ -647,6 +647,26 @@ public class CppParserTests
         Assert.AreEqual("NoOtherInstances", troubleshooterOtherInstancesStateEnum.Members[0].Name);
         Assert.AreEqual("AnotherInstanceLaunchPending", troubleshooterOtherInstancesStateEnum.Members[1].Name);
         Assert.AreEqual("AnotherInstanceRunning", troubleshooterOtherInstancesStateEnum.Members[2].Name);
+    }
+
+    [TestMethod]
+    public void Parse_EnumClass_ReturnsEnumClassDeclaration()
+    {
+        TestCpp(
+            "Program",
+            """
+        enum class ReportStage : int32_t
+        {
+            Unknown = -1,
+            Done = 0,
+            Preparing,
+            MakingZip,
+            SendingHttp,
+            Error,
+        };
+        """,
+            "enum class ReportStage : int32_t {\nUnknown = -1,\nDone = 0,\nPreparing,\nMakingZip,\nSendingHttp,\nError\n}"
+        );
     }
 }
 

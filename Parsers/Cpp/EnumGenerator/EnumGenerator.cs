@@ -6,8 +6,10 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 
+using System;
 using System.Collections.Immutable;
 using System.Diagnostics;
+using System.Linq;
 using System.Text;
 
 namespace EnumGenerator;
@@ -222,54 +224,61 @@ public class EnumGenerator : IIncrementalGenerator
                 CollectEnums(ns.Body, newNamespaceParts, result, sourceFile);
                 break;
 
-            // Добавляем обработку анонимного пространства имен
             case AnonymousNamespaceDeclaration anonymousNs:
-                // Анонимное пространство имен не добавляется в путь
                 CollectEnums(anonymousNs.Body, namespaceParts, result, sourceFile);
                 break;
 
             case EnumDeclaration enumDecl:
-                var originalNamespace = string.Join("::", namespaceParts);
-                var cppFullName = string.IsNullOrEmpty(originalNamespace)
-                    ? enumDecl.Name
-                    : $"{originalNamespace}::{enumDecl.Name}";
-
-                // Определяем имя для C#
-                var csharpName = enumDecl.Name;
-                var shouldRemoveLastNameFromNamespace = false;
-
-                if (csharpName == "Enum" && namespaceParts.Count >= 1)
-                {
-                    csharpName = namespaceParts[namespaceParts.Count - 1];
-                    shouldRemoveLastNameFromNamespace = true;
-                }
-
-                csharpName = ConvertToPascalCase(csharpName);
-
-                // Формируем C# пространство имен
-                var csharpNamespaceParts = new List<string>();
-                for (int i = 0; i < namespaceParts.Count; i++)
-                {
-                    if (shouldRemoveLastNameFromNamespace && i == namespaceParts.Count - 1)
-                        continue; // Пропускаем последний нэйспэйс, если он стал именем энума
-
-                    csharpNamespaceParts.Add(ConvertToPascalCase(namespaceParts[i]));
-                }
-
-                var csharpNamespace = csharpNamespaceParts.Count > 0
-                    ? string.Join(".", csharpNamespaceParts)
-                    : ConvertToPascalCase(Path.GetFileNameWithoutExtension(sourceFile));
-
-                result.Add(new EnumInfo(
-                    Name: csharpName,
-                    OriginalName: enumDecl.Name,
-                    OriginalNamespace: originalNamespace,
-                    Members: enumDecl.Members,
-                    Namespace: csharpNamespace,
-                    SourceFile: sourceFile
-                ));
+                ProcessEnumDeclaration(enumDecl, namespaceParts, result, sourceFile);
                 break;
         }
+    }
+
+    private void ProcessEnumDeclaration(EnumDeclaration enumDecl, List<string> namespaceParts,
+        List<EnumInfo> result, string sourceFile)
+    {
+        var originalNamespace = string.Join("::", namespaceParts);
+        var enumName = enumDecl.Name;
+        var cppFullName = string.IsNullOrEmpty(originalNamespace)
+            ? enumName
+            : $"{originalNamespace}::{enumName}";
+
+        // Определяем имя для C#
+        var csharpName = enumName;
+        var shouldRemoveLastNameFromNamespace = false;
+
+        if (csharpName == "Enum" && namespaceParts.Count >= 1)
+        {
+            csharpName = namespaceParts[namespaceParts.Count - 1];
+            shouldRemoveLastNameFromNamespace = true;
+        }
+
+        csharpName = ConvertToPascalCase(csharpName);
+
+        // Формируем C# пространство имен
+        var csharpNamespaceParts = new List<string>();
+        for (int i = 0; i < namespaceParts.Count; i++)
+        {
+            if (shouldRemoveLastNameFromNamespace && i == namespaceParts.Count - 1)
+                continue;
+
+            csharpNamespaceParts.Add(ConvertToPascalCase(namespaceParts[i]));
+        }
+
+        var csharpNamespace = csharpNamespaceParts.Count > 0
+            ? string.Join(".", csharpNamespaceParts)
+            : ConvertToPascalCase(Path.GetFileNameWithoutExtension(sourceFile));
+
+        result.Add(new EnumInfo(
+            Name: csharpName,
+            OriginalName: enumName,
+            OriginalNamespace: originalNamespace,
+            Members: enumDecl.Members,
+            Namespace: csharpNamespace,
+            SourceFile: sourceFile,
+            IsEnumClass: enumDecl.IsClass,
+            UnderlyingType: enumDecl.UnderlyingType
+        ));
     }
 
     private string GetFileName(string fullPath)
@@ -287,27 +296,41 @@ public class EnumGenerator : IIncrementalGenerator
         }
     }
 
-    private string ConvertToPascalCase(string cppName)
+    private static string ConvertToPascalCase(string cppName)
     {
         if (string.IsNullOrEmpty(cppName))
             return cppName;
 
-        cppName = cppName.TrimEnd(';');
-        var parts = cppName.Split(new[] { '_' }, StringSplitOptions.RemoveEmptyEntries);
+        if (!cppName.Contains("_", StringComparison.Ordinal) && cppName.Length > 0 && char.IsUpper(cppName[0]))
+            return cppName.EndsWith(";", StringComparison.Ordinal) ? cppName[..^1] : cppName;
 
-        if (parts.Length == 0)
-            return cppName;
+        var length = cppName.Length;
+        if (cppName.EndsWith(";", StringComparison.Ordinal))
+            length--;
 
-        return string.Concat(parts.Select(part =>
+        var result = new StringBuilder(length);
+        var makeUpper = true;
+
+        for (int i = 0; i < length; i++)
         {
-            if (string.IsNullOrEmpty(part))
-                return part;
+            var c = cppName[i];
 
-            if (part.Length == 1)
-                return part.ToUpperInvariant();
+            if (c == '_')
+            {
+                makeUpper = true;
+                continue;
+            }
 
-            return char.ToUpperInvariant(part[0]) + part[1..].ToLowerInvariant();
-        }));
+            if (makeUpper)
+            {
+                result.Append(char.ToUpperInvariant(c));
+                makeUpper = false;
+            }
+            else
+                result.Append(char.ToLowerInvariant(c));
+        }
+
+        return result.ToString();
     }
 
     private string GenerateCSharpCode(List<EnumInfo> enums)
@@ -342,16 +365,31 @@ public class EnumGenerator : IIncrementalGenerator
                 var normalizedPath = enumInfo.SourceFile?.Replace('\\', '/') ?? "";
                 var fileName = GetFileName(normalizedPath);
 
+                var typeInfo = enumInfo.IsEnumClass ? "enum class" : "enum";
+                var typeSuffix = enumInfo.UnderlyingType != null ? $" : {enumInfo.UnderlyingType}" : "";
+                var csTypeSuffix = enumInfo.UnderlyingType switch
+                {
+                    "int8_t"   => "sbyte",
+                    "int16_t"  => "short",
+                    "int32_t"  => null,  // default
+                    "int64_t"  => "long",
+                    "uint8_t"  => "byte",
+                    "uint16_t" => "ushort",
+                    "uint32_t" => "uint",
+                    "uint64_t" => "ulong",
+                    null => null,
+                    var x => x
+                };
+
                 sb.AppendLine($$"""
                         /// <summary>
-                        /// Generated from C++ enum '{{enumInfo.OriginalName}}'
+                        /// Generated from C++ {{typeInfo}} '{{enumInfo.OriginalName}}{{typeSuffix}}'
                         /// C++ namespace: {{(string.IsNullOrEmpty(enumInfo.OriginalNamespace) ? "(global)" : enumInfo.OriginalNamespace)}}
                         /// Source file: {{fileName}} ({{normalizedPath}})
                         /// </summary>
-                        """);
-
-                sb.AppendLine($"    public enum {enumInfo.Name}");
-                sb.AppendLine("    {");
+                        public enum {{enumInfo.Name}}
+                        {
+                    """);
 
                 for (int i = 0; i < enumInfo.Members.Count; i++)
                 {
@@ -444,5 +482,7 @@ public class EnumGenerator : IIncrementalGenerator
         string OriginalNamespace,
         List<EnumMember> Members,
         string Namespace,
-        string SourceFile);
+        string SourceFile,
+        bool IsEnumClass = false,
+        string? UnderlyingType = null);
 }

@@ -19,7 +19,7 @@ public class CppParser
         _parser.Rules["TopLevel"] =
         [
             new Ref("NamespaceDecl"),
-            new Ref("AnonymousNamespaceDecl"), // Добавляем анонимное пространство имен
+            new Ref("AnonymousNamespaceDecl"),
             new Ref("EnumDecl"),
             new Ref("Braces"),
             new Ref("SkipLine")
@@ -30,7 +30,7 @@ public class CppParser
         _parser.Rules["NamespaceOrEnumStartOrBrace"] =
         [
             new Ref("NamespaceDecl"),
-            new Ref("AnonymousNamespaceDecl"), // Добавляем анонимное пространство имен
+            new Ref("AnonymousNamespaceDecl"),
             new Ref("EnumDecl"),
             new Ref("Braces"),
             new Literal("{"),
@@ -55,7 +55,6 @@ public class CppParser
             ], "NamespaceDecl")
         ];
 
-        // Добавляем правило для анонимного пространства имен
         _parser.Rules["AnonymousNamespaceDecl"] = [
             new Seq([
                 new Literal("namespace"),
@@ -68,7 +67,12 @@ public class CppParser
         _parser.Rules["EnumDecl"] = [
             new Seq([
                 new Literal("enum"),
+                new Optional(new Literal("class")),
                 CppTerminals.Identifier(),
+                new Optional(new Seq([
+                    new Literal(":"),
+                    CppTerminals.Identifier()
+                ], "EnumType"), "OptionalEnumType"),
                 new Literal("{"),
                 new SeparatedList(
                     new Ref("EnumMember"),
@@ -87,7 +91,7 @@ public class CppParser
                 new Optional(new Seq([
                     new Literal("="),
                     CppTerminals.EnumExpression()
-                ], "EnumValue"), "OptionalValue")
+                ], "EnumValue"))
             ], "EnumMember")
         ];
 

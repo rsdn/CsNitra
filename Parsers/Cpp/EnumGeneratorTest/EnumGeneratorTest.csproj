@@ -9,11 +9,13 @@
 
   <ItemGroup>
     <None Remove="CppSources\loader.cpp" />
+    <None Remove="CppSources\ReportProgressCallback.h" />
     <None Remove="types.h" />
   </ItemGroup>
 
   <ItemGroup>
     <AdditionalFiles Include="CppSources\loader.cpp" />
+    <AdditionalFiles Include="CppSources\ReportProgressCallback.h" />
     <AdditionalFiles Include="CppSources\types.h" />
   </ItemGroup>
 
