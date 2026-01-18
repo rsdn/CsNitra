@@ -23,7 +23,7 @@ public partial class MiniCTests
         {
             Terminals.Number(),
             Terminals.Ident(),
-            new Seq([new Literal("("), new Ref("Expr"), ], "Parens"),
+            new Seq([new Literal("("), new Ref("Expr"), new Literal(")")], "Parens"),
             new Seq([Terminals.Ident(), new Literal("("), closingBracket], "CallNoArgs"),
             new Seq([Terminals.Ident(), new Literal("("), new SeparatedList(new Ref("Expr"), new Literal(","), Kind: "ArgsRest", EndBehavior: SeparatorEndBehavior.Forbidden ), closingBracket], "Call"),
             new Seq([new Literal("-"), new ReqRef("Expr", 300)], "Neg"),
