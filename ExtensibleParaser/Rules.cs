@@ -122,7 +122,7 @@ public record Ref(string RuleName, string? Kind = null) : Rule(Kind ?? nameof(Ru
     }
 }
 
-public record ReqRef(string RuleName, int Precedence = 0, bool Right = false, string? Kind = null) : Rule(Kind ?? nameof(RuleName))
+public record ReqRef(string RuleName, int Precedence = 0, bool Right = false, string? Kind = null) : Ref(RuleName, Kind ?? nameof(RuleName))
 {
     public override string ToString() => $"{RuleName} {{{Precedence}, {(Right ? "left" : "right")}}}";
     public override Rule InlineReferences(Dictionary<string, Rule> inlineableRules) => this;
