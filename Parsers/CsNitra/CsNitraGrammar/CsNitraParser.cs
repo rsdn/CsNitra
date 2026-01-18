@@ -24,38 +24,32 @@ public class CsNitraParser
 
         // QualifiedIdentifier = (Identifier; ".")+;
         _parser.Rules["QualifiedIdentifier"] = [
-            new Seq([
-                CsNitraTerminals.Identifier(),
-                new ZeroOrMany(new Seq([
-                    new Literal("."),
-                    CsNitraTerminals.Identifier()
-                ], "QualifiedIdentifierPart"))
-            ], "QualifiedIdentifier")
+            new SeparatedList(CsNitraTerminals.Identifier(), new ExtensibleParaser.Literal("."), Kind: "QualifiedIdentifier", SeparatorEndBehavior.Forbidden)
         ];
 
         // Using =
         _parser.Rules["Using"] = [
             // | Open = "using" QualifiedIdentifier ";"
-            new Seq([new Literal("using"), new Ref("QualifiedIdentifier"), new Literal(";")], "OpenUsing"),
+            new Seq([new ExtensibleParaser.Literal("using"), new Ref("QualifiedIdentifier"), new ExtensibleParaser.Literal(";")], "OpenUsing"),
             // | Alias = "using" Identifier "=" QualifiedIdentifier ";"
-            new Seq([new Literal("using"), CsNitraTerminals.Identifier(), new Literal("="), new Ref("QualifiedIdentifier"), new Literal(";")], "AliasUsing")
+            new Seq([new ExtensibleParaser.Literal("using"), CsNitraTerminals.Identifier(), new ExtensibleParaser.Literal("="), new Ref("QualifiedIdentifier"), new ExtensibleParaser.Literal(";")], "AliasUsing")
         ];
 
         // Statement =
         _parser.Rules["Statement"] = [
             // | Precedence = "precedence" (Identifier; ",")+ ";"
             new Seq([
-                new Literal("precedence"),
-                new SeparatedList(CsNitraTerminals.Identifier(), new Literal(","), "Precedences", SeparatorEndBehavior.Forbidden),
-                new Literal(";")
+                new ExtensibleParaser.Literal("precedence"),
+                new SeparatedList(CsNitraTerminals.Identifier(), new ExtensibleParaser.Literal(","), "Precedences", SeparatorEndBehavior.Forbidden),
+                new ExtensibleParaser.Literal(";")
             ], "Precedence"),
             // | Rule = Identifier "=" "|"? (RuleExpression; "|")+ ";";
             new Seq([
                 CsNitraTerminals.Identifier(),
-                new Literal("="),
-                new Optional(new Literal("|")),
-                new SeparatedList(new Ref("RuleExpression"), new Literal("|"), "RuleExpressions", SeparatorEndBehavior.Forbidden),
-                new Literal(";")
+                new ExtensibleParaser.Literal("="),
+                new Optional(new ExtensibleParaser.Literal("|")),
+                new SeparatedList(new Ref("RuleExpression"), new ExtensibleParaser.Literal("|"), "RuleExpressions", SeparatorEndBehavior.Forbidden),
+                new ExtensibleParaser.Literal(";")
             ], "Rule")
         ];
 
@@ -64,21 +58,21 @@ public class CsNitraParser
             // | Sequence = Left=RuleExpression : Sequence Right=RuleExpression : Sequence // самый низкий приоритет
             new Seq([new Ref("RuleExpression"), new ReqRef("RuleExpression", Precedence: Sequence, Right: false)], "SequenceExpression"),
             // | Named = Name=Identifier "=" RuleExpression : Named
-            new Seq([CsNitraTerminals.Identifier(), new Literal("="), new ReqRef("RuleExpression", Precedence: Named, Right: false)], "Named"),
+            new Seq([CsNitraTerminals.Identifier(), new ExtensibleParaser.Literal("="), new ReqRef("RuleExpression", Precedence: Named, Right: false)], "Named"),
             
             // | Optional = RuleExpression "?"
-            new Seq([new ReqRef("RuleExpression", Precedence: UnarySuffix), new Literal("?")], "Optional"),
+            new Seq([new ReqRef("RuleExpression", Precedence: UnarySuffix), new ExtensibleParaser.Literal("?")], "Optional"),
             // | OftenMissed = RuleExpression "??"
-            new Seq([new ReqRef("RuleExpression", Precedence: UnarySuffix), new Literal("??")], "OftenMissed"),
+            new Seq([new ReqRef("RuleExpression", Precedence: UnarySuffix), new ExtensibleParaser.Literal("??")], "OftenMissed"),
             // | OneOrMany = RuleExpression "+"
-            new Seq([new ReqRef("RuleExpression", Precedence: UnarySuffix), new Literal("+")], "OneOrMany"),
+            new Seq([new ReqRef("RuleExpression", Precedence: UnarySuffix), new ExtensibleParaser.Literal("+")], "OneOrMany"),
             // | ZeroOrMany = RuleExpression "*"
-            new Seq([new ReqRef("RuleExpression", Precedence: UnarySuffix), new Literal("*")], "ZeroOrMany"),
+            new Seq([new ReqRef("RuleExpression", Precedence: UnarySuffix), new ExtensibleParaser.Literal("*")], "ZeroOrMany"),
             
             // | AndPredicate = "&" RuleExpression : UnaryPrefix
-            new Seq([new Literal("&"), new ReqRef("RuleExpression", Precedence: UnaryPrefix, Right: false)], "AndPredicateExpression"),
+            new Seq([new ExtensibleParaser.Literal("&"), new ReqRef("RuleExpression", Precedence: UnaryPrefix, Right: false)], "AndPredicateExpression"),
             // | NotPredicate = "!" RuleExpression : UnaryPrefix
-            new Seq([new Literal("!"), new ReqRef("RuleExpression", Precedence: UnaryPrefix, Right: false)], "NotPredicateExpression"),
+            new Seq([new ExtensibleParaser.Literal("!"), new ReqRef("RuleExpression", Precedence: UnaryPrefix, Right: false)], "NotPredicateExpression"),
             
             // | Literal // Primary (самый высокий приоритет) - базовые элементы
             CsNitraTerminals.StringLiteral(),
@@ -89,40 +83,40 @@ public class CsNitraParser
                 new Ref("QualifiedIdentifier", Kind: "Ref"),
                 new Optional(
                     new Seq([
-                        new Literal(":"),
+                        new ExtensibleParaser.Literal(":"),
                         CsNitraTerminals.Identifier(),
-                        new Optional(new Seq([new Literal(","), new Ref("Associativity")], "Associativity"))
+                        new Optional(new Seq([new ExtensibleParaser.Literal(","), new Ref("Associativity")], "Associativity"))
                     ], "PrecedenceWithAssociativity")),
             ], "RuleRef"),
             
             // | Group = "(" RuleExpression ")"
-            new Seq([new Literal("("), new Ref("RuleExpression"), new Literal(")")], "Group"),
+            new Seq([new ExtensibleParaser.Literal("("), new Ref("RuleExpression"), new ExtensibleParaser.Literal(")")], "Group"),
             
             // | SeparatedList = "(" RuleExpression ";" RuleExpression SeparatorModifier=(":" Modifier)? ")" Count;
             new Seq([
-                new Literal("("),
+                new ExtensibleParaser.Literal("("),
                 new Ref("RuleExpression", "Element"),
-                new Literal(";"),
+                new ExtensibleParaser.Literal(";"),
                 new Ref("RuleExpression", "Separator"),
-                new Optional(new Seq([new Literal(":"), new Ref("Modifier")], "SeparatorModifier")),
-                new Literal(")"),
+                new Optional(new Seq([new ExtensibleParaser.Literal(":"), new Ref("Modifier")], "SeparatorModifier")),
+                new ExtensibleParaser.Literal(")"),
                 new Ref("Count")
             ], "SeparatedListExpression")
         ];
 
         // Associativity = "left" | "right";
-        _parser.Rules["Associativity"] = [new Literal("left"), new Literal("right")];
+        _parser.Rules["Associativity"] = [new ExtensibleParaser.Literal("left"), new ExtensibleParaser.Literal("right")];
         // Modifier = "?" | "!";
-        _parser.Rules["Modifier"] = [new Literal("?"), new Literal("!")];
+        _parser.Rules["Modifier"] = [new ExtensibleParaser.Literal("?"), new ExtensibleParaser.Literal("!")];
         // Count = "+" | "*";
-        _parser.Rules["Count"] = [new Literal("+"), new Literal("*")];
+        _parser.Rules["Count"] = [new ExtensibleParaser.Literal("+"), new ExtensibleParaser.Literal("*")];
 
         _parser.BuildTdoppRules("Grammar");
     }
 
     public ParseResult Parse<T>(string input) where T : CsNitraAst
     {
-        var result = _parser.Parse(input, startRule: typeof(T).Name, out _);
+        var result = _parser.Parse(input, startRule: typeof(T).Name.Replace(oldValue: "Ast", newValue: ""), out _);
 
         if (_parser.ErrorInfo is { } errorInfo)
             return new Failed(errorInfo);

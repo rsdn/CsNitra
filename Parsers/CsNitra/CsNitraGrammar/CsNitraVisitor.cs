@@ -1,410 +1,303 @@
 ﻿using ExtensibleParaser;
-
-using System.Text;
+using System.Drawing;
+using System.IO;
+using System.Xml.Linq;
 
 namespace CsNitra;
 
-public class CsNitraVisitor : ISyntaxVisitor
+public class CsNitraVisitor(string input) : ISyntaxVisitor
 {
-    private readonly string _input;
     private CsNitraAst? _currentResult;
 
-    public CsNitraAst Result => _currentResult.AssertIsNonNull();
-
-    public CsNitraVisitor(string input)
-    {
-        _input = input;
-    }
+    public CsNitraAst Result { get; private set; } = Option.None;
 
     public void Visit(TerminalNode node)
     {
-        var value = node.ToString(_input);
+        var value = node.ToString(input);
+
         _currentResult = node.Kind switch
         {
-            "Identifier" => new TokenValue(value, node.StartPos, node.EndPos),
-            "StringLiteral" => new StringValue(UnescapeString(value[1..^1]), value, node.StartPos, node.EndPos),
-            "CharLiteral" => new CharValue(UnescapeChar(value[1..^1]), value, node.StartPos, node.EndPos),
-            "left" or "right" => new TokenValue(value, node.StartPos, node.EndPos),
-            "?" or "!" => new TokenValue(value, node.StartPos, node.EndPos),
-            "+" or "*" => new TokenValue(value, node.StartPos, node.EndPos),
-            _ => new TokenValue(value, node.StartPos, node.EndPos)
+            "Identifier" => new Identifier(value, node.StartPos, node.EndPos),
+            "StringLiteral" => new StringLiteralAst(UnescapeString(value), node.StartPos, node.EndPos),
+            "CharLiteral" => new CharLiteralAst(UnescapeChar(value), node.StartPos, node.EndPos),
+            "left" or "right" => new Literal(value, node.StartPos, node.EndPos),
+            "?" or "!" => new Literal(value, node.StartPos, node.EndPos),
+            "+" or "*" => new Literal(value, node.StartPos, node.EndPos),
+            _ => new Literal(value, node.StartPos, node.EndPos)
         };
     }
 
-    private static string UnescapeString(string input)
+    private static string UnescapeString(string value)
     {
-        var result = new StringBuilder();
-        for (int i = 0; i < input.Length; i++)
-        {
-            if (input[i] == '\\' && i + 1 < input.Length)
-            {
-                switch (input[i + 1])
-                {
-                    case '"': result.Append('"'); break;
-                    case '\\': result.Append('\\'); break;
-                    case 'n': result.Append('\n'); break;
-                    case 'r': result.Append('\r'); break;
-                    case 't': result.Append('\t'); break;
-                    case 'b': result.Append('\b'); break;
-                    case 'f': result.Append('\f'); break;
-                    case 'v': result.Append('\v'); break;
-                    case '0': result.Append('\0'); break;
-                    default: result.Append(input[i + 1]); break;
-                }
-                i++;
-            }
-            else
-            {
-                result.Append(input[i]);
-            }
-        }
-        return result.ToString();
+        if (value.Length >= 2)
+            return value[1..^1].Replace("\\\"", "\"").Replace("\\\\", "\\");
+        return value;
     }
 
-    private static char UnescapeChar(string input)
+    private static string UnescapeChar(string value)
     {
-        if (input.Length == 0) return '\0';
-        if (input[0] == '\\' && input.Length > 1)
-        {
-            return input[1] switch
-            {
-                '\'' => '\'',
-                '\\' => '\\',
-                'n' => '\n',
-                'r' => '\r',
-                't' => '\t',
-                'b' => '\b',
-                'f' => '\f',
-                'v' => '\v',
-                '0' => '\0',
-                _ => input[1]
-            };
-        }
-        return input.Length > 0 ? input[0] : '\0';
+        if (value.Length >= 2)
+            return value[1..^1].Replace("\\'", "'").Replace("\\\\", "\\");
+        return value;
     }
 
     public void Visit(SeqNode node)
     {
-        var children = node.Elements
-            .Select(e =>
-            {
-                e.Accept(this);
-                return _currentResult!;
-            })
-            .Where(r => r != null)
-            .ToArray();
+        var children = new List<CsNitraAst?>();
 
-        _currentResult = node.Kind switch
-        {
-            "Grammar" => ProcessGrammar(node, children),
-            "QualifiedIdentifier" => ProcessQualifiedIdentifier(node, children),
-            "OpenUsing" => ProcessOpenUsing(node, children),
-            "AliasUsing" => ProcessAliasUsing(node, children),
-            "PrecedenceDecl" => ProcessPrecedenceDecl(node, children),
-            "Rule" => ProcessRule(node, children),
-            "SimpleAlternative" => ProcessSimpleAlternative(node, children),
-            "NamedAlternative" => ProcessNamedAlternative(node, children),
-            "SequenceExpression" => ProcessSequenceExpression(node, children),
-            "NamedExpression" => ProcessNamedExpression(node, children),
-            "OptionalExpression" => ProcessOptionalExpression(node, children),
-            "OftenMissedExpression" => ProcessOftenMissedExpression(node, children),
-            "OneOrManyExpression" => ProcessOneOrManyExpression(node, children),
-            "ZeroOrManyExpression" => ProcessZeroOrManyExpression(node, children),
-            "AndPredicateExpression" => ProcessAndPredicateExpression(node, children),
-            "NotPredicateExpression" => ProcessNotPredicateExpression(node, children),
-            "RuleRefExpression" => ProcessRuleRefExpression(node, children),
-            "GroupExpression" => ProcessGroupExpression(node, children),
-            "SeparatedListExpression" => ProcessSeparatedListExpression(node, children),
-            "QualifiedIdentifierPart" => ProcessQualifiedIdentifierPart(node, children),
-            _ => new UnknownNode(node.Kind, node.StartPos, node.EndPos)
-        };
-    }
-
-    private Grammar ProcessGrammar(SeqNode node, CsNitraAst[] children)
-    {
-        if (children is [ListNodeWrapper usingsList, ListNodeWrapper statementsList])
-        {
-            var usings = usingsList.Items.OfType<Using>().ToList();
-            var statements = statementsList.Items.OfType<Statement>().ToList();
-            return new Grammar(node.StartPos, node.EndPos, usings, statements);
-        }
-        throw new InvalidOperationException("Invalid Grammar structure");
-    }
-
-    private QualifiedIdentifier ProcessQualifiedIdentifier(SeqNode node, CsNitraAst[] children)
-    {
-        if (children is [TokenValue firstId, ListNodeWrapper restParts])
-        {
-            var parts = new List<(string, int, int)>
-            {
-                (firstId.Value, firstId.StartPos, firstId.EndPos)
-            };
-
-            parts.AddRange(restParts.Items.OfType<QualifiedIdentifierPart>()
-                .Select(p => (p.Name, p.StartPos, p.EndPos)));
-
-            return new QualifiedIdentifier(node.StartPos, node.EndPos, parts);
-        }
-        throw new InvalidOperationException("Invalid QualifiedIdentifier structure");
-    }
-
-    private record QualifiedIdentifierPart(string Name, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos);
-    private record UnknownNode(string Kind, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos);
-
-    private QualifiedIdentifierPart ProcessQualifiedIdentifierPart(SeqNode node, CsNitraAst[] children)
-    {
-        if (children is [_, TokenValue id])
-        {
-            return new QualifiedIdentifierPart(id.Value, id.StartPos, id.EndPos);
-        }
-        throw new InvalidOperationException("Invalid QualifiedIdentifierPart structure");
-    }
-
-    private OpenUsing ProcessOpenUsing(SeqNode node, CsNitraAst[] children)
-    {
-        if (children is [_, QualifiedIdentifier qid, _])
-        {
-            return new OpenUsing(node.StartPos, node.EndPos, qid);
-        }
-        throw new InvalidOperationException("Invalid OpenUsing structure");
-    }
-
-    private AliasUsing ProcessAliasUsing(SeqNode node, CsNitraAst[] children)
-    {
-        if (children is [_, TokenValue alias, _, QualifiedIdentifier qid, _])
-        {
-            return new AliasUsing(node.StartPos, node.EndPos, alias.Value, qid);
-        }
-        throw new InvalidOperationException("Invalid AliasUsing structure");
-    }
-
-    private PrecedenceDecl ProcessPrecedenceDecl(SeqNode node, CsNitraAst[] children)
-    {
-        if (children is [_, ListNodeWrapper groupsList, _])
-        {
-            var groups = groupsList.Items.OfType<TokenValue>()
-                .Select(g => (g.Value, g.StartPos, g.EndPos))
-                .ToList();
-
-            //return new PrecedenceDecl(node.StartPos, node.EndPos, groups);
-        }
-        throw new InvalidOperationException("Invalid PrecedenceDecl structure");
-    }
-
-    private Rule ProcessRule(SeqNode node, CsNitraAst[] children)
-    {
-        if (children is [TokenValue ruleName, _, _, ListNodeWrapper alternativesList, _])
-        {
-            var alternatives = alternativesList.Items.OfType<Alternative>().ToList();
-            return new Rule(node.StartPos, node.EndPos, ruleName.Value,
-                (ruleName.StartPos, ruleName.EndPos), alternatives);
-        }
-        throw new InvalidOperationException("Invalid Rule structure");
-    }
-
-    private SimpleAlternative ProcessSimpleAlternative(SeqNode node, CsNitraAst[] children)
-    {
-        if (children is [RuleExpression expression])
-        {
-            return new SimpleAlternative(node.StartPos, node.EndPos, expression);
-        }
-        throw new InvalidOperationException("Invalid SimpleAlternative structure");
-    }
-
-    private NamedAlternative ProcessNamedAlternative(SeqNode node, CsNitraAst[] children)
-    {
-        if (children is [TokenValue name, _, ListNodeWrapper expressionsList])
-        {
-            (int, int)? namePos = name != null ? (name.StartPos, name.EndPos) : null;
-            var expressions = expressionsList.Items.OfType<RuleExpression>().ToList();
-            return new NamedAlternative(node.StartPos, node.EndPos, name?.Value, namePos, expressions);
-        }
-        else if (children is [NoneNodeWrapper, _, ListNodeWrapper expressionsList2])
-        {
-            var expressions = expressionsList2.Items.OfType<RuleExpression>().ToList();
-            return new NamedAlternative(node.StartPos, node.EndPos, null, null, expressions);
-        }
-        throw new InvalidOperationException("Invalid NamedAlternative structure");
-    }
-
-    // Обработка RuleExpression вариантов
-    private SequenceExpression ProcessSequenceExpression(SeqNode node, CsNitraAst[] children)
-    {
-        if (children is [RuleExpression left, RuleExpression right])
-        {
-            return new SequenceExpression(node.StartPos, node.EndPos, left, right, "Sequence");
-        }
-        throw new InvalidOperationException("Invalid SequenceExpression structure");
-    }
-
-    private NamedExpression ProcessNamedExpression(SeqNode node, CsNitraAst[] children)
-    {
-        if (children is [TokenValue name, _, RuleExpression expression])
-        {
-            return new NamedExpression(node.StartPos, node.EndPos, name.Value,
-                (name.StartPos, name.EndPos), expression, "Named");
-        }
-        throw new InvalidOperationException("Invalid NamedExpression structure");
-    }
-
-    private UnaryPostfixExpression ProcessOptionalExpression(SeqNode node, CsNitraAst[] children)
-    {
-        if (children is [RuleExpression expression, _])
-        {
-            return new UnaryPostfixExpression(node.StartPos, node.EndPos, "?", expression, "UnaryPostfix");
-        }
-        throw new InvalidOperationException("Invalid OptionalExpression structure");
-    }
-
-    private UnaryPostfixExpression ProcessOftenMissedExpression(SeqNode node, CsNitraAst[] children)
-    {
-        if (children is [RuleExpression expression, _])
-        {
-            return new UnaryPostfixExpression(node.StartPos, node.EndPos, "??", expression, "UnaryPostfix");
-        }
-        throw new InvalidOperationException("Invalid OftenMissedExpression structure");
-    }
-
-    private UnaryPostfixExpression ProcessOneOrManyExpression(SeqNode node, CsNitraAst[] children)
-    {
-        if (children is [RuleExpression expression, _])
-        {
-            return new UnaryPostfixExpression(node.StartPos, node.EndPos, "+", expression, "UnaryPostfix");
-        }
-        throw new InvalidOperationException("Invalid OneOrManyExpression structure");
-    }
-
-    private UnaryPostfixExpression ProcessZeroOrManyExpression(SeqNode node, CsNitraAst[] children)
-    {
-        if (children is [RuleExpression expression, _])
-        {
-            return new UnaryPostfixExpression(node.StartPos, node.EndPos, "*", expression, "UnaryPostfix");
-        }
-        throw new InvalidOperationException("Invalid ZeroOrManyExpression structure");
-    }
-
-    private UnaryPrefixExpression ProcessAndPredicateExpression(SeqNode node, CsNitraAst[] children)
-    {
-        if (children is [_, RuleExpression expression])
-        {
-            return new UnaryPrefixExpression(node.StartPos, node.EndPos, "&", expression, "UnaryPrefix");
-        }
-        throw new InvalidOperationException("Invalid AndPredicateExpression structure");
-    }
-
-    private UnaryPrefixExpression ProcessNotPredicateExpression(SeqNode node, CsNitraAst[] children)
-    {
-        if (children is [_, RuleExpression expression])
-        {
-            return new UnaryPrefixExpression(node.StartPos, node.EndPos, "!", expression, "UnaryPrefix");
-        }
-        throw new InvalidOperationException("Invalid NotPredicateExpression structure");
-    }
-
-    private RuleRefExpression ProcessRuleRefExpression(SeqNode node, CsNitraAst[] children)
-    {
-        if (children is [QualifiedIdentifier qid, ..])
-        {
-            string? precedence = null;
-            (int, int)? precedencePos = null;
-            string? associativity = null;
-            (int, int)? associativityPos = null;
-
-            if (children is [_, ListNodeWrapper precedenceWrapper])
-            {
-                var items = precedenceWrapper.Items.ToArray();
-                if (items is [_, TokenValue precName, ListNodeWrapper assocWrapper])
-                {
-                    precedence = precName.Value;
-                    precedencePos = (precName.StartPos, precName.EndPos);
-
-                    var assocItems = assocWrapper.Items.ToArray();
-                    if (assocItems is [_, TokenValue assocValue])
-                    {
-                        associativity = assocValue.Value;
-                        associativityPos = (assocValue.StartPos, assocValue.EndPos);
-                    }
-                }
-            }
-            else if (children is [QualifiedIdentifier qid2])
-            {
-                return new RuleRefExpression(node.StartPos, node.EndPos, qid2, null, null, null, null);
-            }
-
-            return new RuleRefExpression(node.StartPos, node.EndPos, qid, precedence, precedencePos,
-                associativity, associativityPos);
-        }
-        throw new InvalidOperationException("Invalid RuleRefExpression structure");
-    }
-
-    private GroupExpression ProcessGroupExpression(SeqNode node, CsNitraAst[] children)
-    {
-        if (children is [_, RuleExpression expression, _])
-        {
-            var alternative = new SimpleAlternative(expression.StartPos, expression.EndPos, expression);
-            return new GroupExpression(node.StartPos, node.EndPos, [alternative]);
-        }
-        throw new InvalidOperationException("Invalid GroupExpression structure");
-    }
-
-    private SeparatedListExpression ProcessSeparatedListExpression(SeqNode node, CsNitraAst[] children)
-    {
-        if (children is [_, RuleExpression element, _, RuleExpression separator, .. var rest])
-        {
-            string? modifier = null;
-            (int, int)? modifierPos = null;
-            TokenValue? count = null;
-
-            if (rest is [ListNodeWrapper modifierWrapper, _, TokenValue countValue])
-            {
-                var modifierItems = modifierWrapper.Items.ToArray();
-                if (modifierItems is [_, TokenValue modValue])
-                {
-                    modifier = modValue.Value;
-                    modifierPos = (modValue.StartPos, modValue.EndPos);
-                }
-                count = countValue;
-            }
-            else if (rest is [_, TokenValue countValue2])
-            {
-                count = countValue2;
-            }
-
-            if (count != null)
-            {
-                return new SeparatedListExpression(node.StartPos, node.EndPos, element, separator, modifier, modifierPos,
-                    count.Value, (count.StartPos, count.EndPos));
-            }
-        }
-        throw new InvalidOperationException("Invalid SeparatedListExpression structure");
-    }
-
-    public void Visit(ListNode node)
-    {
-        var items = new List<CsNitraAst>();
         foreach (var element in node.Elements)
         {
             element.Accept(this);
-            if (_currentResult != null)
-            {
-                items.Add(_currentResult);
-            }
+            children.Add(_currentResult);
+            _currentResult = null;
         }
 
-        _currentResult = new ListNodeWrapper(items);
+        var startPos = node.StartPos;
+        var endPos = node.EndPos;
+
+        try
+        {
+            _currentResult = node.Kind switch
+            {
+                "Grammar" => ProcessGrammar(children, startPos, endPos),
+                "OpenUsing" => ProcessOpenUsing(children, startPos, endPos),
+                "AliasUsing" => ProcessAliasUsing(children, startPos, endPos),
+                "Precedence" => ProcessPrecedenceStatement(children, startPos, endPos),
+                "Rule" => ProcessRuleStatement(children, startPos, endPos),
+                "SequenceExpression" => ProcessSequenceExpression(children, startPos, endPos),
+                "Named" => ProcessNamedExpression(children, startPos, endPos),
+                "Optional" => ProcessOptionalExpression(children, startPos, endPos),
+                "OftenMissed" => ProcessOftenMissedExpression(children, startPos, endPos),
+                "OneOrMany" => ProcessOneOrManyExpression(children, startPos, endPos),
+                "ZeroOrMany" => ProcessZeroOrManyExpression(children, startPos, endPos),
+                "AndPredicateExpression" => ProcessAndPredicateExpression(children, startPos, endPos),
+                "NotPredicateExpression" => ProcessNotPredicateExpression(children, startPos, endPos),
+                "RuleRef" => ProcessRuleRefExpression(children, startPos, endPos),
+                "PrecedenceWithAssociativity" => ProcessPrecedenceWithAssociativity(children, startPos, endPos),
+                "Group" => ProcessGroupExpression(children, startPos, endPos),
+                "SeparatedListExpression" => ProcessSeparatedListExpression(children, startPos, endPos),
+                "Usings" => ProcessAstList<UsingAst>(children, startPos, endPos),
+                "Statements" => ProcessAstList<StatementAst>(children, startPos, endPos),
+                _ => throw new InvalidOperationException($"Unknown SeqNode kind: {node.Kind}")
+            };
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"Error processing {node.Kind}: {ex.Message}", ex);
+        }
+
+        if (node.Kind == "Grammar" && _currentResult is GrammarAst grammar)
+            Result = grammar;
     }
 
-    public void Visit(SomeNode node) => node.Value.Accept(this);
+    private CsNitraAst ProcessPrecedenceStatement(List<CsNitraAst?> children, int startPos, int endPos) => children switch
+    {
+        [Literal precedenceKw, AstList<Identifier> list, Literal semicolon] =>
+            new PrecedenceStatementAst(precedenceKw, list.Items, semicolon, startPos, endPos),
+        _ => throw new InvalidOperationException("Expected precedence statement"),
+    };
 
-    public void Visit(NoneNode node) => _currentResult = new NoneNodeWrapper(node.StartPos, node.EndPos);
+    private CsNitraAst ProcessGrammar(List<CsNitraAst?> children, int startPos, int endPos)
+    {
+        var usings = new List<UsingAst>();
+        var statements = new List<StatementAst>();
 
-    // Вспомогательные классы
-    private record TokenValue(string Value, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos);
-    private record StringValue(string Value, string RawValue, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos);
-    private record CharValue(char Value, string RawValue, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos);
-    private record ListNodeWrapper(IReadOnlyList<CsNitraAst> Items) : CsNitraAst(
-        Items.Count > 0 ? Items[0].StartPos : 0,
-        Items.Count > 0 ? Items[^1].EndPos : 0
-    );
-    private record NoneNodeWrapper(int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos);
+        foreach (var child in children)
+        {
+            //if (child is AstList list)
+            //{
+            //    foreach (var item in list.Items)
+            //    {
+            //        if (item is UsingAst usingAst) usings.Add(usingAst);
+            //        else if (item is StatementAst statementAst) statements.Add(statementAst);
+            //    }
+            //}
+        }
+
+        return new GrammarAst(usings, statements, startPos, endPos);
+    }
+
+    private CsNitraAst ProcessOpenUsing(List<CsNitraAst?> children, int startPos, int endPos) => children switch
+    {
+        [Literal usingKw, AstList<Identifier> qi, Literal semicolon] => new OpenUsingAst(usingKw, qi.Items, semicolon, startPos, endPos),
+        _ => throw new InvalidOperationException("Expected QualifiedIdentifier in OpenUsing")
+    };
+
+    private CsNitraAst ProcessAliasUsing(List<CsNitraAst?> children, int startPos, int endPos)
+    {
+        var alias = children[1] as Identifier
+            ?? throw new InvalidOperationException("Expected alias identifier");
+
+        var qualifiedId = children[3] as QualifiedIdentifierAst
+            ?? throw new InvalidOperationException("Expected QualifiedIdentifier in AliasUsing");
+
+        return new AliasUsingAst(alias.Value, qualifiedId, startPos, endPos);
+    }
+
+    private CsNitraAst ProcessRuleStatement(List<CsNitraAst?> children, int startPos, int endPos) => children switch
+    {
+        [Identifier name, Literal equals, Option pipe, AstList<CsNitraAst>([RuleExpressionAst expr], _, _), Literal semicolon] =>
+            new RuleStatementAst(name, equals, ToList(expr), startPos, endPos),
+        _ => throw new InvalidOperationException("Expected Rule statement"),
+    };
+
+    private IReadOnlyList<RuleExpressionAst> ToList(RuleExpressionAst expr, List<RuleExpressionAst>? result = null)
+    {
+        result ??= new List<RuleExpressionAst>();
+
+        if (expr is SequenceExpressionAst(var left, var right, _, _))
+        {
+            result.Add(left);
+            return ToList(right, result);
+        }
+
+        result.Add(expr);
+        return result;
+    }
+  
+    private CsNitraAst ProcessSequenceExpression(List<CsNitraAst?> children, int startPos, int endPos)
+    {
+        var left = children[0] as RuleExpressionAst
+            ?? throw new InvalidOperationException("Expected left expression in Sequence");
+
+        var right = children[1] as RuleExpressionAst
+            ?? throw new InvalidOperationException("Expected right expression in Sequence");
+
+        return new SequenceExpressionAst(left, right, startPos, endPos);
+    }
+
+    private CsNitraAst ProcessNamedExpression(List<CsNitraAst?> children, int startPos, int endPos)
+    {
+        var name = children[0] as Identifier
+            ?? throw new InvalidOperationException("Expected name in Named expression");
+
+        var expression = children[2] as RuleExpressionAst
+            ?? throw new InvalidOperationException("Expected expression in Named expression");
+
+        return new NamedExpressionAst(name.Value, expression, startPos, endPos);
+    }
+
+    private CsNitraAst ProcessOptionalExpression(List<CsNitraAst?> children, int startPos, int endPos)
+    {
+        var expression = children[0] as RuleExpressionAst
+            ?? throw new InvalidOperationException("Expected expression in Optional");
+
+        return new OptionalExpressionAst(expression, startPos, endPos);
+    }
+
+    private CsNitraAst ProcessOftenMissedExpression(List<CsNitraAst?> children, int startPos, int endPos)
+    {
+        var expression = children[0] as RuleExpressionAst
+            ?? throw new InvalidOperationException("Expected expression in OftenMissed");
+
+        return new OftenMissedExpressionAst(expression, startPos, endPos);
+    }
+
+    private CsNitraAst ProcessOneOrManyExpression(List<CsNitraAst?> children, int startPos, int endPos) => children switch
+    {
+        [RuleExpressionAst element, Literal plus] => new OneOrManyExpressionAst(element, plus, startPos, endPos),
+        _ => throw new InvalidOperationException("Expected expression in ZeroOrMany"),
+    };
+
+    private CsNitraAst ProcessZeroOrManyExpression(List<CsNitraAst?> children, int startPos, int endPos) => children switch
+    {
+        [RuleExpressionAst element, Literal star] => new ZeroOrManyExpressionAst(element, star, startPos, endPos),
+        _ => throw new InvalidOperationException("Expected expression in ZeroOrMany"),
+    };
+
+    private CsNitraAst ProcessAndPredicateExpression(List<CsNitraAst?> children, int startPos, int endPos)
+    {
+        var expression = children[1] as RuleExpressionAst
+            ?? throw new InvalidOperationException("Expected expression in AndPredicate");
+
+        return new AndPredicateExpressionAst(expression, startPos, endPos);
+    }
+
+    private CsNitraAst ProcessNotPredicateExpression(List<CsNitraAst?> children, int startPos, int endPos)
+    {
+        var expression = children[1] as RuleExpressionAst
+            ?? throw new InvalidOperationException("Expected expression in NotPredicate");
+
+        return new NotPredicateExpressionAst(expression, startPos, endPos);
+    }
+
+    private CsNitraAst ProcessRuleRefExpression(List<CsNitraAst?> children, int startPos, int endPos) => children switch
+    {
+        [AstList<Identifier> parts, None] => new RuleRefExpressionAst(new QualifiedIdentifierAst(parts.Items, parts.Items.First().StartPos, parts.Items.First().EndPos), Precedence: null, Associativity: null, startPos, endPos),
+        [AstList<Identifier> parts, Some<CsNitraAst> precedence] => new RuleRefExpressionAst(new QualifiedIdentifierAst(parts.Items, parts.Items.First().StartPos, parts.Items.First().EndPos), Precedence: null, Associativity: null, startPos, endPos),
+        _ => throw new InvalidOperationException($"Expected RuleRef expression. But fond [{string.Join(", ", children.Select(x => x!.ToString()))}]")
+    };
+
+    private CsNitraAst ProcessPrecedenceWithAssociativity(List<CsNitraAst?> children, int startPos, int endPos)
+    {
+        var precedence = children[1] as Identifier
+            ?? throw new InvalidOperationException("Expected precedence identifier");
+
+        string? associativity = null;
+
+        if (children[2] is StringValue assoc)
+            associativity = assoc.Value;
+
+        return new PrecedenceInfo(precedence.Value, associativity, startPos, endPos);
+    }
+
+    private CsNitraAst ProcessGroupExpression(List<CsNitraAst?> children, int startPos, int endPos)
+    {
+        var expression = children[1] as RuleExpressionAst
+            ?? throw new InvalidOperationException("Expected expression in Group");
+
+        return new GroupExpressionAst(expression, startPos, endPos);
+    }
+
+    private CsNitraAst ProcessSeparatedListExpression(List<CsNitraAst?> children, int startPos, int endPos) => children switch
+    {
+        [Literal opening, RuleExpressionAst element, Literal semicolon, RuleExpressionAst separator, None, Literal closing, Literal count] =>
+            new SeparatedListExpressionAst(element, separator, Modifier: null, count.Value, startPos, endPos),
+        [Literal opening, RuleExpressionAst element, Literal semicolon, RuleExpressionAst separator, Some<CsNitraAst>(Literal modifier), Literal closing, Literal count] =>
+            new SeparatedListExpressionAst(element, separator, modifier, count.Value, startPos, endPos),
+        _ => throw new InvalidOperationException($"Expected SeparatedList expression. But fond [{string.Join(", ", children.Select(x => x!.ToString()))}]")
+    };
+
+    private CsNitraAst ProcessAstList<T>(ListNode node) where T : CsNitraAst
+    {
+        var items = new List<T>();
+
+        foreach (var element in node.Elements)
+        {
+            element.Accept(this);
+            if (_currentResult is T result)
+                items.Add(result);
+            _currentResult = null;
+        }
+
+        return new AstList<T>(items, node.StartPos, node.EndPos);
+    }
+
+    private CsNitraAst ProcessAstList<T>(List<CsNitraAst?> children, int startPos, int endPos) where T : CsNitraAst
+    {
+        var items = new List<T>();
+        foreach (var child in children)
+            if (child is T item)
+                items.Add(item);
+
+        return new AstList<T>(items, startPos, endPos);
+    }
+
+    public void Visit(ListNode node) => _currentResult = node.Kind switch
+    {
+        "QualifiedIdentifier" or "Precedences" => ProcessAstList<Identifier>(node),
+        _ => ProcessAstList<CsNitraAst>(node),
+    };
+
+    public void Visit(SomeNode node)
+    {
+        node.Value.Accept(this);
+        _currentResult = Option.Some(_currentResult.AssertIsNonNull());
+    }
+
+    public void Visit(NoneNode node) => _currentResult = Option.None;
+
+    // Helper classes for visitor
+    private record AstList<T>(List<T> Items, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos) where T : CsNitraAst;
+    private record StringValue(string Value, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos);
 }
