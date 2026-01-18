@@ -16,7 +16,7 @@ enum class ReportStage : int32_t
 };
 
 
-enum class ReportStopReason : int32_t
+enum class ReportStopReason : int8_t
 {
     Unknown = -1,
     Success = 0,

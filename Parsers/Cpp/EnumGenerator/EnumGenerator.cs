@@ -47,11 +47,7 @@ public class EnumGenerator : IIncrementalGenerator
     {
         try
         {
-            var attributeFiles = GetCppFilesFromAttributes(compilation, context, allAdditionalFilePaths, cppFiles);
-
-            var allFiles = attributeFiles
-                .Concat(cppFiles)
-                .DistinctBy(f => f.FullPath)
+            var allFiles = cppFiles
                 .Where(f => !string.IsNullOrEmpty(f.Content))
                 .ToImmutableArray();
 
@@ -61,8 +57,6 @@ public class EnumGenerator : IIncrementalGenerator
             var allEnums = new List<EnumInfo>();
             var parser = new CppParser();
 
-            //Debugger.Launch();
-
             foreach (var cppFile in allFiles)
             {
                 try
@@ -71,7 +65,7 @@ public class EnumGenerator : IIncrementalGenerator
 
                     switch (parseResult)
                     {
-                        case Success success:
+                        case Success<CppProgram> success:
                             CollectEnums(success.Program, new List<string>(), allEnums, cppFile.FullPath);
                             break;
 
@@ -123,87 +117,6 @@ public class EnumGenerator : IIncrementalGenerator
                     true),
                 Location.None));
         }
-    }
-
-    private ImmutableArray<CppFileInfo> GetCppFilesFromAttributes(
-        Compilation compilation,
-        SourceProductionContext context,
-        ImmutableArray<string> allAdditionalFilePaths,
-        ImmutableArray<CppFileInfo> cppFiles)
-    {
-        var results = new List<CppFileInfo>();
-
-        foreach (var tree in compilation.SyntaxTrees)
-        {
-            var root = tree.GetRoot();
-            var attributeSyntaxes = root.DescendantNodes()
-                .OfType<AttributeSyntax>()
-                .Where(attr => attr.Name.ToString() is "CppEnumSource" or "CppEnumSourceAttribute");
-
-            foreach (var attributeSyntax in attributeSyntaxes)
-            {
-                if (attributeSyntax.ArgumentList?.Arguments.Count > 0)
-                {
-                    var arg = attributeSyntax.ArgumentList.Arguments[0];
-                    if (arg.Expression is LiteralExpressionSyntax literal && literal.Token.Value is string filePath)
-                    {
-                        var attributeLocation = attributeSyntax.GetLocation();
-
-                        var (foundPath, content) = FindCppFile(filePath, allAdditionalFilePaths, cppFiles);
-
-                        if (content != null && foundPath != null)
-                            results.Add(new CppFileInfo(foundPath, content));
-                        else
-                            context.ReportDiagnostic(Diagnostic.Create(
-                                new DiagnosticDescriptor(
-                                    "CPP005",
-                                    "C++ file not found",
-                                    $"C++ file not found: {filePath}. File must be added as AdditionalFiles in .csproj",
-                                    nameof(EnumGenerator),
-                                    DiagnosticSeverity.Error,
-                                    true),
-                                attributeLocation));
-                    }
-                }
-            }
-        }
-
-        return results.ToImmutableArray();
-    }
-
-    private (string? FoundPath, string? Content) FindCppFile(
-        string filePath,
-        ImmutableArray<string> allAdditionalFilePaths,
-        ImmutableArray<CppFileInfo> cppFiles)
-    {
-        foreach (var cppFile in cppFiles)
-        {
-            if (string.Equals(cppFile.FullPath, filePath, StringComparison.OrdinalIgnoreCase))
-                return (cppFile.FullPath, cppFile.Content);
-
-            var fileName = Path.GetFileName(cppFile.FullPath);
-            var targetFileName = Path.GetFileName(filePath);
-            if (string.Equals(fileName, targetFileName, StringComparison.OrdinalIgnoreCase))
-                return (cppFile.FullPath, cppFile.Content);
-        }
-
-        foreach (var additionalFilePath in allAdditionalFilePaths)
-        {
-            if (string.Equals(additionalFilePath, filePath, StringComparison.OrdinalIgnoreCase))
-                return (additionalFilePath, null);
-
-            var fileName = Path.GetFileName(additionalFilePath);
-            var targetFileName = Path.GetFileName(filePath);
-            if (string.Equals(fileName, targetFileName, StringComparison.OrdinalIgnoreCase))
-                return (additionalFilePath, null);
-
-            var fullTargetPath = Path.GetFullPath(filePath);
-            var fullAdditionalPath = Path.GetFullPath(additionalFilePath);
-            if (string.Equals(fullTargetPath, fullAdditionalPath, StringComparison.OrdinalIgnoreCase))
-                return (additionalFilePath, null);
-        }
-
-        return (null, null);
     }
 
     private void CollectEnums(CppAst node, List<string> namespaceParts, List<EnumInfo> result, string sourceFile)

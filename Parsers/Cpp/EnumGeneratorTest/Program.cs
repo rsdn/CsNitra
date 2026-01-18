@@ -2,9 +2,6 @@
 using ProductPlatform.SupportTools;
 using ReportProgressCallback;
 
-[assembly: CppEnumSource(@"types.h")]
-[assembly: CppEnumSource(@"loader.cpp")]
-
 namespace EnumGeneratorTest;
 
 internal class Program
