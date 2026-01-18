@@ -110,7 +110,7 @@ public class CppParser
 
         var visitor = new CppVisitor(input);
         node.Accept(visitor);
-        return new Success(visitor.Result);
+        return new Success<CppProgram>(visitor.Result);
     }
 
 

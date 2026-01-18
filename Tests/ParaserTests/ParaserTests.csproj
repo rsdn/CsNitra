@@ -26,6 +26,8 @@
 
     <ProjectReference Include="..\..\Parsers\Cpp\CppEnumExtractor\CppEnumExtractor.csproj" />
 
+    <ProjectReference Include="..\..\Parsers\CsNitra\CsNitraGrammar\CsNitraGrammar.csproj" />
+
     <ProjectReference Include="..\..\Parsers\Dot\DotParser\DotParser.csproj" />
 
     <ProjectReference Include="..\..\Parsers\Json\Json.csproj" />

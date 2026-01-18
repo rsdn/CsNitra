@@ -76,11 +76,22 @@ public class Parser(Terminal trivia, Log? log = null)
 
                 if (alt is Seq { Elements: [Ref rule, .. var rest] } && rule.RuleName == ruleName)
                 {
-                    var reqRef = rest.OfType<ReqRef>().First();
-                    recoveryPostfix.Add(new RuleWithPrecedence(Kind: alt.Kind, new Seq(rest, alt.Kind), reqRef.Precedence, reqRef.Right));
+                    var reqRef = rest.OfType<ReqRef>().FirstOrDefault();
+                    if (reqRef is { })
+                    {
+                        recoveryPostfix.Add(new RuleWithPrecedence(Kind: alt.Kind, new Seq(rest, alt.Kind), reqRef.Precedence, reqRef.Right));
 
-                    if (!isRecoveryRule)
-                        postfix.Add(new RuleWithPrecedence(Kind: alt.Kind, new Seq(rest, alt.Kind), reqRef.Precedence, reqRef.Right));
+                        if (!isRecoveryRule)
+                            postfix.Add(new RuleWithPrecedence(Kind: alt.Kind, new Seq(rest, alt.Kind), reqRef.Precedence, reqRef.Right));
+                    }
+                    else
+                    {
+                        var precedence = rule is ReqRef x ? x.Precedence : 0;
+                        recoveryPostfix.Add(new RuleWithPrecedence(Kind: alt.Kind, new Seq(rest, alt.Kind), precedence, Right: false));
+
+                        if (!isRecoveryRule)
+                            postfix.Add(new RuleWithPrecedence(Kind: alt.Kind, new Seq(rest, alt.Kind), precedence, Right: false));
+                    }
                 }
                 else
                 {
@@ -385,8 +396,8 @@ public class Parser(Terminal trivia, Log? log = null)
             Seq s => ParseSeq(s, startPos, input),
             OneOrMany o => ParseOneOrMany(o, startPos, input),
             ZeroOrMany z => ParseZeroOrMany(z, startPos, input),
-            Ref r => ParseRule(r.RuleName, 0, startPos, input),
             ReqRef r => ParseRule(r.RuleName, r.Precedence, startPos, input),
+            Ref r => ParseRule(r.RuleName, 0, startPos, input),
             Optional o => ParseOptional(o, startPos, input),
             OftenMissed o => ParseOftenMissed(o, startPos, input),
             AndPredicate a => ParseAndPredicate(a, startPos, input),

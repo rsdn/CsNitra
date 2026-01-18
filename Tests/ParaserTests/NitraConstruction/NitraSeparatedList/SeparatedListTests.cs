@@ -222,13 +222,14 @@ public partial class SeparatedListTests
         Trace.WriteLine($"\n=== TEST START: {input} ===");
 
         var parseResult = _parser.Parse(input, startRule, out _);
-        if (!parseResult.TryGetSuccess(out var node, out _))
+        if (_parser.ErrorInfo is { } error)
         {
-            Trace.WriteLine($"❌ Parse FAILED. {_parser.ErrorInfo.GetErrorText()}");
+            Trace.WriteLine($"❌ Parse FAILED. {error.AssertIsNonNull().GetErrorText()}");
             Assert.Fail($"Parse failed for: {input}");
             return;
         }
 
+        Assert.IsTrue(parseResult.TryGetSuccess(out var node, out _));
         Trace.WriteLine($"✅ Parse SUCCESS. Node type: {node.Kind}");
         Trace.WriteLine($"Node structure:\n{node}");
 

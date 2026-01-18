@@ -1,4 +1,4 @@
-﻿namespace CppEnumExtractor;
+﻿namespace ExtensibleParaser;
 
 public abstract record ParseResult
 {
@@ -6,7 +6,7 @@ public abstract record ParseResult
     public bool IsFailed => !IsSuccess;
 }
 
-public sealed record Success(CppProgram Program) : ParseResult
+public sealed record Success<T>(T Program) : ParseResult
 {
     public override bool IsSuccess => true;
 }
