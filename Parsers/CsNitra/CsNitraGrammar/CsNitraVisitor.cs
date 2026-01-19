@@ -97,25 +97,11 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
         _ => throw new InvalidOperationException("Expected precedence statement"),
     };
 
-    private CsNitraAst ProcessGrammar(List<CsNitraAst?> children, int startPos, int endPos)
+    private CsNitraAst ProcessGrammar(List<CsNitraAst?> children, int startPos, int endPos) => children switch
     {
-        var usings = new List<UsingAst>();
-        var statements = new List<StatementAst>();
-
-        foreach (var child in children)
-        {
-            //if (child is AstList list)
-            //{
-            //    foreach (var item in list.Items)
-            //    {
-            //        if (item is UsingAst usingAst) usings.Add(usingAst);
-            //        else if (item is StatementAst statementAst) statements.Add(statementAst);
-            //    }
-            //}
-        }
-
-        return new GrammarAst(usings, statements, startPos, endPos);
-    }
+        [AstList<UsingAst> usings, AstList<StatementAst> statements] => new GrammarAst(usings.Items, statements.Items, startPos, endPos),
+        _ => throw new InvalidOperationException("Expected Grammar"),
+    };
 
     private CsNitraAst ProcessOpenUsing(List<CsNitraAst?> children, int startPos, int endPos) => children switch
     {
@@ -136,10 +122,80 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
 
     private CsNitraAst ProcessRuleStatement(List<CsNitraAst?> children, int startPos, int endPos) => children switch
     {
-        [Identifier name, Literal equals, Option pipe, AstList<CsNitraAst>([RuleExpressionAst expr], _, _), Literal semicolon] =>
-            new RuleStatementAst(name, equals, ToList(expr), startPos, endPos),
-        _ => throw new InvalidOperationException("Expected Rule statement"),
+        [
+            Identifier ruleName,
+            Literal equals,
+            Option pipeOpt,
+            AstList<CsNitraAst> alternativesList,
+            Literal semicolon
+        ] =>
+            new RuleStatementAst(
+                Name: ruleName,
+                Eq: equals,
+                Alternatives: ProcessRuleAlternatives(ruleName, alternativesList.Items, startPos, endPos),
+                StartPos: startPos,
+                EndPos: endPos
+            ),
+        _ => throw new InvalidOperationException($"Invalid rule statement: {string.Join(", ", children)}")
     };
+
+    private IReadOnlyList<RuleAlternativeAst> ProcessRuleAlternatives(
+        Identifier ruleName,
+        List<CsNitraAst> expressionItems,
+        int ruleStartPos,
+        int ruleEndPos)
+    {
+        var alternatives = new List<RuleAlternativeAst>();
+        var currentAlternativeItems = new List<RuleExpressionAst>();
+        var currentName = ruleName; // Начинаем с имени правила
+        var alternativeStartPos = ruleStartPos;
+
+        foreach (var item in expressionItems)
+        {
+            switch (item)
+            {
+                case Literal("|", var pipeStart, var pipeEnd) pipe:
+                    // Завершаем текущую альтернативу
+                    if (currentAlternativeItems.Count > 0)
+                    {
+                        var alternativeEndPos = pipeStart;
+                        alternatives.Add(new RuleAlternativeAst(
+                            Name: currentName,
+                            SubRules: currentAlternativeItems,
+                            StartPos: alternativeStartPos,
+                            EndPos: alternativeEndPos
+                        ));
+                    }
+
+                    // Начинаем новую альтернативу
+                    currentAlternativeItems = new List<RuleExpressionAst>();
+                    currentName = new Identifier("anonymous", pipeEnd, pipeEnd);
+                    alternativeStartPos = pipeEnd;
+                    break;
+
+                case RuleExpressionAst expr:
+                    currentAlternativeItems.Add(expr);
+
+                    // Если это NamedExpression, используем его имя для альтернативы
+                    if (expr is NamedExpressionAst(_, var namedExpr, _, _) named)
+                        currentName = new Identifier(named.Name, expr.StartPos, expr.EndPos);
+                    break;
+            }
+        }
+
+        // Добавляем последнюю альтернативу
+        if (currentAlternativeItems.Count > 0)
+            alternatives.Add(new RuleAlternativeAst(
+                Name: currentName,
+                SubRules: currentAlternativeItems,
+                StartPos: alternativeStartPos,
+                EndPos: ruleEndPos
+            ));
+
+        return alternatives;
+    }
+
+    Literal? GetOptonLiteral(Option option) => option switch { Some<CsNitraAst>(Literal result) => result, _ => null };
 
     private IReadOnlyList<RuleExpressionAst> ToList(RuleExpressionAst expr, List<RuleExpressionAst>? result = null)
     {
@@ -273,6 +329,32 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
         return new AstList<T>(items, node.StartPos, node.EndPos);
     }
 
+    private CsNitraAst ProcessAstDelimitedList<TElement, TDelimiter>(ListNode node)
+        where TElement : CsNitraAst
+        where TDelimiter : CsNitraAst
+    {
+        var elements = new List<TElement>();
+        var delimiters = new List<TDelimiter>();
+
+        foreach (var element in node.Elements)
+        {
+            element.Accept(this);
+            if (_currentResult is TElement result)
+                elements.Add(result);
+            _currentResult = null;
+        }
+
+        foreach (var delimiter in node.Delimiters)
+        {
+            delimiter.Accept(this);
+            if (_currentResult is TDelimiter result)
+                delimiters.Add(result);
+            _currentResult = null;
+        }
+
+        return new AstDelimitedList<TElement, TDelimiter>(elements, delimiters, node.StartPos, node.EndPos);
+    }
+
     private CsNitraAst ProcessAstList<T>(List<CsNitraAst?> children, int startPos, int endPos) where T : CsNitraAst
     {
         var items = new List<T>();
@@ -299,5 +381,8 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
 
     // Helper classes for visitor
     private record AstList<T>(List<T> Items, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos) where T : CsNitraAst;
+    private record AstDelimitedList<TElement, TDelimiter>(List<TElement> Items, List<TDelimiter> Delimiters, int StartPos, int EndPos) : AstList<TElement>(Items, StartPos, EndPos)
+        where TElement : CsNitraAst
+        where TDelimiter : CsNitraAst;
     private record StringValue(string Value, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos);
 }

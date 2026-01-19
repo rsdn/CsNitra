@@ -111,26 +111,29 @@ public partial class SeparatedListTests
 
     [TestMethod]
     public void RequiredCallWith1Args() =>
-        TestSeparatedList(
+        TestSeparatedListRecovery(
             "ExpRequired",
             "func(1)",
-            "func"
+            "func",
+            expecteds: [","]
         );
 
     [TestMethod]
     public void RequiredCallWith2Args() =>
-        TestSeparatedList(
+        TestSeparatedListRecovery(
             "ExpRequired",
             "func(1, 2)",
-            "func"
+            "func",
+            expecteds: [","]
         );
 
     [TestMethod]
     public void RequiredCallWith3Args() =>
-        TestSeparatedList(
+        TestSeparatedListRecovery(
             "ExpRequired",
             "func(1, 2, 3)",
-            "func"
+            "func",
+            expecteds: [","]
         );
 
 
@@ -195,27 +198,60 @@ public partial class SeparatedListTests
 
     [TestMethod]
     public void ForbiddenCallWith1ArgsWitEndDelim() =>
-        TestSeparatedList(
-            "ExpForbidden",
-            "func(1, )",
-            "Call: func(1, «Error: expected Expr»)"
+        TestSeparatedListRecovery(
+            startRule: "ExpForbidden",
+            input: "func(1, )",
+            expectedAst: "Call: func(1, «Error: expected Expr»)",
+            expecteds: ["Number", "Ident"]
         );
 
     [TestMethod]
     public void ForbiddenCallWith2ArgsWitEndDelimArgs() =>
-        TestSeparatedList(
+        TestSeparatedListRecovery(
             "ExpForbidden",
             "func(1, 2, )",
-            "Call: func(1, 2, «Error: expected Expr»)"
+            "Call: func(1, 2, «Error: expected Expr»)",
+            expecteds: ["Number", "Ident"]
         );
 
     [TestMethod]
     public void ForbiddenCallWith3ArgsWitEndDelim() =>
-        TestSeparatedList(
+        TestSeparatedListRecovery(
             "ExpForbidden",
             "func(1, 2, 3, )",
-            "Call: func(1, 2, 3, «Error: expected Expr»)"
+            "Call: func(1, 2, 3, «Error: expected Expr»)",
+            expecteds: ["Number", "Ident"]
         );
+
+    private void TestSeparatedListRecovery(string startRule, string input, string expectedAst, string[] expecteds)
+    {
+        Trace.WriteLine($"\n=== TEST START: {input} ===");
+
+        var parseResult = _parser.Parse(input, startRule, out _);
+        if (_parser.ErrorInfo is { } error)
+        {
+            CollectionAssert.AreEquivalent(expected: expecteds, actual: error.Expecteds.Select(x => x.Kind).ToArray());
+            Assert.AreEqual(expected: input.IndexOf(')'), error.Pos);
+            Trace.WriteLine($"✅ Recovered error: {error.GetErrorText()}");
+        }
+
+        Assert.IsTrue(parseResult.TryGetSuccess(out var node, out _));
+        Trace.WriteLine($"✅ Parse SUCCESS. Node type: {node.Kind}");
+        Trace.WriteLine($"Node structure:\n{node}");
+
+        var visitor = new SeparatedListVisitor(input);
+        node.Accept(visitor);
+
+        if (visitor.Result == null)
+        {
+            Trace.WriteLine("❌ AST generation FAILED");
+            Assert.Fail("AST is null");
+            return;
+        }
+
+        Trace.WriteLine($"Generated AST: {visitor.Result}");
+        Assert.AreEqual(expectedAst.NormalizeEol(), visitor.Result.ToString().NormalizeEol());
+    }
 
     private void TestSeparatedList(string startRule, string input, string expectedAst)
     {

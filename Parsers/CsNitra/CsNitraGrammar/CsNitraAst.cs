@@ -7,8 +7,8 @@ public abstract record CsNitraAst(int StartPos, int EndPos)
 }
 
 public sealed record GrammarAst(
-    List<UsingAst> Usings,
-    List<StatementAst> Statements,
+    IReadOnlyList<UsingAst> Usings,
+    IReadOnlyList<StatementAst> Statements,
     int StartPos,
     int EndPos
 ) : CsNitraAst(StartPos, EndPos)
@@ -65,13 +65,27 @@ public sealed record PrecedenceStatementAst(
 public sealed record RuleStatementAst(
     Identifier Name,
     Literal Eq,
+    IReadOnlyList<RuleAlternativeAst> Alternatives,
+    int StartPos,
+    int EndPos
+) : StatementAst(StartPos, EndPos)
+{
+    public override string ToString() =>
+        $"""
+        {Name} =
+            {string.Join("\n    ", Alternatives)};
+        """;
+}
+
+public sealed record RuleAlternativeAst(
+    Identifier Name,
     IReadOnlyList<RuleExpressionAst> SubRules,
     int StartPos,
     int EndPos
 ) : StatementAst(StartPos, EndPos)
 {
     public override string ToString() =>
-        $"{Name} = {string.Join(" | ", SubRules)};";
+        $"| {Name} = {string.Join(" ", SubRules)};";
 }
 
 public abstract record RuleExpressionAst(int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos);
