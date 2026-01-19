@@ -131,7 +131,7 @@ public sealed record NamedExpressionAst(
     int EndPos
 ) : RuleExpressionAst(StartPos, EndPos)
 {
-    public override string ToString() => $"{Name} = {Expression}";
+    public override string ToString() => $"{Name}=«{Expression}»";
 }
 
 public sealed record OptionalExpressionAst(
@@ -212,23 +212,12 @@ public sealed record CharLiteralAst(
 
 public sealed record RuleRefExpressionAst(
     QualifiedIdentifierAst Ref,
-    Identifier? Precedence,
-    Identifier? Associativity,
+    PrecedenceAst? Precedence,
     int StartPos,
     int EndPos
 ) : RuleExpressionAst(StartPos, EndPos)
 {
-    public override string ToString()
-    {
-        var result = Ref.ToString();
-        if (Precedence != null)
-        {
-            result += $" : {Precedence}";
-            if (Associativity != null)
-                result += $", {Associativity}";
-        }
-        return result;
-    }
+    public override string ToString() => $"{Ref}{Precedence}";
 }
 
 public sealed record GroupExpressionAst(
@@ -256,7 +245,16 @@ public sealed record SeparatedListExpressionAst(
     }
 }
 
-public record PrecedenceInfo(string Precedence, string? Associativity, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos);
+public record AssociativityAst(Literal Comma, Literal? Associativity, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos)
+{
+    public override string ToString() => $", right";
+}
+
+
+public record PrecedenceAst(Literal Colon, Identifier Precedence, AssociativityAst? Associativity, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos)
+{
+    public override string ToString() => $" : {Precedence}{Associativity}";
+}
 
 public record Identifier(string Value, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos)
 {

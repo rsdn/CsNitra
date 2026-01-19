@@ -68,6 +68,7 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
                 "OpenUsing" => ProcessOpenUsing(children, startPos, endPos),
                 "AliasUsing" => ProcessAliasUsing(children, startPos, endPos),
                 "Precedence" => ProcessPrecedenceStatement(children, startPos, endPos),
+                "Associativity" => ProcessAssociativity(children, startPos, endPos),
                 "Rule" => ProcessRuleStatement(children, startPos, endPos),
                 "SimpleRule" => ProcessSimpleRuleStatement(children, startPos, endPos),
                 "NamedAlternative" => ProcessNamedAlternative(children, startPos, endPos),
@@ -98,6 +99,12 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
         if (node.Kind == "Grammar" && _currentResult is GrammarAst grammar)
             Result = grammar;
     }
+
+    private CsNitraAst ProcessAssociativity(List<CsNitraAst?> children, int startPos, int endPos) => children switch
+    {
+        [Literal commc, Literal right] => new AssociativityAst(commc, right, startPos, endPos),
+        _ => throw new InvalidOperationException($"Expected Associativity: [{string.Join(", ", children)}]"),
+    };
 
     private CsNitraAst ProcessPrecedenceStatement(List<CsNitraAst?> children, int startPos, int endPos) => children switch
     {
@@ -160,7 +167,7 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
                 StartPos: startPos,
                 EndPos: endPos
             ),
-        _ => throw new InvalidOperationException($"Invalid rule statement: {string.Join(", ", children)}")
+        _ => throw new InvalidOperationException($"Invalid rule statement: [{string.Join(", ", children)}]")
     };
 
     private CsNitraAst ProcessSimpleRuleStatement(List<CsNitraAst?> children, int startPos, int endPos) => children switch
@@ -254,23 +261,17 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
 
     private CsNitraAst ProcessRuleRefExpression(List<CsNitraAst?> children, int startPos, int endPos) => children switch
     {
-        [QualifiedIdentifierAst qi, None] => new RuleRefExpressionAst(qi, Precedence: null, Associativity: null, startPos, endPos),
-        [QualifiedIdentifierAst qi, Some<CsNitraAst> precedence] => new RuleRefExpressionAst(qi, Precedence: null, Associativity: null, startPos, endPos),
+        [QualifiedIdentifierAst qi, None] => new RuleRefExpressionAst(qi, Precedence: null, startPos, endPos),
+        [QualifiedIdentifierAst qi, Some<CsNitraAst>(PrecedenceAst precedence)] => new RuleRefExpressionAst(qi, Precedence: precedence, startPos, endPos),
         _ => throw new InvalidOperationException($"Expected RuleRef expression. But fond [{string.Join(", ", children.Select(x => x!.ToString()))}]")
     };
 
-    private CsNitraAst ProcessPrecedenceWithAssociativity(List<CsNitraAst?> children, int startPos, int endPos)
+    private CsNitraAst ProcessPrecedenceWithAssociativity(List<CsNitraAst?> children, int startPos, int endPos) => children switch
     {
-        var precedence = children[1] as Identifier
-            ?? throw new InvalidOperationException("Expected precedence identifier");
-
-        string? associativity = null;
-
-        if (children[2] is StringValue assoc)
-            associativity = assoc.Value;
-
-        return new PrecedenceInfo(precedence.Value, associativity, startPos, endPos);
-    }
+        [Literal colon, Identifier precedence, Some<CsNitraAst>(AssociativityAst associativity)] => new PrecedenceAst(colon, precedence, associativity, startPos, endPos),
+        [Literal colon, Identifier precedence, None] => new PrecedenceAst(colon, precedence, null, startPos, endPos),
+        _ => throw new InvalidOperationException($"Expected precedence, associativity. But fond [{string.Join(", ", children.Select(x => x!.ToString()))}]")
+    };
 
     private CsNitraAst ProcessGroupExpression(List<CsNitraAst?> children, int startPos, int endPos)
     {

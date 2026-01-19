@@ -99,10 +99,10 @@ public class CsNitraTests
             | Literal
             | Sequence      = Left=RuleExpression : Sequence Right=RuleExpression : Sequence
             | Named         = Name=Identifier "=" RuleExpression : Named
-            | Optional      = RuleExpression "?"
-            | OftenMissed   = RuleExpression "??"
-            | OneOrMany     = RuleExpression "+"
-            | ZeroOrMany    = RuleExpression "*"
+            | Optional      = RuleExpression : UnaryPostfix "?"
+            | OftenMissed   = RuleExpression : UnaryPostfix "??"
+            | OneOrMany     = RuleExpression : UnaryPostfix "+"
+            | ZeroOrMany    = RuleExpression : UnaryPostfix "*"
             | AndPredicate  = "&" RuleExpression : UnaryPrefix
             | NotPredicate  = "!" RuleExpression : UnaryPrefix
             | RuleRef       = Ref=QualifiedIdentifier (":" Precedence=Identifier ("," Associativity)?)?
