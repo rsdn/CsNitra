@@ -21,7 +21,7 @@ public abstract record UsingAst(int StartPos, int EndPos) : CsNitraAst(StartPos,
 
 public sealed record OpenUsingAst(
     Literal UsingKw,
-    IReadOnlyList<Identifier> QualifiedIdentifier,
+    QualifiedIdentifierAst QualifiedIdentifier,
     Literal Semicolon,
     int StartPos,
     int EndPos
@@ -42,6 +42,7 @@ public sealed record AliasUsingAst(
 
 public sealed record QualifiedIdentifierAst(
     IReadOnlyList<Identifier> Parts,
+    IReadOnlyList<Literal> Delimiters,
     int StartPos,
     int EndPos
 ) : CsNitraAst(StartPos, EndPos)
@@ -65,7 +66,7 @@ public sealed record PrecedenceStatementAst(
 public sealed record RuleStatementAst(
     Identifier Name,
     Literal Eq,
-    IReadOnlyList<RuleAlternativeAst> Alternatives,
+    IReadOnlyList<AlternativeAst> Alternatives,
     int StartPos,
     int EndPos
 ) : StatementAst(StartPos, EndPos)
@@ -73,19 +74,42 @@ public sealed record RuleStatementAst(
     public override string ToString() =>
         $"""
         {Name} =
-            {string.Join("\n    ", Alternatives)};
+            {string.Join("\n    ", Alternatives.Select(a => $"| {a}"))};
         """;
 }
 
-public sealed record RuleAlternativeAst(
+public sealed record SimpleRuleStatementAst(
     Identifier Name,
-    IReadOnlyList<RuleExpressionAst> SubRules,
+    Literal Eq,
+    RuleExpressionAst Expression,
+    Literal Semicolon,
     int StartPos,
     int EndPos
 ) : StatementAst(StartPos, EndPos)
 {
     public override string ToString() =>
-        $"| {Name} = {string.Join(" ", SubRules)};";
+        $"{Name} = {Expression};";
+}
+
+public abstract record AlternativeAst(int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos);
+
+public sealed record NamedAlternativeAst(
+    Identifier Name,
+    RuleExpressionAst Expression,
+    int StartPos,
+    int EndPos
+) : AlternativeAst(StartPos, EndPos)
+{
+    public override string ToString() => $"{Name} = {Expression}";
+}
+
+public sealed record AnonymousAlternativeAst(
+    QualifiedIdentifierAst RuleRef,
+    int StartPos,
+    int EndPos
+) : AlternativeAst(StartPos, EndPos)
+{
+    public override string ToString() => RuleRef.ToString();
 }
 
 public abstract record RuleExpressionAst(int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos);

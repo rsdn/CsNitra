@@ -36,6 +36,9 @@ public class CsNitraParser
         ];
 
         // Statement =
+        //     | Precedence = "precedence" (Identifier; ",")+ ";"
+        //     | Rule = Identifier "=" "|"? (Alternative; "|")+ ";"
+        //     | SimpleRule = Identifier "=" RuleExpression;
         _parser.Rules["Statement"] = [
             // | Precedence = "precedence" (Identifier; ",")+ ";"
             new Seq([
@@ -43,14 +46,29 @@ public class CsNitraParser
                 new SeparatedList(CsNitraTerminals.Identifier(), new ExtensibleParaser.Literal(","), "Precedences", SeparatorEndBehavior.Forbidden),
                 new ExtensibleParaser.Literal(";")
             ], "Precedence"),
-            // | Rule = Identifier "=" "|"? (RuleExpression; "|")+ ";";
+            // | Rule = Identifier "=" "|"? (Alternative; "|")+ ";"
             new Seq([
                 CsNitraTerminals.Identifier(),
                 new ExtensibleParaser.Literal("="),
                 new Optional(new ExtensibleParaser.Literal("|")),
-                new SeparatedList(new Ref("RuleExpression"), new ExtensibleParaser.Literal("|"), "RuleExpressions", SeparatorEndBehavior.Forbidden),
+                new SeparatedList(new Ref("Alternative"), new ExtensibleParaser.Literal("|"), "Alternatives", SeparatorEndBehavior.Forbidden),
                 new ExtensibleParaser.Literal(";")
-            ], "Rule")
+            ], "Rule"),
+            // | SimpleRule = Identifier "=" RuleExpression;
+            new Seq([
+                CsNitraTerminals.Identifier(),
+                new ExtensibleParaser.Literal("="),
+                new Ref("RuleExpression"),
+                new ExtensibleParaser.Literal(";")
+            ], "SimpleRule")
+        ];
+
+        // Alternative =
+        _parser.Rules["Alternative"] = [
+            // | Named = Identifier "=" RuleExpression
+            new Seq([CsNitraTerminals.Identifier(), new ExtensibleParaser.Literal("="), new Ref("RuleExpression")], "NamedAlternative"),
+            // | QualifiedIdentifier
+            new Ref("QualifiedIdentifier", "AnonymousAlternative")
         ];
 
         // RuleExpression = // основное рекурсивное правило с приоритетами
@@ -58,7 +76,7 @@ public class CsNitraParser
             // | Sequence = Left=RuleExpression : Sequence Right=RuleExpression : Sequence // самый низкий приоритет
             new Seq([new Ref("RuleExpression"), new ReqRef("RuleExpression", Precedence: Sequence, Right: false)], "SequenceExpression"),
             // | Named = Name=Identifier "=" RuleExpression : Named
-            new Seq([CsNitraTerminals.Identifier(), new ExtensibleParaser.Literal("="), new ReqRef("RuleExpression", Precedence: Named, Right: false)], "Named"),
+            new Seq([CsNitraTerminals.Identifier(), new ExtensibleParaser.Literal("="), new ReqRef("RuleExpression", Precedence: Named, Right: false)], "NamedExpression"),
             
             // | Optional = RuleExpression "?"
             new Seq([new ReqRef("RuleExpression", Precedence: UnarySuffix), new ExtensibleParaser.Literal("?")], "Optional"),
