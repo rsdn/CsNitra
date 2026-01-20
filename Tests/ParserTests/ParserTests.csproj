@@ -34,7 +34,7 @@
 
     <ProjectReference Include="..\..\Regex\Regex\Regex.csproj" OutputItemType="Analyzer" />
     <ProjectReference Include="..\..\TerminalGenerator\TerminalGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-    <ProjectReference Include="..\..\ExtensibleParaser\ExtensibleParaser.csproj" />
+    <ProjectReference Include="..\..\ExtensibleParser\ExtensibleParser.csproj" />
 
   </ItemGroup>
 

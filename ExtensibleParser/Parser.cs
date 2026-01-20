@@ -555,7 +555,7 @@ public class Parser(Terminal trivia, Log? log = null)
         {
             Log($"Starting recovery for terminal {terminal.Kind} at position {startPos}");
             var currentRule = _ruleStack.Peek();
-            var followSymbols = Guard.AssertIsNonNull(_followCalculator).GetFollowSet(currentRule.ParentRule);
+            var followSymbols = Guard.AssertIsNonNull(_followCalculator).GetFollowSet(currentRule.ParentRule.AssertIsNonNull());
 
             // Ищем первую подходящую точку восстановления
             for (int pos = _recoverySkipPos; pos < input.Length; pos++)

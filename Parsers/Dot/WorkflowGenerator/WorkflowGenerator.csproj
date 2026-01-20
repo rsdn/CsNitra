@@ -15,7 +15,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\..\..\ExtensibleParaser\ExtensibleParaser.csproj" />
+      <ProjectReference Include="..\..\..\ExtensibleParser\ExtensibleParser.csproj" />
       <ProjectReference Include="..\..\..\Regex\Regex\Regex.csproj" />
       <ProjectReference Include="..\DotParser\DotParser.csproj" />
     </ItemGroup>
