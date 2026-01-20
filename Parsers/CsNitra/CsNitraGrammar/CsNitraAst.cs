@@ -1,12 +1,12 @@
 ﻿namespace CsNitra;
 
-public abstract record CsNitraAst(int StartPos, int EndPos)
+public abstract partial record CsNitraAst(int StartPos, int EndPos)
 {
     public CsNitraAst() : this(StartPos: 0, EndPos: 0) { }
     public int Length => EndPos - StartPos;
 }
 
-public sealed record GrammarAst(
+public sealed partial record GrammarAst(
     IReadOnlyList<UsingAst> Usings,
     IReadOnlyList<StatementAst> Statements,
     int StartPos,
@@ -17,9 +17,9 @@ public sealed record GrammarAst(
         $"Grammar(Usings: {Usings.Count}, Statements: {Statements.Count})";
 }
 
-public abstract record UsingAst(int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos);
+public abstract partial record UsingAst(int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos);
 
-public sealed record OpenUsingAst(
+public sealed partial record OpenUsingAst(
     Literal UsingKw,
     QualifiedIdentifierAst QualifiedIdentifier,
     Literal Semicolon,
@@ -30,7 +30,7 @@ public sealed record OpenUsingAst(
     public override string ToString() => $"using {string.Join(".", QualifiedIdentifier)};";
 }
 
-public sealed record AliasUsingAst(
+public sealed partial record AliasUsingAst(
     string Alias,
     QualifiedIdentifierAst QualifiedIdentifier,
     int StartPos,
@@ -40,7 +40,7 @@ public sealed record AliasUsingAst(
     public override string ToString() => $"using {Alias} = {QualifiedIdentifier};";
 }
 
-public sealed record QualifiedIdentifierAst(
+public sealed partial record QualifiedIdentifierAst(
     IReadOnlyList<Identifier> Parts,
     IReadOnlyList<Literal> Delimiters,
     int StartPos,
@@ -50,9 +50,9 @@ public sealed record QualifiedIdentifierAst(
     public override string ToString() => string.Join(".", Parts);
 }
 
-public abstract record StatementAst(int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos);
+public abstract partial record StatementAst(int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos);
 
-public sealed record PrecedenceStatementAst(
+public sealed partial record PrecedenceStatementAst(
     Literal PrecedenceKw,
     IReadOnlyList<Identifier> Precedences,
     Literal Semicolon,
@@ -63,7 +63,7 @@ public sealed record PrecedenceStatementAst(
     public override string ToString() => $"precedence {string.Join(", ", Precedences)};";
 }
 
-public sealed record RuleStatementAst(
+public sealed partial record RuleStatementAst(
     Identifier Name,
     Literal Eq,
     IReadOnlyList<AlternativeAst> Alternatives,
@@ -78,7 +78,7 @@ public sealed record RuleStatementAst(
         """;
 }
 
-public sealed record SimpleRuleStatementAst(
+public sealed partial record SimpleRuleStatementAst(
     Identifier Name,
     Literal Eq,
     RuleExpressionAst Expression,
@@ -91,9 +91,9 @@ public sealed record SimpleRuleStatementAst(
         $"{Name} = {Expression};";
 }
 
-public abstract record AlternativeAst(int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos);
+public abstract partial record AlternativeAst(int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos);
 
-public sealed record NamedAlternativeAst(
+public sealed partial record NamedAlternativeAst(
     Identifier Name,
     RuleExpressionAst Expression,
     int StartPos,
@@ -103,7 +103,7 @@ public sealed record NamedAlternativeAst(
     public override string ToString() => $"{Name} = {Expression}";
 }
 
-public sealed record AnonymousAlternativeAst(
+public sealed partial record AnonymousAlternativeAst(
     QualifiedIdentifierAst RuleRef,
     int StartPos,
     int EndPos
@@ -112,9 +112,9 @@ public sealed record AnonymousAlternativeAst(
     public override string ToString() => RuleRef.ToString();
 }
 
-public abstract record RuleExpressionAst(int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos);
+public abstract partial record RuleExpressionAst(int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos);
 
-public sealed record SequenceExpressionAst(
+public sealed partial record SequenceExpressionAst(
     RuleExpressionAst Left,
     RuleExpressionAst Right,
     int StartPos,
@@ -124,7 +124,7 @@ public sealed record SequenceExpressionAst(
     public override string ToString() => $"{Left} {Right}";
 }
 
-public sealed record NamedExpressionAst(
+public sealed partial record NamedExpressionAst(
     string Name,
     RuleExpressionAst Expression,
     int StartPos,
@@ -134,7 +134,7 @@ public sealed record NamedExpressionAst(
     public override string ToString() => $"{Name}=«{Expression}»";
 }
 
-public sealed record OptionalExpressionAst(
+public sealed partial record OptionalExpressionAst(
     RuleExpressionAst Expression,
     int StartPos,
     int EndPos
@@ -143,7 +143,7 @@ public sealed record OptionalExpressionAst(
     public override string ToString() => $"{Expression}?";
 }
 
-public sealed record OftenMissedExpressionAst(
+public sealed partial record OftenMissedExpressionAst(
     RuleExpressionAst Expression,
     int StartPos,
     int EndPos
@@ -152,7 +152,7 @@ public sealed record OftenMissedExpressionAst(
     public override string ToString() => $"{Expression}??";
 }
 
-public sealed record OneOrManyExpressionAst(
+public sealed partial record OneOrManyExpressionAst(
     RuleExpressionAst Expression,
     Literal Plus,
     int StartPos,
@@ -162,7 +162,7 @@ public sealed record OneOrManyExpressionAst(
     public override string ToString() => $"{Expression}+";
 }
 
-public sealed record ZeroOrManyExpressionAst(
+public sealed partial record ZeroOrManyExpressionAst(
     RuleExpressionAst Expression,
     Literal Star,
     int StartPos,
@@ -172,7 +172,7 @@ public sealed record ZeroOrManyExpressionAst(
     public override string ToString() => $"{Expression}*";
 }
 
-public sealed record AndPredicateExpressionAst(
+public sealed partial record AndPredicateExpressionAst(
     RuleExpressionAst Expression,
     int StartPos,
     int EndPos
@@ -181,7 +181,7 @@ public sealed record AndPredicateExpressionAst(
     public override string ToString() => $"&{Expression}";
 }
 
-public sealed record NotPredicateExpressionAst(
+public sealed partial record NotPredicateExpressionAst(
     RuleExpressionAst Expression,
     int StartPos,
     int EndPos
@@ -190,9 +190,9 @@ public sealed record NotPredicateExpressionAst(
     public override string ToString() => $"!{Expression}";
 }
 
-public abstract record LiteralAst(int StartPos, int EndPos) : RuleExpressionAst(StartPos, EndPos);
+public abstract partial record LiteralAst(int StartPos, int EndPos) : RuleExpressionAst(StartPos, EndPos);
 
-public sealed record StringLiteralAst(
+public sealed partial record StringLiteralAst(
     string Value,
     int StartPos,
     int EndPos
@@ -201,7 +201,7 @@ public sealed record StringLiteralAst(
     public override string ToString() => $"\"{Value}\"";
 }
 
-public sealed record CharLiteralAst(
+public sealed partial record CharLiteralAst(
     string Value,
     int StartPos,
     int EndPos
@@ -210,7 +210,7 @@ public sealed record CharLiteralAst(
     public override string ToString() => $"'{Value}'";
 }
 
-public sealed record RuleRefExpressionAst(
+public sealed partial record RuleRefExpressionAst(
     QualifiedIdentifierAst Ref,
     PrecedenceAst? Precedence,
     int StartPos,
@@ -220,7 +220,7 @@ public sealed record RuleRefExpressionAst(
     public override string ToString() => $"{Ref}{Precedence}";
 }
 
-public sealed record GroupExpressionAst(
+public sealed partial record GroupExpressionAst(
     RuleExpressionAst Expression,
     int StartPos,
     int EndPos
@@ -229,7 +229,7 @@ public sealed record GroupExpressionAst(
     public override string ToString() => $"({Expression})";
 }
 
-public sealed record SeparatedListExpressionAst(
+public sealed partial record SeparatedListExpressionAst(
     RuleExpressionAst Element,
     RuleExpressionAst Separator,
     Literal? Modifier,
@@ -245,28 +245,28 @@ public sealed record SeparatedListExpressionAst(
     }
 }
 
-public record AssociativityAst(Literal Comma, Literal? Associativity, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos)
+public partial record AssociativityAst(Literal Comma, Literal? Associativity, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos)
 {
     public override string ToString() => $", right";
 }
 
 
-public record PrecedenceAst(Literal Colon, Identifier Precedence, AssociativityAst? Associativity, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos)
+public partial record PrecedenceAst(Literal Colon, Identifier Precedence, AssociativityAst? Associativity, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos)
 {
     public override string ToString() => $" : {Precedence}{Associativity}";
 }
 
-public record Identifier(string Value, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos)
+public partial record Identifier(string Value, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos)
 {
     public override string ToString() => Value;
 }
 
-public record Literal(string Value, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos)
+public partial record Literal(string Value, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos)
 {
     public override string ToString() => Value;
 }
 
-public abstract record Option(int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos)
+public abstract partial record Option(int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos)
 {
     public Option() : this(StartPos: 0, EndPos: 0) { }
 
@@ -277,13 +277,13 @@ public abstract record Option(int StartPos, int EndPos) : CsNitraAst(StartPos, E
     public static readonly None None = None.Create();
 }
 
-public sealed record Some<T>(T Value) : Option where T : notnull
+public sealed partial record Some<T>(T Value) : Option where T : notnull
 {
     public override bool IsSome => true;
     public override string ToString() => $"Some({Value})";
 }
 
-public sealed record None : Option
+public sealed partial record None : Option
 {
     public override bool IsSome => false;
     public override string ToString() => "None()";

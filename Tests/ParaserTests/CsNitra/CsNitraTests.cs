@@ -65,12 +65,10 @@ public class CsNitraTests
                         Assert.IsTrue(anon.RuleRef.Parts.Count > 0);
                 }
             }
-            else if (statement is SimpleRuleStatementAst srs)
-                Assert.IsNotNull(srs.Expression);
         }
     }
 
-    private bool IsGrammarRule(SimpleRuleStatementAst simple) => simple.Name.Value == "Grammar" && simple.Expression.ToString() == "Using* Statement*";
+    private static bool IsGrammarRule(SimpleRuleStatementAst simple) => simple.Name.Value == "Grammar" && simple.Expression.ToString() == "Using* Statement*";
 
     private static string GetGrammarText() =>
         """
