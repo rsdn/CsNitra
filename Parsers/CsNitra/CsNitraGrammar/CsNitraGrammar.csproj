@@ -2,7 +2,7 @@
 
     <PropertyGroup>
         <TargetFramework>netstandard2.0</TargetFramework>
-        <ImplicitUsings>enable</ImplicitUsings>
+        <ImplicitUsings>disable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <LangVersion>preview</LangVersion>
         <RootNamespace>CsNitra</RootNamespace>
@@ -10,6 +10,7 @@
 
     <ItemGroup>
         <Compile Include="..\..\..\Shared\NetStandard2_0Support.cs" Link="Shared\NetStandard2_0Support.cs" />
+        <Compile Include="..\..\..\Shared\GlobalUsings.cs" Link="Shared\GlobalUsings.cs" />
     </ItemGroup>
 
     <ItemGroup>

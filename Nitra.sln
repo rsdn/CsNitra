@@ -51,6 +51,12 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "CsNitra", "CsNitra", "{7E31
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CsNitraGrammar", "Parsers\CsNitra\CsNitraGrammar\CsNitraGrammar.csproj", "{CDF3880D-AF43-41B7-86D1-414DD96E7AC6}"
 EndProject
+Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "Regex.Shared", "Regex\Regex\Regex.Shared.shproj", "{D5927843-939F-4724-90E0-0574FDAC1126}"
+EndProject
+Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "CppEnumExtractor.Shared", "Parsers\Cpp\CppEnumExtractor\CppEnumExtractor.Shared.shproj", "{E6856A69-BDE4-41B5-8810-3896D01B2EE5}"
+EndProject
+Project("{D954291E-2A0B-460D-934E-DC6B0785DB48}") = "ExtensibleParser.Shared", "ExtensibleParser\ExtensibleParser.Shared.shproj", "{580DB74F-E66C-4911-8F4A-355943807178}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -200,8 +206,18 @@ Global
 		{7B59619A-E141-47D5-9305-B90E47965A86} = {D1F0A901-58C1-485F-A070-60766C7DCC01}
 		{7E31DBC8-EE8F-409C-BE58-6F5C291E223D} = {CAB1ED79-7BF8-4523-A747-DB4DB117D1D3}
 		{CDF3880D-AF43-41B7-86D1-414DD96E7AC6} = {7E31DBC8-EE8F-409C-BE58-6F5C291E223D}
+		{E6856A69-BDE4-41B5-8810-3896D01B2EE5} = {D1F0A901-58C1-485F-A070-60766C7DCC01}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {1CFBB9ED-FF57-4990-B1C7-F31EB1F3BDAB}
+	EndGlobalSection
+	GlobalSection(SharedMSBuildProjectFiles) = preSolution
+		ExtensibleParser\ExtensibleParser.Shared.projitems*{46533b4c-7c53-4771-9773-f793bad29aa7}*SharedItemsImports = 5
+		Parsers\Cpp\CppEnumExtractor\CppEnumExtractor.Shared.projitems*{46533b4c-7c53-4771-9773-f793bad29aa7}*SharedItemsImports = 5
+		Regex\Regex\Regex.Shared.projitems*{46533b4c-7c53-4771-9773-f793bad29aa7}*SharedItemsImports = 5
+		ExtensibleParser\ExtensibleParser.Shared.projitems*{580db74f-e66c-4911-8f4a-355943807178}*SharedItemsImports = 13
+		Regex\Regex\Regex.Shared.projitems*{688dd31c-5c27-4fb9-851c-21de6a83e624}*SharedItemsImports = 5
+		Regex\Regex\Regex.Shared.projitems*{d5927843-939f-4724-90e0-0574fdac1126}*SharedItemsImports = 13
+		Parsers\Cpp\CppEnumExtractor\CppEnumExtractor.Shared.projitems*{e6856a69-bde4-41b5-8810-3896d01b2ee5}*SharedItemsImports = 13
 	EndGlobalSection
 EndGlobal

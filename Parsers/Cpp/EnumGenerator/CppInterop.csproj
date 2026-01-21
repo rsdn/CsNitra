@@ -2,7 +2,7 @@
 
     <PropertyGroup>
         <TargetFramework>netstandard2.0</TargetFramework>
-        <ImplicitUsings>enable</ImplicitUsings>
+        <ImplicitUsings>disable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
         <LangVersion>preview</LangVersion>
@@ -11,6 +11,7 @@
 
     <ItemGroup>
         <Compile Include="..\..\..\Shared\NetStandard2_0Support.cs" Link="Shared\NetStandard2_0Support.cs" />
+        <Compile Include="..\..\..\Shared\GlobalUsings.cs" Link="Shared\GlobalUsings.cs" />
     </ItemGroup>
 
     <ItemGroup>
@@ -19,12 +20,18 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\CppEnumExtractor\CppEnumExtractor.csproj" />
+        <ProjectReference Include="..\..\..\TerminalGenerator\TerminalGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     </ItemGroup>
 
     <ItemGroup>
         <PackageReference Include="System.Linq.Async" Version="6.0.1" />
         <PackageReference Include="System.Memory" Version="4.5.5" />
     </ItemGroup>
+
+    <Import Project="..\..\..\Regex\Regex\Regex.Shared.projitems" Label="Shared" />
+
+    <Import Project="..\CppEnumExtractor\CppEnumExtractor.Shared.projitems" Label="Shared" />
+
+    <Import Project="..\..\..\ExtensibleParser\ExtensibleParser.Shared.projitems" Label="Shared" />
 
 </Project>
