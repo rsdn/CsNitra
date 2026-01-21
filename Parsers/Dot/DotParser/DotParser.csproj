@@ -9,17 +9,11 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <Compile Include="..\..\..\Shared\NetStandard2_0Support.cs" Link="Shared\NetStandard2_0Support.cs" />
-    </ItemGroup>
-
-    <ItemGroup>
         <ProjectReference Include="..\..\..\ExtensibleParser\ExtensibleParser.csproj" />
         <ProjectReference Include="..\..\..\Regex\Regex\Regex.csproj" OutputItemType="Analyzer" />
         <ProjectReference Include="..\..\..\TerminalGenerator\TerminalGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     </ItemGroup>
 
-    <ItemGroup>
-      <Folder Include="Shared\" />
-    </ItemGroup>
+    <Import Project="..\..\..\Shared\Shared.projitems" Label="Shared" />
 
 </Project>

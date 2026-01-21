@@ -10,11 +10,6 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <Compile Include="..\..\..\Shared\NetStandard2_0Support.cs" Link="Shared\NetStandard2_0Support.cs" />
-        <Compile Include="..\..\..\Shared\GlobalUsings.cs" Link="Shared\GlobalUsings.cs" />
-    </ItemGroup>
-
-    <ItemGroup>
         <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.11.0" PrivateAssets="all" />
         <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0" PrivateAssets="all" />
     </ItemGroup>
@@ -29,9 +24,8 @@
     </ItemGroup>
 
     <Import Project="..\..\..\Regex\Regex\Regex.Shared.projitems" Label="Shared" />
-
-    <Import Project="..\CppEnumExtractor\CppEnumExtractor.Shared.projitems" Label="Shared" />
-
+    <Import Project="..\CppSimplifiedParser\CppSimplifiedParser.Shared.projitems" Label="Shared" />
     <Import Project="..\..\..\ExtensibleParser\ExtensibleParser.Shared.projitems" Label="Shared" />
+    <Import Project="..\..\..\Shared\Shared.projitems" Label="Shared" />
 
 </Project>

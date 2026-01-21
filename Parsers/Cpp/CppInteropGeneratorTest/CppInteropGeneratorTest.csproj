@@ -20,10 +20,7 @@
   </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\EnumGenerator\CppInterop.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-        <!--<ProjectReference Include="..\CppEnumExtractor\CppEnumExtractor.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-        <ProjectReference Include="..\..\..\Regex\Regex\Regex.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-        <ProjectReference Include="..\..\..\ExtensibleParser\ExtensibleParser.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />-->
+        <ProjectReference Include="..\CppInteropGenerator\CppInteropGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     </ItemGroup>
 
 </Project>

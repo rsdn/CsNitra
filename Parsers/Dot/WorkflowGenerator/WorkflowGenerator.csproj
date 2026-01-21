@@ -15,9 +15,12 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\..\..\ExtensibleParser\ExtensibleParser.csproj" />
-      <ProjectReference Include="..\..\..\Regex\Regex\Regex.csproj" />
-      <ProjectReference Include="..\DotParser\DotParser.csproj" />
+      <ProjectReference Include="..\..\..\TerminalGenerator\TerminalGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     </ItemGroup>
+
+    <Import Project="..\DotParser\DotParser.Shared.projitems" Label="Shared" />
+    <Import Project="..\..\..\ExtensibleParser\ExtensibleParser.Shared.projitems" Label="Shared" />
+    <Import Project="..\..\..\Regex\Regex\Regex.Shared.projitems" Label="Shared" />
+    <Import Project="..\..\..\Shared\Shared.projitems" Label="Shared" />
 
 </Project>

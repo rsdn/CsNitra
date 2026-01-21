@@ -25,7 +25,7 @@
 
   <ItemGroup>
 
-    <ProjectReference Include="..\..\Parsers\Cpp\CppEnumExtractor\CppSimplifiedParser.csproj" />
+    <ProjectReference Include="..\..\Parsers\Cpp\CppSimplifiedParser\CppSimplifiedParser.csproj" />
 
     <ProjectReference Include="..\..\Parsers\CsNitra\CsNitraGrammar\CsNitraGrammar.csproj" />
 

@@ -7,10 +7,6 @@
         <LangVersion>preview</LangVersion>
     </PropertyGroup>
 
-    <ItemGroup>
-        <Compile Include="..\..\Shared\NetStandard2_0Support.cs" Link="Shared\NetStandard2_0Support.cs" />
-        <Compile Include="..\..\Shared\StringExtensions.cs" Link="Shared\StringExtensions.cs" />
-        <Compile Include="..\..\Shared\GlobalUsings.cs" Link="Shared\GlobalUsings.cs" />
-    </ItemGroup>
+    <Import Project="..\..\Shared\Shared.projitems" Label="Shared" />
 
 </Project>

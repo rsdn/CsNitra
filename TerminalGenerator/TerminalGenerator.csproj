@@ -14,16 +14,8 @@
         <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0" PrivateAssets="all" />
     </ItemGroup>
 
-    <ItemGroup>
-        <!--<ProjectReference Include="..\Regex\Regex\Regex.csproj" />-->
-    </ItemGroup>
-
-    <ItemGroup>
-        <Folder Include="Shared\" />
-        <Compile Include="..\Shared\GlobalUsings.cs" Link="Shared\GlobalUsings.cs" />
-        <Compile Include="..\Shared\NetStandard2_0Support.cs" Link="Shared\NetStandard2_0Support.cs" />
-    </ItemGroup>
-
     <Import Project="..\Regex\Regex\Regex.Shared.projitems" Label="Shared" />
+
+    <Import Project="..\Shared\Shared.projitems" Label="Shared" />
 
 </Project>

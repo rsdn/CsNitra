@@ -5,21 +5,14 @@
         <ImplicitUsings>disable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <LangVersion>preview</LangVersion>
-        <RootNamespace>CppEnumExtractor</RootNamespace>
+        <RootNamespace>CppSimplifiedParser</RootNamespace>
     </PropertyGroup>
-
-    <ItemGroup>
-        <Compile Include="..\..\..\Shared\NetStandard2_0Support.cs" Link="Shared\NetStandard2_0Support.cs" />
-        <Compile Include="..\..\..\Shared\GlobalUsings.cs" Link="Shared\GlobalUsings.cs" />
-    </ItemGroup>
 
     <ItemGroup>
         <ProjectReference Include="..\..\..\ExtensibleParser\ExtensibleParser.csproj" />
         <ProjectReference Include="..\..\..\TerminalGenerator\TerminalGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     </ItemGroup>
 
-    <ItemGroup>
-        <Folder Include="Shared\" />
-    </ItemGroup>
+    <Import Project="..\..\..\Shared\Shared.projitems" Label="Shared" />
 
 </Project>
