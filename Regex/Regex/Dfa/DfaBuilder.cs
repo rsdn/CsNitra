@@ -107,9 +107,6 @@ public class DfaBuilder(Log? log = null)
             foreach (var t in state.Transitions.Where(t => t.Condition == null))
             {
                 queue.Enqueue(t.Target);
-                //if (state.Id == 3  && t.Target.Id is 1 or 2)
-                //{
-                //}
                 log?.Info($"Adding ε-transition: {NfaState.PrintStateId(state)} → {t.Target}");
             }
         }

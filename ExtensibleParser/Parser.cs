@@ -510,10 +510,6 @@ public class Parser(Terminal trivia, Log? log = null)
 
     private Result ParseTerminal(Terminal terminal, int startPos, string input)
     {
-        //if (startPos == _recoverySkipPos)
-        //    return panicRecovery(terminal, startPos, input);
-
-        // Стандартная логика парсинга терминала
         var currentPos = startPos;
         var contentLength = terminal.TryMatch(input, startPos);
         if (contentLength < 0)
@@ -550,75 +546,6 @@ public class Parser(Terminal trivia, Log? log = null)
             currentPos,
             maxFailPos: currentPos // ???
         );
-
-        Result panicRecovery(Terminal terminal, int startPos, string input)
-        {
-            Log($"Starting recovery for terminal {terminal.Kind} at position {startPos}");
-            var currentRule = _ruleStack.Peek();
-            var followSymbols = Guard.AssertIsNonNull(_followCalculator).GetFollowSet(currentRule.ParentRule.AssertIsNonNull());
-
-            // Ищем первую подходящую точку восстановления
-            for (int pos = _recoverySkipPos; pos < input.Length; pos++)
-            {
-                // Пропускаем тривиа
-                int triviaSkipped = Trivia.TryMatch(input, pos);
-                if (triviaSkipped > 0)
-                {
-                    Log($"Skipping trivia at position {pos}, length {triviaSkipped}");
-                    if (pos > startPos)
-                    {
-                        var endPos = pos + triviaSkipped;
-                        var contentLength = pos - startPos;
-                        //var resultNode = new TerminalNode(
-                        //        Kind: "Error",
-                        //        StartPos: startPos,
-                        //        EndPos: endPos,
-                        //        ContentLength: contentLength,
-                        //        IsRecovery: true);
-                        //return Result.Success(resultNode, endPos);
-                    }
-
-                    pos += triviaSkipped - 1; // -1 т.к. в цикле будет pos++
-                    continue;
-                }
-
-                // Проверяем текущий терминал
-                if (terminal.TryMatch(input, pos) > 0)
-                {
-                    Log($"Found matching terminal {terminal.Kind} at position {pos}, exiting recovery mode");
-                    _recoverySkipPos = -1;
-                    return ParseTerminal(terminal, pos, input);
-                }
-
-                // Проверяем Follow-символы
-                foreach (var followTerm in followSymbols)
-                {
-                    if (followTerm.TryMatch(input, pos) > 0 && pos > startPos)
-                    {
-                        Log($"Found follow symbol {followTerm.Kind} at position {pos}, exiting recovery mode");
-                        _recoverySkipPos = -1;
-
-                        // Создаем терминал-ошибку для пропущенной части
-                        int errorLength = pos - startPos;
-                        var resultNode = new TerminalNode(
-                                Kind: "Error",
-                                StartPos: startPos,
-                                EndPos: pos,
-                                ContentLength: errorLength,
-                                IsRecovery: true
-                            );
-                        return Result.Success(
-                            resultNode,
-                            pos,
-                            maxFailPos: startPos
-                        );
-                    }
-                }
-            }
-
-            Log("Recovery failed: no valid recovery point found");
-            return Result.Failure(startPos);
-        }
     }
 
     private Result ParseSeq(

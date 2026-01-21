@@ -80,22 +80,14 @@ namespace TerminalGenerator
                         if (string.IsNullOrEmpty(regexPattern))
                             continue;
 
-                        Log? log = null;// new Log();
+                        Log? log = null;
                         var methodName = methodSyntax.Identifier.Text;
                         var methodModifiers = methodSyntax.Modifiers.ToString(); // "public" и т.д.
                         var returnType = methodSyntax.ReturnType;
-                        //Debugger.Launch();
-                        if (regexPattern == @"//[^\n]*(\n|$)|\s)*")
-                        {
-                            //Debugger.Launch();
-                        }
-
                         var parser = new RegexParser(regexPattern);
                         var regexNode = parser.Parse();
                         var nfa = new NfaBuilder().Build(regexNode);
                         var dfa = new DfaBuilder(log).Build(nfa.StartState);
-
-
                         var code = GenerateDfaCode(dfa, startIndent: 3);
 
                         // Генерируем реализацию для одного метода
