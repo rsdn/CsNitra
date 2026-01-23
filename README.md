@@ -77,6 +77,40 @@ using MathExtensions.syntax;   // Load calculus syntax
 using LinearAlgebra.syntax;    // Load matrix operations
 
 // Now use the extended syntax:
-let matrix = [1, 2, 3; 4, 5, 6; 7, 8, 9];
-let result = A * B + C;       // Matrix operations!
-let integral = ∫(x² + 2x + 1) dx;  // Calculus syntax
+var matrix = [1, 2, 3; 4, 5, 6; 7, 8, 9];
+var result = A * B + C;
+var integral = ∫(x² + 2x + 1) dx;  // Calculus syntax
+```
+
+## 🗺️ The Roadmap: From Parser to Complete Language Framework
+
+While the current focus is on building the world's most advanced parser, CsNitra is designed from the ground up to evolve into a complete, extensible language framework. Here's our roadmap:
+
+### **Phase 1: Advanced Parsing Engine** (Current Focus ✅)
+- ✅ PEG with predicates and memoization
+- ✅ TDOPP operator precedence parsing  
+- ✅ Generalized longest-match selection
+- ✅ Automatic AST generation with first-class list support
+- ✅ Linear-time performance guarantee
+- ✅ Regex-to-DFA terminal generator
+- ✅ Intelligent error recovery
+- ✅ Dynamic syntax extensibility
+- ✅ Lexerless, context-aware tokenization
+- 🔄 Automatic error recovery (under development)
+
+### **Phase 2: Type System and Compilation Pipeline** (In Progress 🔄)
+- 🔄 **Type System Foundation**: Rich type system with type inference and gradual typing
+- 🔄 **Compilation Pipeline**: Multi-stage compilation with pluggable optimizations
+- 🔄 **Quasi-Quotation & Macros**: Nemerle-style macros with compile-time code transformation
+- 🔄 **Language Extensions**: Runtime and compile-time language extensibility
+
+### **Phase 3: Full Language Ecosystem** (Planned 📅)
+- 📅 **Language Protocol Server (LPS)**: Full IDE integration for all language extensions
+- 📅 **Multi-Platform Code Generation**: Target .NET, JVM, WebAssembly, and native platforms
+- 📅 **Automatic Metadata Generation**: Platform-specific metadata for .NET assemblies, JVM bytecode, etc.
+- 📅 **Package Management**: Repository for language extensions and syntax packages
+- 📅 **Cross-Language Interop**: Seamless interoperability between extended languages
+
+## 🎯 The Ultimate Goal
+
+CsNitra aims to become the foundational framework for creating **truly extensible programming languages** - languages that can evolve and adapt to new domains without losing compatibility or tooling support. Imagine creating a language that starts as a simple scripting tool but can grow into a full-stack development platform, all while maintaining perfect backward compatibility and IDE support.
