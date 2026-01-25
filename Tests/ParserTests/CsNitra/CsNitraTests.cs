@@ -1,0 +1,117 @@
+﻿using ExtensibleParaser;
+
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+namespace CsNitra.Tests;
+
+[TestClass]
+public class CsNitraTests
+{
+    private readonly CsNitraParser _parser = new();
+
+    [TestMethod]
+    public void ShouldParseItself()
+    {
+        var grammarText = GetGrammarText();
+        var result = _parser.Parse<GrammarAst>(grammarText);
+
+        if (result is Failed(var error))
+            Assert.Fail(error.GetErrorText());
+
+        if (result is not Success<GrammarAst>(var ast))
+        {
+            Assert.Fail("result is not success");
+            return;
+        }
+
+        // Проверяем основные структуры
+        Assert.IsNotNull(ast);
+        Assert.IsTrue(ast.Statements.Count > 0);
+
+        // Проверяем, что есть правило Grammar (должно быть SimpleRuleStatementAst)
+        Assert.IsTrue(ast.Statements.Any(s => s is SimpleRuleStatementAst simple && IsGrammarRule(simple)));
+
+        // Проверяем, что есть правило Using (должно быть RuleStatementAst)
+        var usingRule = ast.Statements.OfType<RuleStatementAst>().FirstOrDefault(r => r.Name.Value == "Using");
+        Assert.IsNotNull(usingRule);
+
+        // Проверяем, что у Using есть именованные альтернативы
+        Assert.AreEqual(2, usingRule.Alternatives.Count);
+        Assert.IsTrue(usingRule.Alternatives[0] is NamedAlternativeAst);
+        Assert.IsTrue(usingRule.Alternatives[1] is NamedAlternativeAst);
+
+        // Проверяем позиции
+        Assert.IsTrue(ast.StartPos >= 0);
+        Assert.IsTrue(ast.EndPos <= grammarText.Length);
+        Assert.IsTrue(ast.EndPos > ast.StartPos);
+
+        // Дополнительные проверки структуры
+        foreach (var statement in ast.Statements)
+        {
+            Assert.IsTrue(statement.StartPos >= ast.StartPos);
+            Assert.IsTrue(statement.EndPos <= ast.EndPos);
+
+            if (statement is RuleStatementAst rs)
+            {
+                Assert.IsFalse(string.IsNullOrEmpty(rs.Name.Value));
+                Assert.IsTrue(rs.Alternatives.Count > 0);
+
+                foreach (var alt in rs.Alternatives)
+                {
+                    if (alt is NamedAlternativeAst named)
+                        Assert.IsFalse(string.IsNullOrEmpty(named.Name.Value));
+                    else if (alt is AnonymousAlternativeAst anon)
+                        Assert.IsTrue(anon.RuleRef.Parts.Count > 0);
+                }
+            }
+        }
+    }
+
+    private static bool IsGrammarRule(SimpleRuleStatementAst simple) => simple.Name.Value == "Grammar" && simple.Expression.ToString() == "Using* Statement*";
+
+    private static string GetGrammarText() =>
+        """
+        precedence Primary, UnaryPrefix, UnaryPostfix, Named, Sequence;
+
+        Grammar = Using* Statement*;
+
+        QualifiedIdentifier = (Identifier; ".")+;
+
+        Using =
+            | Open  = "using" QualifiedIdentifier ";"
+            | Alias = "using" Identifier "=" QualifiedIdentifier ";";
+
+        Statement =
+            | Precedence = "precedence" (Identifier; ",")+ ";"
+            | Rule       = Identifier "=" "|"? (Alternative; "|")+ ";"
+            | SimpleRule = Identifier "=" RuleExpression;
+
+        Alternative =
+            | Named = Identifier "=" RuleExpression
+            | QualifiedIdentifier;
+
+        RuleExpression =
+            | Literal
+            | Sequence      = Left=RuleExpression : Sequence Right=RuleExpression : Sequence
+            | Named         = Name=Identifier "=" RuleExpression : Named
+            | Optional      = RuleExpression : UnaryPostfix "?"
+            | OftenMissed   = RuleExpression : UnaryPostfix "??"
+            | OneOrMany     = RuleExpression : UnaryPostfix "+"
+            | ZeroOrMany    = RuleExpression : UnaryPostfix "*"
+            | AndPredicate  = "&" RuleExpression : UnaryPrefix
+            | NotPredicate  = "!" RuleExpression : UnaryPrefix
+            | RuleRef       = Ref=QualifiedIdentifier (":" Precedence=Identifier ("," Associativity)?)?
+            | Group         = "(" RuleExpression ")"
+            | SeparatedList = "(" RuleExpression ";" RuleExpression SeparatorModifier=(":" Modifier)? ")" Count;
+
+        Associativity =
+            | Left  = "left"
+            | Right = "right";
+        Modifier =
+            | Optional = "?"
+            | Required = "!";
+        Count =
+            | OneOrMeny  = "+"
+            | ZeroOrMeny = "*";
+        """;
+}

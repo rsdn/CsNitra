@@ -1,0 +1,42 @@
+﻿<Project Sdk="MSTest.Sdk/3.6.4">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>preview</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseVSTest>true</UseVSTest>
+    <RootNamespace></RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="Extensions\**" />
+    <Compile Remove="Regex\**" />
+    <EmbeddedResource Remove="Extensions\**" />
+    <EmbeddedResource Remove="Regex\**" />
+    <None Remove="Extensions\**" />
+    <None Remove="Regex\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\Shared\StringExtensions.cs" Link="Shared\StringExtensions.cs" />
+      <Compile Include="..\..\Shared\GlobalUsings.cs" Link="Shared\GlobalUsings.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+
+    <ProjectReference Include="..\..\Parsers\Cpp\CppSimplifiedParser\CppSimplifiedParser.csproj" />
+
+    <ProjectReference Include="..\..\Parsers\CsNitra\CsNitraGrammar\CsNitraGrammar.csproj" />
+
+    <ProjectReference Include="..\..\Parsers\Dot\DotParser\DotParser.csproj" />
+
+    <ProjectReference Include="..\..\Parsers\Json\Json.csproj" />
+
+    <ProjectReference Include="..\..\Regex\Regex\Regex.csproj" OutputItemType="Analyzer" />
+    <ProjectReference Include="..\..\TerminalGenerator\TerminalGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\ExtensibleParser\ExtensibleParser.csproj" />
+
+  </ItemGroup>
+
+</Project>

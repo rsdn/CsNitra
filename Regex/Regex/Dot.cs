@@ -1,5 +1,7 @@
 ﻿using System.Diagnostics;
 
+#pragma warning disable RS1035 // Do not use APIs banned for analyzers
+
 namespace Regex;
 
 public static class Dot

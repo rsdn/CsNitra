@@ -7,6 +7,10 @@
         <LangVersion>preview</LangVersion>
     </PropertyGroup>
 
-    <Import Project="..\..\Shared\Shared.projitems" Label="Shared" />
+    <ItemGroup>
+        <ProjectReference Include="..\Regex\Regex\Regex.csproj" />
+    </ItemGroup>
+
+    <Import Project="..\Shared\Shared.projitems" Label="Shared" />
 
 </Project>

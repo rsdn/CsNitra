@@ -2,10 +2,10 @@
 
     <PropertyGroup>
         <TargetFramework>netstandard2.0</TargetFramework>
-        <ImplicitUsings>enable</ImplicitUsings>
+        <ImplicitUsings>disable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <LangVersion>preview</LangVersion>
-        <RootNamespace>Dot</RootNamespace>
+        <RootNamespace>CsNitra</RootNamespace>
     </PropertyGroup>
 
     <ItemGroup>

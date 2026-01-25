@@ -2,15 +2,14 @@
 
     <PropertyGroup>
         <TargetFramework>netstandard2.0</TargetFramework>
-        <ImplicitUsings>enable</ImplicitUsings>
+        <ImplicitUsings>disable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <LangVersion>preview</LangVersion>
-        <RootNamespace>Dot</RootNamespace>
+        <RootNamespace>CppSimplifiedParser</RootNamespace>
     </PropertyGroup>
 
     <ItemGroup>
         <ProjectReference Include="..\..\..\ExtensibleParser\ExtensibleParser.csproj" />
-        <ProjectReference Include="..\..\..\Regex\Regex\Regex.csproj" OutputItemType="Analyzer" />
         <ProjectReference Include="..\..\..\TerminalGenerator\TerminalGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     </ItemGroup>
 

@@ -15,9 +15,6 @@
     <ItemGroup>
         <ProjectReference Include="..\Workflow\Workflow.csproj" />
         <ProjectReference Include="..\WorkflowGenerator\WorkflowGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-        <ProjectReference Include="..\..\..\Regex\Regex\Regex.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-        <ProjectReference Include="..\DotParser\DotParser.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-        <ProjectReference Include="..\..\..\ExtensibleParaser\ExtensibleParaser.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     </ItemGroup>
 
     <ItemGroup>

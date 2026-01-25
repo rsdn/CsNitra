@@ -2,7 +2,7 @@
 
     <PropertyGroup>
         <TargetFramework>netstandard2.0</TargetFramework>
-        <ImplicitUsings>enable</ImplicitUsings>
+        <ImplicitUsings>disable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
         <LangVersion>preview</LangVersion>
@@ -14,8 +14,7 @@
         <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0" PrivateAssets="all" />
     </ItemGroup>
 
-    <ItemGroup>
-        <ProjectReference Include="..\Regex\Regex\Regex.csproj" />
-    </ItemGroup>
+    <Import Project="..\Regex\Regex\Regex.Shared.projitems" Label="Shared" />
+    <Import Project="..\Shared\Shared.projitems" Label="Shared" />
 
 </Project>
