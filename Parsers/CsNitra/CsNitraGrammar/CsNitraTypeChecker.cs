@@ -625,6 +625,7 @@ public partial record PrecedenceAst
 public abstract class SourceText
 {
     public abstract string GetText(int start, int end);
+    public abstract string GetText();
     public abstract char this[int index] { get; }
     public abstract int Length { get; }
 }

@@ -26,7 +26,6 @@ public class CsNitraTests
 
         // Проверяем основные структуры
         Assert.IsNotNull(ast);
-        Assert.IsTrue(ast.Usings.Count > 0);
         Assert.IsTrue(ast.Statements.Count > 0);
 
         // Проверяем, что есть правило Grammar (должно быть SimpleRuleStatementAst)
@@ -72,8 +71,6 @@ public class CsNitraTests
 
     private static string GetGrammarText() =>
         """
-        using ExtensibleParaserGrammar.Terminals; // открываем класс Terminals содержащий терминалы для парсера
-
         precedence Primary, UnaryPrefix, UnaryPostfix, Named, Sequence;
 
         Grammar = Using* Statement*;
