@@ -68,7 +68,7 @@ public partial class MiniCTests
         // Block rules
         _parser.Rules["Block"] =
         [
-            new Seq([new Literal("{"), new ZeroOrMany(new NotPredicate(new Ref("Function"), new Ref("Statement"))), closingParenthesis], "MultiBlock"),
+            new Seq([new Literal("{"), new ZeroOrMany(new Seq([new NotPredicate(new Ref("Function")), new Ref("Statement")], "BlockStatement")), closingParenthesis], "MultiBlock"),
             new Ref("Statement", "SimplBlock")
         ];
 

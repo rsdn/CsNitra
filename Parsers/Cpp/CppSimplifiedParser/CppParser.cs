@@ -39,10 +39,10 @@ public class CppParser
 
         _parser.Rules["SkipLine"] =
         [
-            new NotPredicate(
-                new Ref("NamespaceOrEnumStartOrBrace"),
+            new Seq([
+                new NotPredicate(new Ref("NamespaceOrEnumStartOrBrace")),
                 CppTerminals.AnyLine()
-            )
+            ], "SkipLine")
         ];
 
         _parser.Rules["NamespaceDecl"] = [

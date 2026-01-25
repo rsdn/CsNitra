@@ -30,68 +30,48 @@ public partial class MiniCTests
         {
             Trace.WriteLine($"\nProcessing SeqNode: {node.Kind} [{node.StartPos}-{node.EndPos}]");
 
-            var children = node.Elements
-                .Select(e =>
-                {
-                    e.Accept(this);
-                    return Result;
-                })
-                .Where(r => r != null)
-                .ToArray();
-
-            Trace.WriteLine($"Children count: {children.Length}");
-            for (int i = 0; i < children.Length; i++)
+            var children = new List<Ast>();
+            foreach (var e in node.Elements)
             {
-                Trace.WriteLine($"  Child {i}: {children[i]?.GetType().Name} = {children[i]}");
+                e.Accept(this);
+                if (Result != null)
+                    children.Add(Result);
             }
+
+            Trace.WriteLine($"Children count: {children.Count}");
+            for (int i = 0; i < children.Count; i++)
+                Trace.WriteLine($"  Child {i}: {children[i]?.GetType().Name} = {children[i]}");
 
             Result = node.Kind switch
             {
                 "FunctionDecl" => new FunctionDecl(
-                    (Identifier)children[1]!,
-                    children.Length > 4 && children[3] is Params p ? p.Parameters : new List<Identifier>(),
-                    (Block)children[^1]!
+                    (Identifier)children[1],
+                    children.Count > 4 && children[3] is Params p ? p.Parameters : new List<Identifier>(),
+                    (Block)children[^1]
                 ),
                 "ParamsList" => handleParamsList(children),
-                "ModuleFunctions" => new Block(
-                    children.Select(c => c!).ToList(),
-                    HasBraces: false
-                ),
-                "CallNoArgs" => new CallExpr(
-                    (Identifier)children[0]!,
-                    new Args(new List<Expr>())
-                ),
-                "Call" => new CallExpr(
-                    (Identifier)children[0]!,
-                    new Args(getCallArguments(children))
-                ),
-                "Return" => new ReturnStmt((Expr)children[1]!),
-                "ExprStmt" => new ExprStmt((Expr)children[0]!),
-                "VarDecl" => new VarDecl((Token)children[0]!, (Identifier)children[1]!),
+                "ModuleFunctions" => new Block(children, HasBraces: false),
+                "CallNoArgs" => new CallExpr((Identifier)children[0], new Args([])),
+                "Call" => new CallExpr((Identifier)children[0], new Args(getCallArguments(children))),
+                "Return" => new ReturnStmt((Expr)children[1]),
+                "ExprStmt" => new ExprStmt((Expr)children[0]),
+                "VarDecl" => new VarDecl((Token)children[0], (Identifier)children[1]),
                 "ArrayDecl" => new ArrayDecl(
-                    (Token)children[0]!,
-                    (Identifier)children[3]!,
+                    (Token)children[0],
+                    (Identifier)children[3],
                     children[6] is ArrayDeclItems p ? p.Numbers : new List<Number>()),
-                "IfStmt" => new IfStatement(
-                    (Expr)children[2]!,
-                    wrapInBlockIfNeeded(children[4]!),
-                    null
-                ),
-                "IfElseStmt" => new IfStatement(
-                    (Expr)children[2]!,
-                    wrapInBlockIfNeeded(children[4]!),
-                    wrapInBlockIfNeeded(children[6]!)
-                ),
+                "IfStmt" => new IfStatement((Expr)children[2], wrapInBlockIfNeeded(children[4]), Else: null),
+                "IfElseStmt" => new IfStatement((Expr)children[2], wrapInBlockIfNeeded(children[4]), wrapInBlockIfNeeded(children[6])),
                 "MultiBlock" => new Block(
                     children
                         .Skip(1)
-                        .Take(children.Length - 2)
-                        .SelectMany(c => c is Block b ? b.Statements : new List<Ast> { c! })
+                        .Take(children.Count - 2)
+                        .SelectMany(c => c is Block b ? b.Statements : [c])
                         .ToList(),
                     HasBraces: true),
-                "SimplBlock" => wrapInBlockIfNeeded(children[0]!),
-                "ZeroOrMany" => new Block(children.SelectMany(c =>
-                    c is Block b ? b.Statements : new List<Ast> { c! }).ToList()),
+                "SimplBlock" => wrapInBlockIfNeeded(children[0]),
+                "BlockStatement" => children.Count > 0 ? children[0] : throw new InvalidOperationException("BlockStatement must have at least one child"),
+                "ZeroOrMany" => new Block(children.SelectMany(c => c is Block b ? b.Statements : [c]).ToList()),
                 "Add" => makeBinaryOperator("+", children),
                 "Sub" => makeBinaryOperator("-", children),
                 "Mul" => makeBinaryOperator("*", children),
@@ -106,11 +86,11 @@ public partial class MiniCTests
                 "Or"  => makeBinaryOperator("||", children),
                 "RecoveryOperator" => makeRecoveryBinaryOperator(children),
                 "RecoveryEmptyOperator" => makeMissingBinaryOperator(children),
-                "Neg" => new UnaryExpr("-", (Expr)children[1]!),
-                "AssignmentExpr" => new BinaryExpr("=", (Expr)children[0]!, (Expr)children[2]!),
-                "ParamsRest" => children[1]!, // Just return the parameter part (skip the comma)
-                "ArgsRest" => children[1]!, // Just return the parameter part (skip the comma)
-                "ArrayDeclItems" => children[1]!, //Just return the parameter part (skip the comma)
+                "Neg" => new UnaryExpr("-", (Expr)children[1]),
+                "AssignmentExpr" => new BinaryExpr("=", (Expr)children[0], (Expr)children[2]),
+                "ParamsRest" => children[1], // Just return the parameter part (skip the comma)
+                "ArgsRest" => children[1], // Just return the parameter part (skip the comma)
+                "ArrayDeclItems" => children[1], //Just return the parameter part (skip the comma)
                 _ => throw new InvalidOperationException($"Unknown sequence: {node}: «{node.AsSpan(Input)}»")
             };
 
@@ -118,59 +98,49 @@ public partial class MiniCTests
 
             return;
 
-            Expr makeRecoveryBinaryOperator(Ast?[] children)
+            Expr makeRecoveryBinaryOperator(List<Ast> children)
             {
-                Guard.IsTrue(children.Length == 3);
+                Guard.IsTrue(children.Count == 3);
                 return new BinaryExpr($"«Unexpected: {((UnexpectedOperator)children[1]!).ErrorNode.ToString(Input)}»", (Expr)children[0]!, (Expr)children[2]!);
             }
 
-            Expr makeMissingBinaryOperator(Ast?[] children)
+            Expr makeMissingBinaryOperator(List<Ast> children)
             {
-                Guard.IsTrue(children.Length == 3);
+                Guard.IsTrue(children.Count == 3);
                 return new BinaryExpr($"«Missing operator»", (Expr)children[0]!, (Expr)children[2]!);
             }
 
-            Expr makeBinaryOperator(string Op, Ast?[] children)
+            Expr makeBinaryOperator(string Op, List<Ast> children)
             {
-                Guard.IsTrue(children.Length == 3);
+                Guard.IsTrue(children.Count == 3);
                 return new BinaryExpr(Op, (Expr)children[0]!, (Expr)children[2]!);
             }
 
             static Block wrapInBlockIfNeeded(Ast ast) => ast is Block block ? block : new Block(new List<Ast> { ast }, HasBraces: ast is not ExprStmt);
-            static Params handleParamsList(Ast?[] children)
+            static Params handleParamsList(List<Ast> children)
             {
                 var parameters = new List<Identifier>();
 
                 // Первый параметр
-                if (children.Length > 0 && children[0] is Identifier firstParam)
-                {
+                if (children.Count > 0 && children[0] is Identifier firstParam)
                     parameters.Add(firstParam);
-                }
 
                 // Остальные параметры (из ZeroOrMany)
-                for (int i = 1; i < children.Length; i++)
-                {
+                for (int i = 1; i < children.Count; i++)
                     if (children[i] is Block block)
-                    {
                         parameters.AddRange(block.Statements.OfType<Identifier>());
-                    }
                     else if (children[i] is Identifier id)
-                    {
                         parameters.Add(id);
-                    }
-                }
 
                 return new Params(parameters);
             }
-            static List<Expr> getCallArguments(Ast?[] children)
+            static List<Expr> getCallArguments(List<Ast> children)
             {
-                Guard.AreEqual(4, children.Length);
+                Guard.AreEqual(4, children.Count);
 
                 var args = new List<Expr>();
                 if (children[2] is Args listArgs)
-                {
                     args.AddRange(listArgs.Arguments);
-                }
 
                 return args;
             }
@@ -185,7 +155,7 @@ public partial class MiniCTests
                     return Result;
                 })
                 .Where(r => r != null)
-                .ToArray();
+                .ToList();
 
             Result = node.Kind switch
             {
@@ -195,7 +165,7 @@ public partial class MiniCTests
                 _ => throw new InvalidOperationException($"Unknown sequence: {node}: «{node.AsSpan(Input)}»")
             };
 
-            Trace.WriteLine($"Processed list with {items.Length} elements");
+            Trace.WriteLine($"Processed list with {items.Count} elements");
         }
 
         public void Visit(SomeNode node) => node.Value.Accept(this);

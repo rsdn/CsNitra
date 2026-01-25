@@ -146,13 +146,13 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
     private Rule GenerateAndPredicate(AndPredicateExpressionAst node, string context)
     {
         var predicate = GenerateExpression(node.Expression, context);
-        return new AndPredicate(predicate, predicate);
+        return new AndPredicate(predicate);
     }
 
     private Rule GenerateNotPredicate(NotPredicateExpressionAst node, string context)
     {
         var predicate = GenerateExpression(node.Expression, context);
-        return new NotPredicate(predicate, predicate);
+        return new NotPredicate(predicate);
     }
 
     private Rule GenerateSeparatedList(SeparatedListExpressionAst node, string context)

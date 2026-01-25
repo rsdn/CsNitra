@@ -324,45 +324,18 @@ public record TdoppRule(
 /// <summary>
 /// A positive lookahead predicate that checks if a rule would match without consuming input.
 /// Succeeds only if the predicate rule matches at the current position.
-/// Example: new AndPredicate(new Literal("if"), new Ref("Statement"))
-/// checks for "if" before parsing a statement, but doesn't consume "if".
+/// This rule itself does not consume input - the predicate is evaluated without advancing position.
+/// The rule that follows the predicate in the grammar is responsible for consuming input.
+/// Example: In a sequence like "&RuleA RuleB", the AndPredicate checks if RuleA matches,
+/// then RuleB is parsed separately.
 /// </summary>
-/// <param name="PredicateRule">The rule to check without consuming</param>
-/// <param name="MainRule">The rule to parse if the predicate succeeds</param>
-public record AndPredicate(Rule PredicateRule, Rule MainRule) : Rule("&")
+/// <param name="PredicateRule">The rule to check without consuming input</param>
+public record AndPredicate(Rule PredicateRule) : Rule("&")
 {
-    public override string ToString() => $"&{PredicateRule} {MainRule}";
+    public override string ToString() => $"&{PredicateRule}";
 
     public override Rule InlineReferences(Dictionary<string, Rule> inlineableRules) =>
-        new AndPredicate(
-            PredicateRule.InlineReferences(inlineableRules),
-            MainRule.InlineReferences(inlineableRules));
-
-    public override IEnumerable<Rule> GetSubRules<T>()
-    {
-        if (this is T)
-            yield return this;
-        foreach (var subRule in MainRule.GetSubRules<T>())
-            yield return subRule;
-    }
-}
-
-/// <summary>
-/// A negative lookahead predicate that checks if a rule would NOT match without consuming input.
-/// Succeeds only if the predicate rule fails to match at the current position.
-/// Example: new NotPredicate(new Literal("else"), new Ref("Statement"))
-/// parses a statement only if it's not preceded by "else".
-/// </summary>
-/// <param name="PredicateRule">The rule that must NOT match</param>
-/// <param name="MainRule">The rule to parse if the predicate fails</param>
-public record NotPredicate(Rule PredicateRule, Rule MainRule) : Rule("!")
-{
-    public override string ToString() => $"(!{PredicateRule} {MainRule})";
-
-    public override Rule InlineReferences(Dictionary<string, Rule> inlineableRules) =>
-        new NotPredicate(
-            PredicateRule.InlineReferences(inlineableRules),
-            MainRule.InlineReferences(inlineableRules));
+        new AndPredicate(PredicateRule.InlineReferences(inlineableRules));
 
     public override IEnumerable<Rule> GetSubRules<T>()
     {
@@ -370,7 +343,30 @@ public record NotPredicate(Rule PredicateRule, Rule MainRule) : Rule("!")
             yield return this;
         foreach (var subRule in PredicateRule.GetSubRules<T>())
             yield return subRule;
-        foreach (var subRule in MainRule.GetSubRules<T>())
+    }
+}
+
+/// <summary>
+/// A negative lookahead predicate that checks if a rule would NOT match without consuming input.
+/// Succeeds only if the predicate rule fails to match at the current position.
+/// This rule itself does not consume input - the predicate is evaluated without advancing position.
+/// The rule that follows the predicate in the grammar is responsible for consuming input.
+/// Example: In a sequence like "!RuleA RuleB", the NotPredicate checks that RuleA doesn't match,
+/// then RuleB is parsed separately.
+/// </summary>
+/// <param name="PredicateRule">The rule that must NOT match</param>
+public record NotPredicate(Rule PredicateRule) : Rule("!")
+{
+    public override string ToString() => $"!{PredicateRule}";
+
+    public override Rule InlineReferences(Dictionary<string, Rule> inlineableRules) =>
+        new NotPredicate(PredicateRule.InlineReferences(inlineableRules));
+
+    public override IEnumerable<Rule> GetSubRules<T>()
+    {
+        if (this is T)
+            yield return this;
+        foreach (var subRule in PredicateRule.GetSubRules<T>())
             yield return subRule;
     }
 }

@@ -380,9 +380,16 @@ public class Parser(Terminal trivia, Log? log = null)
             if (!result.TryGetSuccess(out var node, out var parsedPos))
                 return result;
 
-            elements.Add(node);
+            // Skip predicate nodes as they are not part of the AST
+            if (node is not PredicateNode)
+                elements.Add(node);
+
             newPos = parsedPos;
         }
+
+        // Optimization: if there is only one element (currentResult), return it directly instead of wrapping in SeqNode
+        if (elements.Count == 1)
+            return Result.Success(elements[0], newPos, maxFailPos);
 
         return Result.Success(new SeqNode(postfix.Seq.Kind ?? "Seq", elements, startPos, newPos), newPos, maxFailPos);
     }
@@ -411,9 +418,10 @@ public class Parser(Terminal trivia, Log? log = null)
         var errorPos = ErrorPos;
         var predicateResult = ParseAlternative(a.PredicateRule, startPos, input);
         ErrorPos = errorPos;
-        return predicateResult.IsSuccess
-            ? ParseAlternative(a.MainRule, startPos, input)
-            : Result.Failure(startPos);
+        if (predicateResult.IsSuccess)
+            return Result.Success(new PredicateNode(a.Kind, startPos, startPos), startPos, predicateResult.MaxFailPos);
+        else
+            return Result.Failure(startPos);
     }
 
     private Result ParseNotPredicate(NotPredicate predicate, int startPos, string input)
@@ -422,7 +430,7 @@ public class Parser(Terminal trivia, Log? log = null)
         var predicateResult = ParseAlternative(predicate.PredicateRule, startPos, input);
         ErrorPos = errorPos;
         if (!predicateResult.IsSuccess)
-            return ParseAlternative(predicate.MainRule, startPos, input);
+            return Result.Success(new PredicateNode(predicate.Kind, startPos, startPos), startPos, predicateResult.MaxFailPos);
         else
             return Result.Failure(startPos);
     }
@@ -572,9 +580,16 @@ public class Parser(Terminal trivia, Log? log = null)
                 return result;
             }
 
-            elements.Add(node);
+            // Skip predicate nodes as they are not part of the AST
+            if (node is not PredicateNode)
+                elements.Add(node);
+
             newPos = parsedPos;
         }
+
+        // Optimization: if there is only one element, return it directly instead of wrapping in SeqNode
+        if (elements.Count == 1)
+            return Result.Success(elements[0], newPos, maxFailPos);
 
         return Result.Success(new SeqNode(seq.Kind ?? "Seq", elements, startPos, newPos), newPos, maxFailPos);
     }
