@@ -1,6 +1,4 @@
-﻿using System.Collections.Generic;
-using System.Linq;
-using ExtensibleParaser;
+﻿using ExtensibleParaser;
 using EP = ExtensibleParaser; // Псевдоним для ExtensibleParaser
 
 namespace CsNitra;
@@ -14,15 +12,14 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
     {
         foreach (var ruleSymbol in globalScope.GetAllRules())
         {
+            if (ruleSymbol.Name.Value is "StringLiteral" or "Identifier")
+            {
+            }
+
             if (ruleSymbol.RuleStatement != null)
-            {
                 parser.Rules[ruleSymbol.Name.Value] = GenerateRuleFromStatement(ruleSymbol.RuleStatement);
-            }
             else if (ruleSymbol.SimpleRuleStatement != null)
-            {
-                var rule = GenerateSimpleRule(ruleSymbol.SimpleRuleStatement);
-                parser.Rules[ruleSymbol.Name.Value] = new[] { rule };
-            }
+                parser.Rules[ruleSymbol.Name.Value] = new[] { GenerateSimpleRule(ruleSymbol.SimpleRuleStatement) };
         }
     }
 
@@ -50,13 +47,12 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
 
     private Rule GenerateAnonymousAlternative(AnonymousAlternativeAst node, string context)
     {
-        if (node.RuleRef.Parts.Count == 1)
-        {
-            var identifier = node.RuleRef.Parts[0];
-            return GenerateSimpleReference(identifier, context);
-        }
+        var ruleName = node.RuleRef.ToString();
 
-        return new Ref(node.RuleRef.ToString());
+        if (globalScope.FindTerminal(ruleName) is { } terminal)
+            return terminal.Terminal;
+
+        return new Ref(ruleName);
     }
 
     private Rule GenerateExpression(RuleExpressionAst expression, string context)
@@ -82,27 +78,20 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
 
     private Rule GenerateRuleRefExpression(RuleRefExpressionAst node, string context)
     {
-        if (node.Ref.Parts.Count == 1)
+        var name = node.Ref.ToString();
+
+        if (node.Precedence != null && node.PrecedenceSymbol != null)
         {
-            var identifier = node.Ref.Parts[0];
+            var bindingPower = node.PrecedenceSymbol.BindingPower;
+            var rightAssoc = node.PrecedenceSymbol.IsRightAssociative;
 
-            if (node.Precedence != null && node.PrecedenceSymbol != null)
-            {
-                var bindingPower = node.PrecedenceSymbol.BindingPower;
-                var rightAssoc = node.PrecedenceSymbol.IsRightAssociative;
-
-                return new ReqRef(identifier.Value, bindingPower, rightAssoc);
-            }
-
-            return GenerateSimpleReference(identifier, context);
+            return new ReqRef(name, bindingPower, rightAssoc);
         }
 
-        return new Ref(node.Ref.ToString());
-    }
+        if (globalScope.FindTerminal(name) is { } terminal)
+            return terminal.Terminal;
 
-    private Rule GenerateSimpleReference(Identifier identifier, string context)
-    {
-        return new Ref(identifier.Value);
+        return new Ref(name);
     }
 
     private Rule GenerateSequenceExpression(SequenceExpressionAst node, string context)
@@ -164,7 +153,7 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
         {
             "?" => SeparatorEndBehavior.Optional,
             "!" => SeparatorEndBehavior.Required,
-            _ => SeparatorEndBehavior.Optional
+            _ => SeparatorEndBehavior.Forbidden
         };
 
         var canBeEmpty = node.Count == "*";

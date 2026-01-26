@@ -31,13 +31,12 @@ public class RuleGeneratorTests
         // Шаг 2: Создаем новый парсер используя RuleGenerator
         var generatedParser = new Parser(CsNitraTerminals.Trivia());
         
-        // Добавляем встроенные терминалы в парсер
-        generatedParser.Rules["StringLiteral"] = [CsNitraTerminals.StringLiteral()];
-        generatedParser.Rules["CharLiteral"] = [CsNitraTerminals.CharLiteral()];
-        generatedParser.Rules["Identifier"] = [CsNitraTerminals.Identifier()];
-        
         // Создаем Scope из AST граммтики
-        var scope = CreateScopeFromGrammar(grammar, grammarText);
+        var scope = CreateScopeFromGrammar(grammar, [
+            CsNitraTerminals.Identifier(),
+            CsNitraTerminals.StringLiteral(),
+            CsNitraTerminals.CharLiteral(),
+        ], grammarText);
         
         var ruleGenerator = new RuleGenerator(scope, generatedParser);
         ruleGenerator.GenerateRules();
@@ -62,23 +61,17 @@ public class RuleGeneratorTests
             "Both parsers should parse the same number of statements");
     }
 
-    private static Scope CreateScopeFromGrammar(GrammarAst grammar, string sourceText)
+    private static Scope CreateScopeFromGrammar(GrammarAst grammar, IEnumerable<Terminal> terminals, string sourceText)
     {
         var globalScope = new Scope(null);
         var source = new SourceText(sourceText, "grammar.csnitra");
-        
+
         // Добавляем встроенные терминалы
-        var builtInTerminals = new[] { "StringLiteral", "CharLiteral", "Identifier" };
-        foreach (var terminalName in builtInTerminals)
-        {
-            var terminalSymbol = new RuleSymbol(
-                new Identifier(terminalName, 0, terminalName.Length), 
-                source, 
-                null, 
-                null
-            );
-            globalScope.AddSymbol(terminalSymbol);
-        }
+        foreach (var terminal in terminals)
+            globalScope.AddSymbol(new TerminalSymbol(
+                    new Identifier(terminal.Kind, 0, terminal.Kind.Length),
+                    new SourceText(terminal.Kind, "generated"),
+                    terminal));
         
         foreach (var statement in grammar.Statements)
         {
