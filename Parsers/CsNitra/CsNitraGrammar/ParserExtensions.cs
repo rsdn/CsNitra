@@ -3,7 +3,7 @@
 public static class ParserExtensions
 {
     public static void BuildFromAst(this ExtensibleParaser.Parser parser, GrammarAst grammar,
-        Source source, IEnumerable<(string Name, ExtensibleParaser.Terminal Terminal)> terminals)
+        SourceText source, IEnumerable<(string Name, ExtensibleParaser.Terminal Terminal)> terminals)
     {
         // 1. Типизация
         var typeChecker = new TypeChecker(source, terminals);
