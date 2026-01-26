@@ -65,7 +65,7 @@ public class EnumGenerator : IIncrementalGenerator
 
                     switch (parseResult)
                     {
-                        case Success success:
+                        case Success<CppProgram> success:
                             CollectEnums(success.Program, new List<string>(), allEnums, cppFile.FullPath);
                             break;
 
