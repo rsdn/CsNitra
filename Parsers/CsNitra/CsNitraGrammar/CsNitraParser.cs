@@ -10,6 +10,11 @@ public class CsNitraParser
     private const int UnarySuffix = 5;
     private readonly Parser _parser;
 
+    /// <summary>
+    /// Парсер, используемый для парсинга CsNitra грамматики (доступ для тестирования).
+    /// </summary>
+    internal Parser InternalParser => _parser;
+
     public CsNitraParser()
     {
         _parser = new Parser(CsNitraTerminals.Trivia());

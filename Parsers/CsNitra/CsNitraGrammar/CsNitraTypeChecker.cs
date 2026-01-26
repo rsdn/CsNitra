@@ -5,12 +5,12 @@ namespace CsNitra;
 public abstract partial record Symbol
 {
     public Identifier Name { get; }
-    public SourceText Source { get; }
+    public Source Source { get; }
     public int StartPos => Name.StartPos;
     public int EndPos => Name.EndPos;
     public string Text => Name.Value;
 
-    protected Symbol(Identifier name, SourceText source)
+    protected Symbol(Identifier name, Source source)
     {
         Name = name;
         Source = source;
@@ -19,7 +19,7 @@ public abstract partial record Symbol
 
 public sealed partial record PrecedenceSymbol(
     Identifier Name,
-    SourceText Source,
+    Source Source,
     int BindingPower,
     bool IsRightAssociative
 ) : Symbol(Name, Source)
@@ -30,7 +30,7 @@ public sealed partial record PrecedenceSymbol(
 
 public sealed partial record RuleSymbol(
     Identifier Name,
-    SourceText Source,
+    Source Source,
     RuleStatementAst? RuleStatement,
     SimpleRuleStatementAst? SimpleRuleStatement
 ) : Symbol(Name, Source)
@@ -40,7 +40,7 @@ public sealed partial record RuleSymbol(
 
 public sealed partial record TerminalSymbol(
     Identifier Name,
-    SourceText Source,
+    Source Source,
     Terminal Terminal
 ) : Symbol(Name, Source)
 {
@@ -124,9 +124,9 @@ public sealed partial record TypeCheckingContext
     public IReadOnlyList<TypeDiagnostic> Diagnostics => _diagnostics;
     public Scope GlobalScope => _scopeStack.First();
 
-    public SourceText Source { get; }
+    public Source Source { get; }
 
-    public TypeCheckingContext(SourceText source, IEnumerable<(string Name, Terminal Terminal)> terminals)
+    public TypeCheckingContext(Source source, IEnumerable<(string Name, Terminal Terminal)> terminals)
     {
         Source = source;
         _scopeStack.Push(new Scope());
@@ -183,7 +183,7 @@ public sealed partial record TypeChecker
     private readonly TypeCheckingContext _context;
     private readonly List<PrecedenceDependency> _precedenceDependencies = new();
 
-    public TypeChecker(SourceText source, IEnumerable<(string Name, Terminal Terminal)> terminals) =>
+    public TypeChecker(Source source, IEnumerable<(string Name, Terminal Terminal)> terminals) =>
         _context = new TypeCheckingContext(source, terminals);
 
     public (IReadOnlyList<TypeDiagnostic> Diagnostics, Scope GlobalScope) CheckGrammar(GrammarAst grammar)
@@ -622,10 +622,13 @@ public partial record PrecedenceAst
 }
 
 // Абстрактный SourceText
-public abstract class SourceText
+public abstract class Source
 {
-    public abstract string GetText(int start, int end);
-    public abstract string GetText();
-    public abstract char this[int index] { get; }
-    public abstract int Length { get; }
+    public abstract string Text { get; }
+}
+
+public sealed class SourceText(string text, string filePath) : Source
+{
+    public override string Text => text;
+    public string FilePath => filePath;
 }
