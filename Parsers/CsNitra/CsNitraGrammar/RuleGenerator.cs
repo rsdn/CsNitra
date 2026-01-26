@@ -164,7 +164,7 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
         {
             "?" => SeparatorEndBehavior.Optional,
             "!" => SeparatorEndBehavior.Required,
-            _ => SeparatorEndBehavior.Optional
+            _ => SeparatorEndBehavior.Forbidden
         };
 
         var canBeEmpty = node.Count == "*";
