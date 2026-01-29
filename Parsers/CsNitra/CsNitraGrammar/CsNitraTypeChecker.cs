@@ -116,10 +116,10 @@ public sealed partial record Scope
 public sealed partial record TypeCheckingContext
 {
     private readonly Stack<Scope> _scopeStack = new();
-    private readonly List<TypeDiagnostic> _diagnostics = new();
+    private readonly List<Diagnostic> _diagnostics = new();
 
     public Scope CurrentScope => _scopeStack.Peek();
-    public IReadOnlyList<TypeDiagnostic> Diagnostics => _diagnostics;
+    public IReadOnlyList<Diagnostic> Diagnostics => _diagnostics;
     public Scope GlobalScope => _scopeStack.First();
 
     public Source Source { get; }
@@ -153,7 +153,7 @@ public sealed partial record TypeCheckingContext
     }
 
     public void ReportError(string message, SourceSpan location) =>
-        _diagnostics.Add(new TypeDiagnostic(message, location, DiagnosticSeverity.Error));
+        _diagnostics.Add(new Diagnostic(message, location, DiagnosticSeverity.Error));
 
     public void ReportError(string message, CsNitraAst node) =>
         ReportError(message, new SourceSpan(node.StartPos, node.EndPos));
@@ -184,7 +184,7 @@ public sealed partial record TypeChecker
     public TypeChecker(Source source, IEnumerable<(string Name, Terminal Terminal)> terminals) =>
         _context = new TypeCheckingContext(source, terminals);
 
-    public (IReadOnlyList<TypeDiagnostic> Diagnostics, Scope GlobalScope) CheckGrammar(GrammarAst grammar)
+    public (IReadOnlyList<Diagnostic> Diagnostics, Scope GlobalScope) CheckGrammar(GrammarAst grammar)
     {
         CollectDeclarations(grammar);
         ResolveAndCheck(grammar);
@@ -563,7 +563,7 @@ internal sealed partial record SymbolReferenceResolver
 
 // Вспомогательные типы
 
-public sealed partial record TypeDiagnostic(
+public sealed partial record Diagnostic(
     string Message,
     SourceSpan Location,
     DiagnosticSeverity Severity

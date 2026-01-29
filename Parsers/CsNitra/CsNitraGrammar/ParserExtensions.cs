@@ -7,7 +7,6 @@ public static class ParserExtensions
 {
     public static void BuildFromAst(this Parser parser, GrammarAst grammar, Source source, IEnumerable<Terminal> terminals)
     {
-        // 1. Типизация
         var typeChecker = new TypeChecker(source, terminals.Select(t => (t.Kind, t)));
         var (diagnostics, globalScope) = typeChecker.CheckGrammar(grammar);
 
@@ -17,7 +16,6 @@ public static class ParserExtensions
             throw new InvalidOperationException($"Type checking failed:\n{errors}");
         }
 
-        // 2. Генерация правил
         var generator = new RuleGenerator(globalScope, parser);
         generator.GenerateRules();
     }

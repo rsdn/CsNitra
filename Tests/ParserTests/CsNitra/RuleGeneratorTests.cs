@@ -60,6 +60,37 @@ public class RuleGeneratorTests
         AssertGrammarsAreEqual(manualGrammar, generatedGrammar);
     }
 
+    [TestMethod]
+    public void RequiredSubruleNamesAreNotSpecified()
+    {
+        var grammarText = """
+            Using = "using" Identifier*;
+            """;
+
+        // Step 1: Parse grammar with current (manual) parser
+        var manualParseResult = _manualParser.Parse<GrammarAst>(grammarText);
+
+        if (manualParseResult is Failed(var error))
+            Assert.Fail($"Manual parser failed to parse grammar: {error.GetErrorText()}");
+
+        if (manualParseResult is not Success<GrammarAst>(var manualGrammar))
+        {
+            Assert.Fail("Manual parse result is not success");
+            return;
+        }
+
+        Assert.IsNotNull(manualGrammar);
+        Assert.IsTrue(manualGrammar.Statements.Count > 0, "Grammar should have statements");
+
+        // Step 2: Create new parser using RuleGenerator
+        var generatedParser = new Parser(CsNitraTerminals.Trivia());
+
+        generatedParser.BuildFromAst(manualGrammar, new SourceText(grammarText, "CsNitra.grammar"), terminals: [
+            CsNitraTerminals.Identifier(),
+            CsNitraTerminals.Literal(),
+        ]);
+    }
+
     private static void AssertGrammarsAreEqual(GrammarAst manual, GrammarAst generated)
     {
         Assert.AreEqual(manual.Statements.Count, generated.Statements.Count,
