@@ -1,8 +1,6 @@
 ﻿using CsNitra.Ast;
 using ExtensibleParaser;
 
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-
 namespace CsNitra.Tests;
 
 [TestClass]
@@ -25,28 +23,21 @@ public class CsNitraTests
             return;
         }
 
-        // Проверяем основные структуры
         Assert.IsNotNull(ast);
         Assert.IsTrue(ast.Statements.Count > 0);
-
-        // Проверяем, что есть правило Grammar (должно быть SimpleRuleStatementAst)
         Assert.IsTrue(ast.Statements.Any(s => s is SimpleRuleStatementAst simple && IsGrammarRule(simple)));
 
-        // Проверяем, что есть правило Using (должно быть RuleStatementAst)
         var usingRule = ast.Statements.OfType<RuleStatementAst>().FirstOrDefault(r => r.Name.Value == "Using");
         Assert.IsNotNull(usingRule);
 
-        // Проверяем, что у Using есть именованные альтернативы
         Assert.AreEqual(2, usingRule.Alternatives.Count);
         Assert.IsTrue(usingRule.Alternatives[0] is NamedAlternativeAst);
         Assert.IsTrue(usingRule.Alternatives[1] is NamedAlternativeAst);
 
-        // Проверяем позиции
         Assert.IsTrue(ast.StartPos >= 0);
         Assert.IsTrue(ast.EndPos <= grammarText.Length);
         Assert.IsTrue(ast.EndPos > ast.StartPos);
 
-        // Дополнительные проверки структуры
         foreach (var statement in ast.Statements)
         {
             Assert.IsTrue(statement.StartPos >= ast.StartPos);

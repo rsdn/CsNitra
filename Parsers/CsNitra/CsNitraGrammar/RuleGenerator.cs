@@ -1,13 +1,10 @@
 ﻿using ExtensibleParaser;
-using EP = ExtensibleParaser; // Псевдоним для ExtensibleParaser
+using EP = ExtensibleParaser;
 
 namespace CsNitra;
 
 using Ast;
 
-/// <summary>
-/// Генератор правил для парсера
-/// </summary>
 public sealed class RuleGenerator(Scope globalScope, Parser parser)
 {
     public void GenerateRules()
