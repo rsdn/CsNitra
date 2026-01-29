@@ -193,24 +193,13 @@ public sealed partial record NotPredicateExpressionAst(
     public override string ToString() => $"!{Expression}";
 }
 
-public abstract partial record LiteralAst(int StartPos, int EndPos) : RuleExpressionAst(StartPos, EndPos);
-
-public sealed partial record StringLiteralAst(
+public sealed partial record LiteralAst(
     string Value,
     int StartPos,
     int EndPos
-) : LiteralAst(StartPos, EndPos)
+) : RuleExpressionAst(StartPos, EndPos)
 {
     public override string ToString() => $"\"{Value}\"";
-}
-
-public sealed partial record CharLiteralAst(
-    string Value,
-    int StartPos,
-    int EndPos
-) : LiteralAst(StartPos, EndPos)
-{
-    public override string ToString() => $"'{Value}'";
 }
 
 public sealed partial record RuleRefExpressionAst(
@@ -236,7 +225,7 @@ public sealed partial record SeparatedListExpressionAst(
     RuleExpressionAst Element,
     RuleExpressionAst Separator,
     Literal? Modifier,
-    string Count,
+    Literal Count,
     int StartPos,
     int EndPos
 ) : RuleExpressionAst(StartPos, EndPos)
@@ -248,7 +237,7 @@ public sealed partial record SeparatedListExpressionAst(
     }
 }
 
-public partial record AssociativityAst(Literal Comma, Literal? Associativity, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos)
+public partial record AssociativityAst(Literal Comma, Literal Associativity, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos)
 {
     public override string ToString() => $", right";
 }

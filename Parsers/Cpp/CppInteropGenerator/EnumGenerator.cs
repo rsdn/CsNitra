@@ -3,7 +3,6 @@
 using global::CppEnumExtractor;
 
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 
 using System.Collections.Immutable;
@@ -279,11 +278,11 @@ public class EnumGenerator : IIncrementalGenerator
                 var typeSuffix = enumInfo.UnderlyingType != null ? $" : {enumInfo.UnderlyingType}" : "";
                 var csTypeSuffix = enumInfo.UnderlyingType switch
                 {
-                    "int8_t"   => "sbyte",
-                    "int16_t"  => "short",
-                    "int32_t"  => null,  // default
-                    "int64_t"  => "long",
-                    "uint8_t"  => "byte",
+                    "int8_t" => "sbyte",
+                    "int16_t" => "short",
+                    "int32_t" => null,  // default
+                    "int64_t" => "long",
+                    "uint8_t" => "byte",
                     "uint16_t" => "ushort",
                     "uint32_t" => "uint",
                     "uint64_t" => "ulong",

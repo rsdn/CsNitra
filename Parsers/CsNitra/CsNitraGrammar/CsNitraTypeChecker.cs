@@ -20,12 +20,10 @@ public abstract partial record Symbol
 public sealed partial record PrecedenceSymbol(
     Identifier Name,
     Source Source,
-    int BindingPower,
-    bool IsRightAssociative
+    int BindingPower
 ) : Symbol(Name, Source)
 {
-    public override string ToString() =>
-        $"Precedence({Name.Value}: BP={BindingPower}, Right={IsRightAssociative})";
+    public override string ToString() => $"{Name.Value}={BindingPower}";
 }
 
 public sealed partial record RuleSymbol(
@@ -268,17 +266,12 @@ public sealed partial record TypeChecker
             }
         }
 
-        if (orderedPrecedences.Count == 0)
-            return;
-
-        for (int i = 0; i < orderedPrecedences.Count; i++)
+        for (int i = 0, bp = orderedPrecedences.Count; i < orderedPrecedences.Count; i++, bp--)
         {
-            var identifier = orderedPrecedences[i];
             var symbol = new PrecedenceSymbol(
-                identifier,
+                orderedPrecedences[i],
                 _context.Source,
-                BindingPower: i * 2,
-                IsRightAssociative: false
+                BindingPower: bp
             );
             _context.GlobalScope.AddSymbol(symbol);
         }

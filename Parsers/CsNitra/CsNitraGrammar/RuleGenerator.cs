@@ -13,16 +13,10 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
     public void GenerateRules()
     {
         foreach (var ruleSymbol in globalScope.GetAllRules())
-        {
-            if (ruleSymbol.Name.Value is "StringLiteral" or "Identifier")
-            {
-            }
-
             if (ruleSymbol.RuleStatement != null)
                 parser.Rules[ruleSymbol.Name.Value] = GenerateRuleFromStatement(ruleSymbol.RuleStatement);
             else if (ruleSymbol.SimpleRuleStatement != null)
                 parser.Rules[ruleSymbol.Name.Value] = new[] { GenerateSimpleRule(ruleSymbol.SimpleRuleStatement) };
-        }
     }
 
     private Rule[] GenerateRuleFromStatement(RuleStatementAst node)
@@ -70,8 +64,7 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
             ZeroOrManyExpressionAst zeroOrMany => new ZeroOrMany(GenerateExpression(zeroOrMany.Expression, name: null), name),
             AndPredicateExpressionAst and => GenerateAndPredicate(and),
             NotPredicateExpressionAst not => GenerateNotPredicate(not),
-            StringLiteralAst str => new EP.Literal(str.Value, name),
-            CharLiteralAst ch => new EP.Literal(ch.Value, name),
+            LiteralAst str => new EP.Literal(str.Value, name),
             GroupExpressionAst group => GenerateExpression(group.Expression, name),
             SeparatedListExpressionAst list => GenerateSeparatedList(list, name),
             _ => throw new InvalidOperationException($"Unknown expression type: {expression.GetType()}")
@@ -82,13 +75,11 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
     {
         var refName = node.Ref.ToString();
 
-        if (node.Precedence != null && node.PrecedenceSymbol != null)
-        {
-            var bindingPower = node.PrecedenceSymbol.BindingPower;
-            var rightAssoc = node.PrecedenceSymbol.IsRightAssociative;
-
-            return new ReqRef(refName, bindingPower, rightAssoc);
-        }
+        if (node.Precedence != null)
+            return new ReqRef(
+                refName,
+                Precedence: node.PrecedenceSymbol.AssertIsNonNull().BindingPower,
+                Right: node.Precedence.Associativity != null);
 
         if (globalScope.FindTerminal(refName) is { } terminal)
             return terminal.Terminal;
@@ -139,7 +130,7 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
             _ => SeparatorEndBehavior.Forbidden
         };
 
-        var canBeEmpty = node.Count == "*";
+        var canBeEmpty = node.Count.Value == "*";
 
         return new SeparatedList(element, separator, Kind: name.AssertIsNonNull(), endBehavior, canBeEmpty);
     }

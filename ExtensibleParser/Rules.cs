@@ -69,7 +69,7 @@ public sealed record Literal(string Value, string? Kind = null) : Terminal(Kind 
     public override int TryMatch(string input, int startPos) =>
         input.AsSpan(startPos).StartsWith(Value, StringComparison.Ordinal) ? Value.Length : -1;
 
-    public override string ToString() => $"«{Value}»";
+    public override string ToString() => $"\"{Value}\"";
 
     public override IEnumerable<Rule> GetSubRules<T>()
     {
@@ -87,7 +87,7 @@ public sealed record Literal(string Value, string? Kind = null) : Terminal(Kind 
 /// <param name="Kind">A descriptive name for this sequence</param>
 public record Seq(Rule[] Elements, string Kind) : Rule(Kind)
 {
-    public override string ToString() => $"{Kind} = {string.Join<Rule>(" ", Elements)}";
+    public override string ToString() => $"{Kind}=({string.Join<Rule>(" ", Elements)})";
 
     public override Rule InlineReferences(Dictionary<string, Rule> inlineableRules) =>
         new Seq(Elements.Select(e => e.InlineReferences(inlineableRules)).ToArray(), Kind);
@@ -111,7 +111,7 @@ public record Seq(Rule[] Elements, string Kind) : Rule(Kind)
 /// <param name="Kind">Optional custom name for this repetition</param>
 public record OneOrMany(Rule Element, string? Kind = null) : Rule(Kind ?? nameof(OneOrMany))
 {
-    public override string ToString() => $"Kind={Element}+";
+    public override string ToString() => $"{Kind}={Element}+";
 
     public override Rule InlineReferences(Dictionary<string, Rule> inlineableRules) =>
         new OneOrMany(Element.InlineReferences(inlineableRules), Kind);

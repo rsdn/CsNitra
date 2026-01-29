@@ -1,14 +1,14 @@
 ﻿using CsNitra.Ast;
+using ExtensibleParaser;
 
 namespace CsNitra;
 
 public static class ParserExtensions
 {
-    public static void BuildFromAst(this ExtensibleParaser.Parser parser, GrammarAst grammar,
-        Source source, IEnumerable<(string Name, ExtensibleParaser.Terminal Terminal)> terminals)
+    public static void BuildFromAst(this Parser parser, GrammarAst grammar, Source source, IEnumerable<Terminal> terminals)
     {
         // 1. Типизация
-        var typeChecker = new TypeChecker(source, terminals);
+        var typeChecker = new TypeChecker(source, terminals.Select(t => (t.Kind, t)));
         var (diagnostics, globalScope) = typeChecker.CheckGrammar(grammar);
 
         if (diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error))

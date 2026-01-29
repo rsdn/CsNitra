@@ -17,8 +17,7 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
         _currentResult = node.Kind switch
         {
             "Identifier" => new Identifier(value, node.StartPos, node.EndPos),
-            "StringLiteral" => new StringLiteralAst(UnescapeString(value), node.StartPos, node.EndPos),
-            "CharLiteral" => new CharLiteralAst(UnescapeChar(value), node.StartPos, node.EndPos),
+            "Literal" => new LiteralAst(UnescapeString(value), node.StartPos, node.EndPos),
             "left" or "right" => new Literal(value, node.StartPos, node.EndPos),
             "?" or "!" => new Literal(value, node.StartPos, node.EndPos),
             "+" or "*" => new Literal(value, node.StartPos, node.EndPos),
@@ -30,13 +29,6 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
     {
         if (value.Length >= 2)
             return value[1..^1].Replace("\\\"", "\"").Replace("\\\\", "\\");
-        return value;
-    }
-
-    private static string UnescapeChar(string value)
-    {
-        if (value.Length >= 2)
-            return value[1..^1].Replace("\\'", "'").Replace("\\\\", "\\");
         return value;
     }
 
@@ -58,33 +50,33 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
         {
             _currentResult = node.Kind switch
             {
-                "QualifiedIdentifier"         => throw new InvalidOperationException($"Unknown SeqNode kind: {node.Kind}"),
-                "Grammar"                     => ProcessGrammar(children, startPos, endPos),
-                "OpenUsing"                   => ProcessOpenUsing(children, startPos, endPos),
-                "AliasUsing"                  => ProcessAliasUsing(children, startPos, endPos),
-                "Precedence"                  => ProcessPrecedenceStatement(children, startPos, endPos),
-                "Associativity"               => ProcessAssociativity(children, startPos, endPos),
-                "Rule"                        => ProcessRuleStatement(children, startPos, endPos),
-                "SimpleRule"                  => ProcessSimpleRuleStatement(children, startPos, endPos),
-                "NamedAlternative"            => ProcessNamedAlternative(children, startPos, endPos),
-                "AnonymousAlternative"        => ProcessAnonymousAlternative(children, startPos, endPos),
-                "Sequence"          => ProcessSequenceExpression(children, startPos, endPos),
-                "Named"             => ProcessNamedExpression(children, startPos, endPos),
-                "Optional"                    => ProcessOptionalExpression(children, startPos, endPos),
-                "OftenMissed"                 => ProcessOftenMissedExpression(children, startPos, endPos),
-                "OneOrMany"                   => ProcessOneOrManyExpression(children, startPos, endPos),
-                "ZeroOrMany"                  => ProcessZeroOrManyExpression(children, startPos, endPos),
-                "AndPredicate"      => ProcessAndPredicateExpression(children, startPos, endPos),
-                "NotPredicate"      => ProcessNotPredicateExpression(children, startPos, endPos),
-                "RuleRef"                     => ProcessRuleRefExpression(children, startPos, endPos),
+                "QualifiedIdentifier" => throw new InvalidOperationException($"Unknown SeqNode kind: {node.Kind}"),
+                "Grammar" => ProcessGrammar(children, startPos, endPos),
+                "OpenUsing" => ProcessOpenUsing(children, startPos, endPos),
+                "AliasUsing" => ProcessAliasUsing(children, startPos, endPos),
+                "Precedence" => ProcessPrecedenceStatement(children, startPos, endPos),
+                "Associativity" => ProcessAssociativity(children, startPos, endPos),
+                "Rule" => ProcessRuleStatement(children, startPos, endPos),
+                "SimpleRule" => ProcessSimpleRuleStatement(children, startPos, endPos),
+                "NamedAlternative" => ProcessNamedAlternative(children, startPos, endPos),
+                "AnonymousAlternative" => ProcessAnonymousAlternative(children, startPos, endPos),
+                "Sequence" => ProcessSequenceExpression(children, startPos, endPos),
+                "Named" => ProcessNamedExpression(children, startPos, endPos),
+                "Optional" => ProcessOptionalExpression(children, startPos, endPos),
+                "OftenMissed" => ProcessOftenMissedExpression(children, startPos, endPos),
+                "OneOrMany" => ProcessOneOrManyExpression(children, startPos, endPos),
+                "ZeroOrMany" => ProcessZeroOrManyExpression(children, startPos, endPos),
+                "AndPredicate" => ProcessAndPredicateExpression(children, startPos, endPos),
+                "NotPredicate" => ProcessNotPredicateExpression(children, startPos, endPos),
+                "RuleRef" => ProcessRuleRefExpression(children, startPos, endPos),
                 "PrecedenceWithAssociativity" => ProcessPrecedenceWithAssociativity(children, startPos, endPos),
-                "Group"                       => ProcessGroupExpression(children, startPos, endPos),
-                "SeparatedListExpression"     => ProcessSeparatedListExpression(children, startPos, endPos),
-                "Usings"                      => ProcessAstList<UsingAst>(children, startPos, endPos),
-                "Statements"                  => ProcessAstList<StatementAst>(children, startPos, endPos),
-                "Alternatives"                => ProcessAstList<AlternativeAst>(children, startPos, endPos),
-                "Elem"                        => NamedAlternative(children, startPos, endPos),
-                _                             => throw new InvalidOperationException($"Unknown SeqNode kind: {node.Kind}"),
+                "Group" => ProcessGroupExpression(children, startPos, endPos),
+                "SeparatedList" => ProcessSeparatedListExpression(children, startPos, endPos),
+                "Usings" => ProcessAstList<UsingAst>(children, startPos, endPos),
+                "Statements" => ProcessAstList<StatementAst>(children, startPos, endPos),
+                "Alternatives" => ProcessAstList<AlternativeAst>(children, startPos, endPos),
+                "Elem" => NamedAlternative(children, startPos, endPos),
+                _ => throw new InvalidOperationException($"Unknown SeqNode kind: {node.Kind}"),
             };
         }
         catch (Exception ex)
@@ -282,9 +274,9 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
     private CsNitraAst ProcessSeparatedListExpression(List<CsNitraAst> children, int startPos, int endPos) => children switch
     {
         [Literal opening, RuleExpressionAst element, Literal semicolon, RuleExpressionAst separator, None, Literal closing, Literal count] =>
-            new SeparatedListExpressionAst(element, separator, Modifier: null, count.Value, startPos, endPos),
+            new SeparatedListExpressionAst(element, separator, Modifier: null, count, startPos, endPos),
         [Literal opening, RuleExpressionAst element, Literal semicolon, RuleExpressionAst separator, Some<CsNitraAst>(Literal modifier), Literal closing, Literal count] =>
-            new SeparatedListExpressionAst(element, separator, modifier, count.Value, startPos, endPos),
+            new SeparatedListExpressionAst(element, separator, modifier, count, startPos, endPos),
         _ => throw new InvalidOperationException($"Expected SeparatedList expression. But fond [{string.Join(", ", children.Select(x => x!.ToString()))}]")
     };
 

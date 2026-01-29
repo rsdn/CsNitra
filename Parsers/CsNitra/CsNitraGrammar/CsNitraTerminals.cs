@@ -14,5 +14,5 @@ public sealed partial class CsNitraTerminals
     [Regex("""
         "([^"\\]|\\.)*"
         """)]
-    public static partial Terminal StringLiteral();
+    public static partial Terminal Literal();
 }

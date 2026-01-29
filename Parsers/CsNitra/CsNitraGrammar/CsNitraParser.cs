@@ -73,10 +73,11 @@ public partial class CsNitraParser
         const int Naming = 3;
         const int Predicate = 4;
         const int Postfix = 5;
+        //const int Primary = 6;
 
         _parser.Rules["RuleExpression"] = [
             // prefix rules (Primary)
-            CsNitraTerminals.StringLiteral(),
+            CsNitraTerminals.Literal(),
             new Seq([
                 new Ref("QualifiedIdentifier", Kind: "Ref"),
                 new Optional(
@@ -96,7 +97,7 @@ public partial class CsNitraParser
                 new Optional(new Seq([new Literal(":"), new Ref("Modifier")], "SeparatorModifier")),
                 new Literal(")"),
                 new Ref("Count")
-            ], "SeparatedListExpression"),
+            ], "SeparatedList"),
 
             // postfix rules (operators)
             new Seq([new ReqRef("RuleExpression", Precedence: Postfix), new Literal("??")], "OftenMissed"),
