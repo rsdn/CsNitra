@@ -13,15 +13,15 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
     public void Visit(TerminalNode node)
     {
         var value = node.ToString(input);
-
+        var endPos = node.StartPos + node.ContentLength;
         _currentResult = node.Kind switch
         {
-            "Identifier" => new Identifier(value, node.StartPos, node.EndPos),
-            "Literal" => new LiteralAst(UnescapeString(value), node.StartPos, node.EndPos),
-            "left" or "right" => new Literal(value, node.StartPos, node.EndPos),
-            "?" or "!" => new Literal(value, node.StartPos, node.EndPos),
-            "+" or "*" => new Literal(value, node.StartPos, node.EndPos),
-            _ => new Literal(value, node.StartPos, node.EndPos)
+            "Identifier" => new Identifier(value, node.StartPos, endPos),
+            "Literal" => new LiteralAst(UnescapeString(value), node.StartPos, endPos),
+            "left" or "right" => new Literal(value, node.StartPos, endPos),
+            "?" or "!" => new Literal(value, node.StartPos, endPos),
+            "+" or "*" => new Literal(value, node.StartPos, endPos),
+            _ => new Literal(value, node.StartPos, endPos)
         };
     }
 

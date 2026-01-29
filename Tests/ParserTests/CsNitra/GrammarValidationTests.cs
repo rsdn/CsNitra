@@ -11,10 +11,11 @@ public class GrammarValidationTests
     [TestMethod]
     public void ShouldReportErrorForUndefinedRuleReference()
     {
-        var grammarText = """
+        var expectedName = "UndefinedRule";
+        var grammarText = $"""
             Grammar = Statement*;
 
-            Statement = Identifier "=" UndefinedRule ";";
+            Statement = Identifier "=" {expectedName} ";";
             """;
 
         var parseResult = _parser.Parse<GrammarAst>(grammarText);
@@ -34,8 +35,11 @@ public class GrammarValidationTests
         var (diagnostics, _) = typeChecker.CheckGrammar(grammar);
 
         var errors = diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
-        Assert.IsTrue(errors.Any(e => e.Message.Contains("UndefinedRule")),
-            "Should report error for undefined rule reference");
+        Assert.AreEqual(expected: 1, actual: errors.Count);
+        var e = errors[0];
+        Assert.IsTrue(e.Message.Contains(expectedName), "Should report error for undefined rule reference");
+        var actualName = grammarText[e.Location.Start..e.Location.End];
+        Assert.AreEqual(expected: expectedName, actual: actualName);
     }
 }
 

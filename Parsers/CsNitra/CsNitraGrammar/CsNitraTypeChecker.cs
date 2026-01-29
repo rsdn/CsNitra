@@ -423,7 +423,7 @@ public sealed partial record TypeChecker
         {
             var identifier = node.Ref.Parts[0];
             if (_context.FindRule(identifier) == null && _context.FindTerminal(identifier) == null)
-                _context.ReportError($"Symbol '{identifier}' not found", node.Ref);
+                _context.ReportError($"Symbol '{identifier}' not found", identifier);
         }
 
         if (node.Precedence != null)
