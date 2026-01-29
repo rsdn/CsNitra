@@ -87,7 +87,7 @@ public sealed record Literal(string Value, string? Kind = null) : Terminal(Kind 
 /// <param name="Kind">A descriptive name for this sequence</param>
 public record Seq(Rule[] Elements, string Kind) : Rule(Kind)
 {
-    public override string ToString() => string.Join<Rule>(" ", Elements);
+    public override string ToString() => $"{Kind} = {string.Join<Rule>(" ", Elements)}";
 
     public override Rule InlineReferences(Dictionary<string, Rule> inlineableRules) =>
         new Seq(Elements.Select(e => e.InlineReferences(inlineableRules)).ToArray(), Kind);
@@ -111,7 +111,7 @@ public record Seq(Rule[] Elements, string Kind) : Rule(Kind)
 /// <param name="Kind">Optional custom name for this repetition</param>
 public record OneOrMany(Rule Element, string? Kind = null) : Rule(Kind ?? nameof(OneOrMany))
 {
-    public override string ToString() => $"{Element}+";
+    public override string ToString() => $"Kind={Element}+";
 
     public override Rule InlineReferences(Dictionary<string, Rule> inlineableRules) =>
         new OneOrMany(Element.InlineReferences(inlineableRules), Kind);
@@ -134,7 +134,7 @@ public record OneOrMany(Rule Element, string? Kind = null) : Rule(Kind ?? nameof
 /// <param name="Kind">Optional custom name for this repetition</param>
 public record ZeroOrMany(Rule Element, string? Kind = null) : Rule(Kind ?? nameof(ZeroOrMany))
 {
-    public override string ToString() => $"{Element}*";
+    public override string ToString() => $"{Kind}={Element}*";
 
     public override Rule InlineReferences(Dictionary<string, Rule> inlineableRules) =>
         new ZeroOrMany(Element.InlineReferences(inlineableRules), Kind);
@@ -202,7 +202,7 @@ public record OftenMissed(Rule Element, string Kind = "Error") : Rule(Kind)
 /// </summary>
 /// <param name="RuleName">The name of the referenced rule</param>
 /// <param name="Kind">Optional custom name for this reference</param>
-public record Ref(string RuleName, string? Kind = null) : Rule(Kind ?? nameof(RuleName))
+public record Ref(string RuleName, string? Kind = null) : Rule(Kind ?? RuleName)
 {
     public override string ToString() => RuleName;
 
@@ -390,7 +390,7 @@ public record SeparatedList(
     bool CanBeEmpty = true)
     : Rule(Kind)
 {
-    public override string ToString() => $"({Element}; {Separator} {EndBehavior})*{(CanBeEmpty ? "" : "+")}";
+    public override string ToString() => $"{Kind}=({Element}; {Separator} {EndBehavior})*{(CanBeEmpty ? "" : "+")}";
 
     public override Rule InlineReferences(Dictionary<string, Rule> inlineableRules)
     {

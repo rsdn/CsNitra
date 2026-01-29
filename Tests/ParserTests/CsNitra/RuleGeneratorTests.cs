@@ -1,5 +1,5 @@
-﻿using ExtensibleParaser;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using CsNitra.Ast;
+using ExtensibleParaser;
 
 namespace CsNitra.Tests;
 
@@ -35,7 +35,6 @@ public class RuleGeneratorTests
         var scope = CreateScopeFromGrammar(grammar, [
             CsNitraTerminals.Identifier(),
             CsNitraTerminals.StringLiteral(),
-            CsNitraTerminals.CharLiteral(),
         ], grammarText);
         
         var ruleGenerator = new RuleGenerator(scope, generatedParser);
@@ -96,49 +95,53 @@ public class RuleGeneratorTests
         return globalScope;
     }
 
+
     private static string GetGrammarText() =>
         """
-        precedence Primary, UnaryPrefix, UnaryPostfix, Named, Sequence;
-
-        Grammar = Using* Statement*;
+        Grammar = Usings=Using* Statements=Statement*;
 
         QualifiedIdentifier = (Identifier; ".")+;
 
         Using =
-            | Open  = "using" QualifiedIdentifier ";"
-            | Alias = "using" Identifier "=" QualifiedIdentifier ";";
+            | OpenUsing  = "using" QualifiedIdentifier ";"
+            | AliasUsing = "using" Identifier "=" QualifiedIdentifier ";";
 
         Statement =
-            | Precedence = "precedence" (Identifier; ",")+ ";"
-            | Rule       = Identifier "=" "|"? (Alternative; "|")+ ";"
-            | SimpleRule = Identifier "=" RuleExpression;
+            | Precedence = "precedence" Precedences=(Identifier; ",")+ ";"
+            | Rule       = Identifier "=" Alternatives=Alternative+ ";"
+            | SimpleRule = Identifier "=" RuleExpression ";";
 
         Alternative =
-            | Named = Identifier "=" RuleExpression
-            | QualifiedIdentifier;
+            | NamedAlternative = "|" Identifier "=" RuleExpression
+            | AnonymousAlternative = "|" QualifiedIdentifier;
+
+        precedence Primary, Postfix, Predicate, Naming, Optional, Sequence;
 
         RuleExpression =
-            | Literal
-            | Sequence      = Left=RuleExpression : Sequence Right=RuleExpression : Sequence
-            | Named         = Name=Identifier "=" RuleExpression : Named
-            | Optional      = RuleExpression : UnaryPostfix "?"
-            | OftenMissed   = RuleExpression : UnaryPostfix "??"
-            | OneOrMany     = RuleExpression : UnaryPostfix "+"
-            | ZeroOrMany    = RuleExpression : UnaryPostfix "*"
-            | AndPredicate  = "&" RuleExpression : UnaryPrefix
-            | NotPredicate  = "!" RuleExpression : UnaryPrefix
-            | RuleRef       = Ref=QualifiedIdentifier (":" Precedence=Identifier ("," Associativity)?)?
+            // prefix rules (Primary)
+            | StringLiteral
+            | RuleRef       = Ref=QualifiedIdentifier (PrecedenceWithAssociativity=(":" Precedence=Identifier (Associativity=("," Associativity))?))?
             | Group         = "(" RuleExpression ")"
-            | SeparatedList = "(" RuleExpression ";" RuleExpression SeparatorModifier=(":" Modifier)? ")" Count;
+            | SeparatedList = "(" Element=RuleExpression ";" Separator=RuleExpression SeparatorModifier=(":" Modifier)? ")" Count
 
-        Literal = StringLiteral | CharLiteral;
+            // postfix rules (operators)
+            | OftenMissed   = RuleExpression : Postfix "??"
+            | OneOrMany     = RuleExpression : Postfix "+"
+            | ZeroOrMany    = RuleExpression : Postfix "*"
+            | AndPredicate  = "&" RuleExpression : Predicate
+            | NotPredicate  = "!" RuleExpression : Predicate
+            | Named         = Name=Identifier "=" RuleExpression : Naming
+            | Optional      = RuleExpression : Optional "?"
+            | Sequence      = Left=RuleExpression : Sequence Right=RuleExpression : Sequence;
 
-        Associativity =
+        Associativity                 =
             | Left  = "left"
             | Right = "right";
+
         Modifier =
             | Optional = "?"
             | Required = "!";
+
         Count =
             | OneOrMeny  = "+"
             | ZeroOrMeny = "*";

@@ -1,6 +1,6 @@
 ﻿using ExtensibleParaser;
 
-namespace CsNitra;
+namespace CsNitra.Ast;
 
 public abstract partial record Symbol
 {

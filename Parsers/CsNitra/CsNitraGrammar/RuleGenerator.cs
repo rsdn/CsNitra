@@ -3,6 +3,8 @@ using EP = ExtensibleParaser; // Псевдоним для ExtensibleParaser
 
 namespace CsNitra;
 
+using Ast;
+
 /// <summary>
 /// Генератор правил для парсера
 /// </summary>
@@ -31,8 +33,8 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
         {
             var rule = alternative switch
             {
-                NamedAlternativeAst named => GenerateExpression(named.Expression, node.Name.Value),
-                AnonymousAlternativeAst anon => GenerateAnonymousAlternative(anon, node.Name.Value),
+                NamedAlternativeAst named => GenerateExpression(named.Expression, named.Name.Value),
+                AnonymousAlternativeAst anon => GenerateAnonymousAlternative(anon),
                 _ => throw new InvalidOperationException($"Unknown alternative type: {alternative.GetType()}")
             };
 
@@ -45,7 +47,7 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
     private Rule GenerateSimpleRule(SimpleRuleStatementAst node) =>
         GenerateExpression(node.Expression, node.Name.Value);
 
-    private Rule GenerateAnonymousAlternative(AnonymousAlternativeAst node, string context)
+    private Rule GenerateAnonymousAlternative(AnonymousAlternativeAst node)
     {
         var ruleName = node.RuleRef.ToString();
 
@@ -55,99 +57,80 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
         return new Ref(ruleName);
     }
 
-    private Rule GenerateExpression(RuleExpressionAst expression, string context)
+    private Rule GenerateExpression(RuleExpressionAst expression, string? name)
     {
         return expression switch
         {
-            RuleRefExpressionAst ruleRef => GenerateRuleRefExpression(ruleRef, context),
-            SequenceExpressionAst seq => GenerateSequenceExpression(seq, context),
-            NamedExpressionAst named => GenerateNamedExpression(named, context),
-            OptionalExpressionAst opt => new Optional(GenerateExpression(opt.Expression, context)),
-            OftenMissedExpressionAst om => new OftenMissed(GenerateExpression(om.Expression, context)),
-            OneOrManyExpressionAst oneOrMany => new OneOrMany(GenerateExpression(oneOrMany.Expression, context)),
-            ZeroOrManyExpressionAst zeroOrMany => new ZeroOrMany(GenerateExpression(zeroOrMany.Expression, context)),
-            AndPredicateExpressionAst and => GenerateAndPredicate(and, context),
-            NotPredicateExpressionAst not => GenerateNotPredicate(not, context),
-            StringLiteralAst str => new EP.Literal(str.Value),
-            CharLiteralAst ch => new EP.Literal(ch.Value),
-            GroupExpressionAst group => GenerateExpression(group.Expression, context),
-            SeparatedListExpressionAst list => GenerateSeparatedList(list, context),
+            RuleRefExpressionAst ruleRef => GenerateRuleRefExpression(ruleRef, name),
+            SequenceExpressionAst seq => GenerateSequenceExpression(seq, name),
+            NamedExpressionAst named => GenerateNamedExpression(named),
+            OptionalExpressionAst opt => new Optional(GenerateExpression(opt.Expression, name: null), name),
+            OftenMissedExpressionAst om => new OftenMissed(GenerateExpression(om.Expression, name: null), name ?? "Error"),
+            OneOrManyExpressionAst oneOrMany => new OneOrMany(GenerateExpression(oneOrMany.Expression, name: null), name),
+            ZeroOrManyExpressionAst zeroOrMany => new ZeroOrMany(GenerateExpression(zeroOrMany.Expression, name: null), name),
+            AndPredicateExpressionAst and => GenerateAndPredicate(and),
+            NotPredicateExpressionAst not => GenerateNotPredicate(not),
+            StringLiteralAst str => new EP.Literal(str.Value, name),
+            CharLiteralAst ch => new EP.Literal(ch.Value, name),
+            GroupExpressionAst group => GenerateExpression(group.Expression, name),
+            SeparatedListExpressionAst list => GenerateSeparatedList(list, name),
             _ => throw new InvalidOperationException($"Unknown expression type: {expression.GetType()}")
         };
     }
 
-    private Rule GenerateRuleRefExpression(RuleRefExpressionAst node, string context)
+    private Rule GenerateRuleRefExpression(RuleRefExpressionAst node, string? name)
     {
-        var name = node.Ref.ToString();
+        var refName = node.Ref.ToString();
 
         if (node.Precedence != null && node.PrecedenceSymbol != null)
         {
             var bindingPower = node.PrecedenceSymbol.BindingPower;
             var rightAssoc = node.PrecedenceSymbol.IsRightAssociative;
 
-            return new ReqRef(name, bindingPower, rightAssoc);
+            return new ReqRef(refName, bindingPower, rightAssoc);
         }
 
-        if (globalScope.FindTerminal(name) is { } terminal)
+        if (globalScope.FindTerminal(refName) is { } terminal)
             return terminal.Terminal;
 
-        return new Ref(name);
+        return new Ref(refName, Kind: name);
     }
 
-    private Rule GenerateSequenceExpression(SequenceExpressionAst node, string context)
+    private Rule GenerateSequenceExpression(SequenceExpressionAst node, string? name)
     {
-        var left = GenerateExpression(node.Left, context);
-        var right = GenerateExpression(node.Right, context);
+        var left = GenerateExpression(node.Left, name: node.Left is SequenceExpressionAst ? name : null);
+        var right = GenerateExpression(node.Right, name: node.Right is SequenceExpressionAst ? name : null);
 
         if (left is Seq leftSeq && right is Seq rightSeq)
-            return new Seq(leftSeq.Elements.Concat(rightSeq.Elements).ToArray(), context);
+            return new Seq(leftSeq.Elements.Concat(rightSeq.Elements).ToArray(), name.AssertIsNonNull());
 
         if (left is Seq leftSeq2)
-            return new Seq(leftSeq2.Elements.Append(right).ToArray(), context);
+            return new Seq(leftSeq2.Elements.Append(right).ToArray(), name.AssertIsNonNull());
 
         if (right is Seq rightSeq2)
-            return new Seq(new[] { left }.Concat(rightSeq2.Elements).ToArray(), context);
+            return new Seq(new[] { left }.Concat(rightSeq2.Elements).ToArray(), name.AssertIsNonNull());
 
-        return new Seq(new[] { left, right }, context);
+        return new Seq([left, right], name.AssertIsNonNull());
     }
 
-    private Rule GenerateNamedExpression(NamedExpressionAst node, string context)
-    {
-        var inner = GenerateExpression(node.Expression, context);
+    private Rule GenerateNamedExpression(NamedExpressionAst node) => GenerateExpression(node.Expression, node.Name);
 
-        return inner switch
-        {
-            EP.Literal lit => lit with { Kind = $"{context}.{node.Name}" },
-            ReqRef rrf => rrf with { Kind = $"{context}.{node.Name}" },
-            Ref rf => rf with { Kind = $"{context}.{node.Name}" },
-            Seq seq => seq with { Kind = $"{context}.{node.Name}" },
-            Optional opt => opt with { Kind = $"{context}.{node.Name}" },
-            OftenMissed om => om with { Kind = $"{context}.{node.Name}" },
-            OneOrMany oom => oom with { Kind = $"{context}.{node.Name}" },
-            ZeroOrMany zom => zom with { Kind = $"{context}.{node.Name}" },
-            AndPredicate and => and with { Kind = $"{context}.{node.Name}" },
-            NotPredicate not => not with { Kind = $"{context}.{node.Name}" },
-            SeparatedList sl => sl with { Kind = $"{context}.{node.Name}" },
-            var innerRule => innerRule
-        };
-    }
-
-    private Rule GenerateAndPredicate(AndPredicateExpressionAst node, string context)
+    private Rule GenerateAndPredicate(AndPredicateExpressionAst node)
     {
-        var predicate = GenerateExpression(node.Expression, context);
+        var predicate = GenerateExpression(node.Expression, name: null);
         return new AndPredicate(predicate);
     }
 
-    private Rule GenerateNotPredicate(NotPredicateExpressionAst node, string context)
+    private Rule GenerateNotPredicate(NotPredicateExpressionAst node)
     {
-        var predicate = GenerateExpression(node.Expression, context);
+        var predicate = GenerateExpression(node.Expression, name: null);
         return new NotPredicate(predicate);
     }
 
-    private Rule GenerateSeparatedList(SeparatedListExpressionAst node, string context)
+    private Rule GenerateSeparatedList(SeparatedListExpressionAst node, string? name)
     {
-        var element = GenerateExpression(node.Element, context);
-        var separator = GenerateExpression(node.Separator, context);
+        var element = GenerateExpression(node.Element, name: null);
+        var separator = GenerateExpression(node.Separator, name: null);
 
         var endBehavior = node.Modifier?.Value switch
         {
@@ -158,6 +141,6 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
 
         var canBeEmpty = node.Count == "*";
 
-        return new SeparatedList(element, separator, context, endBehavior, canBeEmpty);
+        return new SeparatedList(element, separator, Kind: name.AssertIsNonNull(), endBehavior, canBeEmpty);
     }
 }

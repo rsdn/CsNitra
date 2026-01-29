@@ -1,4 +1,5 @@
-﻿using ExtensibleParaser;
+﻿using CsNitra.Ast;
+using ExtensibleParaser;
 
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -67,31 +68,32 @@ public class CsNitraTests
         }
     }
 
-    private static bool IsGrammarRule(SimpleRuleStatementAst simple) => simple.Name.Value == "Grammar" && simple.Expression.ToString() == "Using* Statement*";
+    private static bool IsGrammarRule(SimpleRuleStatementAst simple) => simple.Name.Value == "Grammar" && simple.Expression.ToString() == "Usings=«Using*» Statements=«Statement*»";
 
     private static string GetGrammarText() =>
         """
         precedence Primary, UnaryPrefix, UnaryPostfix, Named, Sequence;
-
-        Grammar = Using* Statement*;
-
+        
+        Grammar = Usings=Using* Statements=Statement*;
+        
         QualifiedIdentifier = (Identifier; ".")+;
-
+        
         Using =
             | Open  = "using" QualifiedIdentifier ";"
             | Alias = "using" Identifier "=" QualifiedIdentifier ";";
-
+        
         Statement =
             | Precedence = "precedence" (Identifier; ",")+ ";"
-            | Rule       = Identifier "=" "|"? (Alternative; "|")+ ";"
-            | SimpleRule = Identifier "=" RuleExpression;
-
+            | Rule       = Identifier "=" ("|" Alternative)+ ";"
+            | SimpleRule = Identifier "=" RuleExpression ";";
+        
         Alternative =
             | Named = Identifier "=" RuleExpression
             | QualifiedIdentifier;
-
+        
         RuleExpression =
-            | Literal
+            | CharLiteral
+            | StringLiteral
             | Sequence      = Left=RuleExpression : Sequence Right=RuleExpression : Sequence
             | Named         = Name=Identifier "=" RuleExpression : Named
             | Optional      = RuleExpression : UnaryPostfix "?"
@@ -103,7 +105,7 @@ public class CsNitraTests
             | RuleRef       = Ref=QualifiedIdentifier (":" Precedence=Identifier ("," Associativity)?)?
             | Group         = "(" RuleExpression ")"
             | SeparatedList = "(" RuleExpression ";" RuleExpression SeparatorModifier=(":" Modifier)? ")" Count;
-
+        
         Associativity =
             | Left  = "left"
             | Right = "right";

@@ -181,8 +181,15 @@ public record TerminalNode(string Kind, int StartPos, int EndPos, int ContentLen
 /// <param name="Elements">The child nodes in order.</param>
 /// <param name="StartPos">The starting position in the input text.</param>
 /// <param name="EndPos">The ending position in the input text (exclusive).</param>
-public record SeqNode(string Kind, IReadOnlyList<ISyntaxNode> Elements, int StartPos, int EndPos) : Node(Kind, StartPos, EndPos)
+public record SeqNode(string Kind, IReadOnlyList<ISyntaxNode> Elements, int StartPos, int EndPos) : Node(Foo(Kind, StartPos, EndPos), StartPos, EndPos)
 {
+    private static string Foo(string x, int StartPos, int EndPos)
+    {
+        if (x == "ZeroOrMany" && StartPos == 0 && EndPos == 0)
+        {
+        }
+        return x;
+    }
     /// <summary>Accepts a visitor to traverse this node.</summary>
     /// <param name="visitor">The visitor to accept.</param>
     public override void Accept(ISyntaxVisitor visitor) => visitor.Visit(this);

@@ -5,7 +5,14 @@ namespace ExtensibleParaser;
 [DebuggerTypeProxy(typeof(TreeDebugView))]
 public sealed record Tree(string Input, object Element)
 {
-    public override string ToString() => $"«{((ISyntaxNode)Element).ToString(Input)}»  {Element}";
+    public override string ToString()
+    {
+        var element = (ISyntaxNode)Element;
+        return $"{element.Kind}: «{element.ToString(Input)}»  {Element}";
+    }
+
+    public string Kind => ((ISyntaxNode)Element).Kind;
+
     public object Elements => (ISyntaxNode)Element switch
     {
         SeqNode x => x.Elements.Select(x => new Tree(Input, x)).ToArray(),

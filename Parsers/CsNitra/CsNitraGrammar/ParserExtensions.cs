@@ -1,4 +1,6 @@
-﻿namespace CsNitra;
+﻿using CsNitra.Ast;
+
+namespace CsNitra;
 
 public static class ParserExtensions
 {

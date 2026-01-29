@@ -1,4 +1,4 @@
-﻿namespace CsNitra;
+﻿namespace CsNitra.Ast;
 
 public abstract partial record CsNitraAst(int StartPos, int EndPos)
 {
@@ -94,16 +94,19 @@ public sealed partial record SimpleRuleStatementAst(
 public abstract partial record AlternativeAst(int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos);
 
 public sealed partial record NamedAlternativeAst(
+    Literal Pipe,
     Identifier Name,
+    Literal Eq,
     RuleExpressionAst Expression,
     int StartPos,
     int EndPos
 ) : AlternativeAst(StartPos, EndPos)
 {
-    public override string ToString() => $"{Name} = {Expression}";
+    public override string ToString() => $$"""{{Name}} = {{{Expression}}}""";
 }
 
 public sealed partial record AnonymousAlternativeAst(
+    Literal Pipe,
     QualifiedIdentifierAst RuleRef,
     int StartPos,
     int EndPos
