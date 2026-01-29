@@ -85,10 +85,18 @@ public class RuleGeneratorTests
         // Step 2: Create new parser using RuleGenerator
         var generatedParser = new Parser(CsNitraTerminals.Trivia());
 
-        generatedParser.BuildFromAst(manualGrammar, new SourceText(grammarText, "CsNitra.grammar"), terminals: [
+        var typeChecker = new TypeChecker(new SourceText(grammarText, "CsNitra.grammar"), terminals: [
             CsNitraTerminals.Identifier(),
             CsNitraTerminals.Literal(),
         ]);
+        var (diagnostics, globalScope) = typeChecker.CheckGrammar(manualGrammar);
+
+        Assert.AreEqual(expected: 1, actual: diagnostics.Count);
+        var e = diagnostics[0];
+        Assert.AreEqual(expected: DiagnosticSeverity.Error, actual: e.Severity);
+        Assert.IsTrue(e.Message.Contains("No name for ZeroOrMany"));
+        var actualName = grammarText[e.Location.Start..e.Location.End];
+        Assert.AreEqual(expected: "Identifier*", actual: actualName);
     }
 
     private static void AssertGrammarsAreEqual(GrammarAst manual, GrammarAst generated)

@@ -124,16 +124,14 @@ public sealed partial record TypeCheckingContext
 
     public Source Source { get; }
 
-    public TypeCheckingContext(Source source, IEnumerable<(string Name, Terminal Terminal)> terminals)
+    public TypeCheckingContext(Source source, IEnumerable<Terminal> terminals)
     {
         Source = source;
         _scopeStack.Push(new Scope());
 
-        // Добавляем предопределенные терминалы
-        foreach (var (name, terminal) in terminals)
+        foreach (var terminal in terminals)
         {
-            // Создаем фиктивный идентификатор для терминала
-            var identifier = new Identifier(name, 0, 0);
+            var identifier = new Identifier(terminal.Kind, 0, terminal.Kind.Length);
             var symbol = new TerminalSymbol(identifier, source, terminal);
             GlobalScope.AddSymbol(symbol);
         }
@@ -181,7 +179,7 @@ public sealed partial record TypeChecker
     private readonly TypeCheckingContext _context;
     private readonly List<PrecedenceDependency> _precedenceDependencies = new();
 
-    public TypeChecker(Source source, IEnumerable<(string Name, Terminal Terminal)> terminals) =>
+    public TypeChecker(Source source, IEnumerable<Terminal> terminals) =>
         _context = new TypeCheckingContext(source, terminals);
 
     public (IReadOnlyList<Diagnostic> Diagnostics, Scope GlobalScope) CheckGrammar(GrammarAst grammar)

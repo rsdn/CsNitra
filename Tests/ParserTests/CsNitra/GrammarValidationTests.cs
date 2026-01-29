@@ -26,17 +26,14 @@ public class GrammarValidationTests
             return;
         }
 
-        var terminals = new[] {
-            ("Identifier", CsNitraTerminals.Identifier()),
-            ("Literal", CsNitraTerminals.Literal())
-        };
-
-        var typeChecker = new TypeChecker(new SourceText(grammarText, "test.grammar"), terminals);
+        var typeChecker = new TypeChecker(new SourceText(grammarText, "test.grammar"), terminals: [
+            CsNitraTerminals.Identifier(),
+            CsNitraTerminals.Literal(),
+        ]);
         var (diagnostics, _) = typeChecker.CheckGrammar(grammar);
-
-        var errors = diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
-        Assert.AreEqual(expected: 1, actual: errors.Count);
-        var e = errors[0];
+        Assert.AreEqual(expected: 1, actual: diagnostics.Count);
+        var e = diagnostics[0];
+        Assert.AreEqual(expected: DiagnosticSeverity.Error, actual: e.Severity);
         Assert.IsTrue(e.Message.Contains(expectedName), "Should report error for undefined rule reference");
         var actualName = grammarText[e.Location.Start..e.Location.End];
         Assert.AreEqual(expected: expectedName, actual: actualName);
