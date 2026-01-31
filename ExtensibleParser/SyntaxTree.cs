@@ -1,6 +1,4 @@
-﻿
-
-using System.Diagnostics;
+﻿using System.Diagnostics;
 
 namespace ExtensibleParser;
 
@@ -42,7 +40,7 @@ public interface ISyntaxNode
     /// </summary>
     /// <param name="input">The original input text.</param>
     /// <returns>A span containing the node's text.</returns>
-    ChatRef AsSpan(string input);
+    CharsRef AsSpan(string input);
 
     /// <summary>
     /// Converts this node to a string representation using the original input text.
@@ -98,7 +96,7 @@ public abstract record Node(string Kind, int StartPos, int EndPos, bool IsRecove
     /// <summary>Gets the span of text from the input that this node represents.</summary>
     /// <param name="input">The original input text.</param>
     /// <returns>A span containing the node's text.</returns>
-    public virtual ChatRef AsSpan(string input) => input.AsSpan(StartPos, EndPos - StartPos);
+    public virtual CharsRef AsSpan(string input) => input.AsSpan(StartPos, EndPos - StartPos);
 
     /// <summary>Converts this node to a string representation using the original input text.</summary>
     /// <param name="input">The original input text.</param>
@@ -155,7 +153,7 @@ public record TerminalNode(string Kind, int StartPos, int EndPos, int ContentLen
     /// <summary>Gets the span of the actual content (without trailing trivia).</summary>
     /// <param name="input">The original input text.</param>
     /// <returns>A span containing only the matched content.</returns>
-    public override ChatRef AsSpan(string input) => input.AsSpan(StartPos, ContentLength);
+    public override CharsRef AsSpan(string input) => input.AsSpan(StartPos, ContentLength);
 
     /// <summary>Converts the terminal to a string using only its content.</summary>
     /// <param name="input">The original input text.</param>

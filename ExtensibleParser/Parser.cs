@@ -517,9 +517,9 @@ public class Parser(Terminal trivia, Log? log = null)
         return Result.Success(new SeqNode(zeroOrMany.Kind ?? "ZeroOrMany", elements, startPos, currentPos), currentPos, maxFailPos);
     }
 
-    private static ChatRef Preview(string input, int pos, int len = 5) => pos >= input.Length
+    private static CharsRef Preview(string input, int pos, int len = 5) => pos >= input.Length
         ? "«»"
-        : $"«{input.AsSpan(pos, Math.Min(input.Length - pos, len))}»";
+        : $"«{input.AsSpan(pos, Math.Min(input.Length - pos, len)).Str()}»";
 
     private Result ParseTerminal(Terminal terminal, int startPos, string input)
     {
@@ -536,7 +536,7 @@ public class Parser(Terminal trivia, Log? log = null)
                 }
                 _expected.Add(terminal);
             }
-            Log($"Terminal mismatch: {terminal.Kind} at {startPos}: {Preview(input, startPos)}");
+            Log($"Terminal mismatch: {terminal.Kind} at {startPos}: {Preview(input, startPos).Str()}");
             return Result.Failure(startPos);
         }
 
@@ -547,7 +547,7 @@ public class Parser(Terminal trivia, Log? log = null)
         if (triviaLength > 0)
             currentPos += triviaLength;
 
-        Log($"Matched terminal: {terminal.Kind} at [{startPos}-{startPos + contentLength}) len={contentLength} trivia: [{startPos + contentLength}-{currentPos}) len={triviaLength} «{input.AsSpan(startPos, contentLength)}»");
+        Log($"Matched terminal: {terminal.Kind} at [{startPos}-{startPos + contentLength}) len={contentLength} trivia: [{startPos + contentLength}-{currentPos}) len={triviaLength} «{input.AsSpan(startPos, contentLength).Str()}»");
         return Result.Success(
             new TerminalNode(
                 terminal.Kind,

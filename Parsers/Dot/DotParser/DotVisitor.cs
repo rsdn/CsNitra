@@ -14,7 +14,7 @@ public class DotVisitor(string input) : ISyntaxVisitor
         {
             "Identifier" => new DotIdentifier(span.ToString(), node.StartPos, node.EndPos),
             "QuotedString" => new DotQuotedString(span, node.StartPos, node.EndPos),
-            "Number" => new DotNumber(int.Parse(span), node.StartPos, node.EndPos),
+            "Number" => new DotNumber(int.Parse(span.Str()), node.StartPos, node.EndPos),
             _ => new DotLiteral(span.ToString(), node.StartPos, node.EndPos)
         };
     }
@@ -61,11 +61,11 @@ public class DotVisitor(string input) : ISyntaxVisitor
             ),
             "AttributeRest" => (DotAttribute)children[1],
             "AttributeRestList" => children.Count switch
-                {
-                    0 => new DotAttributeList([]),
-                    1 => (DotAttribute)children[0],
-                    _ => new DotAttributeList(children.Cast<DotAttribute>().ToArray())
-                },
+            {
+                0 => new DotAttributeList([]),
+                1 => (DotAttribute)children[0],
+                _ => new DotAttributeList(children.Cast<DotAttribute>().ToArray())
+            },
             _ => throw new InvalidOperationException($"Unknown node kind: {node.Kind}")
         };
 

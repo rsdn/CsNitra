@@ -1,12 +1,9 @@
-#if NETSTANDARD2_0
-global using ChatRef = string;
-using System.Collections.Generic;
-using System.Diagnostics;
+global using CharsRef = System.ReadOnlySpan<char>;
 
 internal static class ReadOnlySpanExtensions
 {
-    public static ChatRef AsSpan(this string text, int start, int length) => text.Substring(start, length);
-    public static ChatRef AsSpan(this string text, int start) => text.Substring(start);
+    public static CharsRef AsSpan(this string text, int start, int length) => text.Substring(start, length);
+    public static CharsRef AsSpan(this string text, int start) => text.Substring(start);
 
 }
 
@@ -159,8 +156,8 @@ namespace System.Diagnostics.CodeAnalysis
 
 namespace System
 {
-    using System.Numerics.Hashing;
     using System.Diagnostics.CodeAnalysis;
+    using System.Numerics.Hashing;
     using System.Runtime.CompilerServices;
 
     internal static class ThrowHelper
@@ -514,7 +511,3 @@ namespace System.Collections.Generic
             new ReadOnlyDictionary<TKey, TValue>(dictionary);
     }
 }
-
-#else
-global using ChatRef = System.ReadOnlySpan<char>;
-#endif

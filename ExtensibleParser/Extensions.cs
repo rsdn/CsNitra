@@ -5,6 +5,12 @@ public sealed record FatalError(string Input, int Pos, (int Line, int Col) Locat
 
 public static class Extensions
 {
+#if NETSTANDARD2_0
+    public static string Str(this ReadOnlySpan<char> span) => span.ToString();
+#else
+    public static ReadOnlySpan<char> Str(this ReadOnlySpan<char> span) => span;
+#endif
+
     public static string GetErrorText(this FatalError error)
     {
         var result = $"""
