@@ -6,13 +6,11 @@ namespace CsNitra;
 [TestClass]
 public class CsNitraTests
 {
-    private readonly CsNitraParser _parser = new();
-
     [TestMethod]
     public void ShouldParseItself()
     {
         var grammarText = GetGrammarText();
-        var result = _parser.Parse<GrammarAst>(grammarText);
+        var result = new CsNitraParser().Parse<GrammarAst>(grammarText);
 
         if (result is Failed(var error))
             Assert.Fail(error.GetErrorText());

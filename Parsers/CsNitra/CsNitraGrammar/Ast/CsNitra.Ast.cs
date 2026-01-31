@@ -130,6 +130,7 @@ public sealed partial record SequenceExpressionAst(
 
 public sealed partial record NamedExpressionAst(
     Identifier Name,
+    Literal Eq,
     RuleExpressionAst Expression,
     int StartPos,
     int EndPos
@@ -140,6 +141,7 @@ public sealed partial record NamedExpressionAst(
 
 public sealed partial record OptionalExpressionAst(
     RuleExpressionAst Expression,
+    Literal Operator,
     int StartPos,
     int EndPos
 ) : RuleExpressionAst(StartPos, EndPos)
@@ -149,6 +151,7 @@ public sealed partial record OptionalExpressionAst(
 
 public sealed partial record OftenMissedExpressionAst(
     RuleExpressionAst Expression,
+    Literal Operator,
     int StartPos,
     int EndPos
 ) : RuleExpressionAst(StartPos, EndPos)
@@ -177,6 +180,7 @@ public sealed partial record ZeroOrManyExpressionAst(
 }
 
 public sealed partial record AndPredicateExpressionAst(
+    Literal Predicate,
     RuleExpressionAst Expression,
     int StartPos,
     int EndPos
@@ -186,6 +190,7 @@ public sealed partial record AndPredicateExpressionAst(
 }
 
 public sealed partial record NotPredicateExpressionAst(
+    Literal Predicate,
     RuleExpressionAst Expression,
     int StartPos,
     int EndPos
@@ -214,7 +219,9 @@ public sealed partial record RuleRefExpressionAst(
 }
 
 public sealed partial record GroupExpressionAst(
+    Literal Open,
     RuleExpressionAst Expression,
+    Literal Close,
     int StartPos,
     int EndPos
 ) : RuleExpressionAst(StartPos, EndPos)

@@ -42,11 +42,7 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
     private Rule GenerateAnonymousAlternative(AnonymousAlternativeAst node)
     {
         var ruleName = node.RuleRef.ToString();
-
-        if (globalScope.FindTerminal(ruleName) is { } terminal)
-            return terminal.Terminal;
-
-        return new Ref(ruleName);
+        return globalScope.FindTerminal(ruleName) is { } terminal ? terminal.Terminal : (Rule)new Ref(ruleName);
     }
 
     private Rule GenerateExpression(RuleExpressionAst expression, string? name)
@@ -73,16 +69,14 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
     {
         var refName = node.Ref.ToString();
 
-        if (node.Precedence != null)
-            return new ReqRef(
+        return node.Precedence != null
+            ? new ReqRef(
                 refName,
                 Precedence: node.PrecedenceSymbol.AssertIsNonNull().BindingPower,
-                Right: node.Precedence.Associativity != null);
-
-        if (globalScope.FindTerminal(refName) is { } terminal)
-            return terminal.Terminal;
-
-        return new Ref(refName, Kind: name);
+                Right: node.Precedence.Associativity != null)
+            : globalScope.FindTerminal(refName) is { } terminal
+                ? terminal.Terminal
+                : (Rule)new Ref(refName, Kind: name);
     }
 
     private Rule GenerateSequenceExpression(SequenceExpressionAst node, string? name)
@@ -104,32 +98,23 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
 
     private Rule GenerateNamedExpression(NamedExpressionAst node) => GenerateExpression(node.Expression, node.Name.Value);
 
-    private Rule GenerateAndPredicate(AndPredicateExpressionAst node)
-    {
-        var predicate = GenerateExpression(node.Expression, name: null);
-        return new AndPredicate(predicate);
-    }
+    private Rule GenerateAndPredicate(AndPredicateExpressionAst node) =>
+        new AndPredicate(GenerateExpression(node.Expression, name: null));
 
-    private Rule GenerateNotPredicate(NotPredicateExpressionAst node)
-    {
-        var predicate = GenerateExpression(node.Expression, name: null);
-        return new NotPredicate(predicate);
-    }
+    private Rule GenerateNotPredicate(NotPredicateExpressionAst node) =>
+        new NotPredicate(GenerateExpression(node.Expression, name: null));
 
     private Rule GenerateSeparatedList(SeparatedListExpressionAst node, string? name)
     {
         var element = GenerateExpression(node.Element, name: null);
         var separator = GenerateExpression(node.Separator, name: null);
-
         var endBehavior = node.Modifier?.Value switch
         {
             "?" => SeparatorEndBehavior.Optional,
             "!" => SeparatorEndBehavior.Required,
             _ => SeparatorEndBehavior.Forbidden
         };
-
         var canBeEmpty = node.Count.Value == "*";
-
         return new SeparatedList(element, separator, Kind: name.AssertIsNonNull(), endBehavior, canBeEmpty);
     }
 }

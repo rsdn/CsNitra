@@ -75,7 +75,6 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
                 "Usings" => ProcessAstList<UsingAst>(children, startPos, endPos),
                 "Statements" => ProcessAstList<StatementAst>(children, startPos, endPos),
                 "Alternatives" => ProcessAstList<AlternativeAst>(children, startPos, endPos),
-                "Elem" => NamedAlternative(children, startPos, endPos),
                 _ => throw new InvalidOperationException($"Unknown SeqNode kind: {node.Kind}"),
             };
         }
@@ -86,11 +85,6 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
 
         if (node.Kind == "Grammar" && _currentResult is GrammarAst grammar)
             Result = grammar;
-    }
-
-    private CsNitraAst NamedAlternative(List<CsNitraAst> children, int startPos, int endPos)
-    {
-        throw new NotImplementedException();
     }
 
     private CsNitraAst ProcessAssociativity(List<CsNitraAst> children, int startPos, int endPos) => children switch
@@ -144,20 +138,8 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
 
     private CsNitraAst ProcessRuleStatement(List<CsNitraAst> children, int startPos, int endPos) => children switch
     {
-        [
-            Identifier ruleName,
-            Literal equals,
-            AstList<AlternativeAst> alternatives,
-            Literal semicolon
-        ] =>
-            new RuleStatementAst(
-                ruleName,
-                equals,
-                alternatives.Items,
-                semicolon,
-                StartPos: startPos,
-                EndPos: endPos
-            ),
+        [Identifier ruleName, Literal equals, AstList<AlternativeAst> alternatives, Literal semicolon] =>
+            new RuleStatementAst(ruleName, equals, alternatives.Items, semicolon, StartPos: startPos, EndPos: endPos),
         _ => throw new InvalidOperationException($"Invalid rule statement: [{string.Join(", ", children)}]")
     };
 
@@ -182,43 +164,29 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
         return result;
     }
 
-    private CsNitraAst ProcessSequenceExpression(List<CsNitraAst> children, int startPos, int endPos)
+    private CsNitraAst ProcessSequenceExpression(List<CsNitraAst> children, int startPos, int endPos) => children switch
     {
-        var left = children[0] as RuleExpressionAst
-            ?? throw new InvalidOperationException("Expected left expression in Sequence");
+        [RuleExpressionAst left, RuleExpressionAst right] => new SequenceExpressionAst(left, right, startPos, endPos),
+        _ => throw new InvalidOperationException("Expected Sequence")
+    };
 
-        var right = children[1] as RuleExpressionAst
-            ?? throw new InvalidOperationException("Expected right expression in Sequence");
-
-        return new SequenceExpressionAst(left, right, startPos, endPos);
-    }
-
-    private CsNitraAst ProcessNamedExpression(List<CsNitraAst> children, int startPos, int endPos)
+    private CsNitraAst ProcessNamedExpression(List<CsNitraAst> children, int startPos, int endPos) => children switch
     {
-        var name = children[0] as Identifier
-            ?? throw new InvalidOperationException("Expected name in Named expression");
+        [Identifier name, Literal eq, RuleExpressionAst expression] => new NamedExpressionAst(name, eq, expression, startPos, endPos),
+        _ => throw new InvalidOperationException("Expected Named expression")
+    };
 
-        var expression = children[2] as RuleExpressionAst
-            ?? throw new InvalidOperationException("Expected expression in Named expression");
-
-        return new NamedExpressionAst(name, expression, startPos, endPos);
-    }
-
-    private CsNitraAst ProcessOptionalExpression(List<CsNitraAst> children, int startPos, int endPos)
+    private CsNitraAst ProcessOptionalExpression(List<CsNitraAst> children, int startPos, int endPos) => children switch
     {
-        var expression = children[0] as RuleExpressionAst
-            ?? throw new InvalidOperationException("Expected expression in Optional");
+        [RuleExpressionAst expression, Literal op] => new OptionalExpressionAst(expression, op, startPos, endPos),
+        _ => throw new InvalidOperationException("Expected expression in Optional")
+    };
 
-        return new OptionalExpressionAst(expression, startPos, endPos);
-    }
-
-    private CsNitraAst ProcessOftenMissedExpression(List<CsNitraAst> children, int startPos, int endPos)
+    private CsNitraAst ProcessOftenMissedExpression(List<CsNitraAst> children, int startPos, int endPos) => children switch
     {
-        var expression = children[0] as RuleExpressionAst
-            ?? throw new InvalidOperationException("Expected expression in OftenMissed");
-
-        return new OftenMissedExpressionAst(expression, startPos, endPos);
-    }
+        [RuleExpressionAst expression, Literal op] => new OftenMissedExpressionAst(expression, op, startPos, endPos),
+        _ => throw new InvalidOperationException("Expected expression in OftenMissed")
+    };
 
     private CsNitraAst ProcessOneOrManyExpression(List<CsNitraAst> children, int startPos, int endPos) => children switch
     {
@@ -232,21 +200,17 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
         _ => throw new InvalidOperationException("Expected expression in ZeroOrMany"),
     };
 
-    private CsNitraAst ProcessAndPredicateExpression(List<CsNitraAst> children, int startPos, int endPos)
+    private CsNitraAst ProcessAndPredicateExpression(List<CsNitraAst> children, int startPos, int endPos) => children switch
     {
-        var expression = children[1] as RuleExpressionAst
-            ?? throw new InvalidOperationException("Expected expression in AndPredicate");
+        [Literal predicate, RuleExpressionAst expression] => new AndPredicateExpressionAst(predicate, expression, startPos, endPos),
+        _ => throw new InvalidOperationException("Expected expression in AndPredicate"),
+    };
 
-        return new AndPredicateExpressionAst(expression, startPos, endPos);
-    }
-
-    private CsNitraAst ProcessNotPredicateExpression(List<CsNitraAst> children, int startPos, int endPos)
+    private CsNitraAst ProcessNotPredicateExpression(List<CsNitraAst> children, int startPos, int endPos) => children switch
     {
-        var expression = children[1] as RuleExpressionAst
-            ?? throw new InvalidOperationException("Expected expression in NotPredicate");
-
-        return new NotPredicateExpressionAst(expression, startPos, endPos);
-    }
+        [Literal predicate, RuleExpressionAst expression] => new NotPredicateExpressionAst(predicate, expression, startPos, endPos),
+        _ => throw new InvalidOperationException("Expected expression in NotPredicate"),
+    };
 
     private CsNitraAst ProcessRuleRefExpression(List<CsNitraAst> children, int startPos, int endPos) => children switch
     {
@@ -262,13 +226,11 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
         _ => throw new InvalidOperationException($"Expected precedence, associativity. But fond [{string.Join(", ", children.Select(x => x!.ToString()))}]")
     };
 
-    private CsNitraAst ProcessGroupExpression(List<CsNitraAst> children, int startPos, int endPos)
+    private CsNitraAst ProcessGroupExpression(List<CsNitraAst> children, int startPos, int endPos) => children switch
     {
-        var expression = children[1] as RuleExpressionAst
-            ?? throw new InvalidOperationException("Expected expression in Group");
-
-        return new GroupExpressionAst(expression, startPos, endPos);
-    }
+        [Literal open, RuleExpressionAst expression, Literal close] => new GroupExpressionAst(open, expression, close, startPos, endPos),
+        _ => throw new InvalidOperationException("Expected expression in NotPredicate"),
+    };
 
     private CsNitraAst ProcessSeparatedListExpression(List<CsNitraAst> children, int startPos, int endPos) => children switch
     {
@@ -361,9 +323,6 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
     private QualifiedIdentifierAst ProcessQualifiedIdentifier(ListNode node)
     {
         var (parts, delimiters) = ProcessAstDelimitedList<Identifier, Literal>(node);
-        if (parts.Count == 0)
-        {
-        }
         return new QualifiedIdentifierAst(parts, delimiters, node.StartPos, node.EndPos);
     }
 
@@ -378,9 +337,7 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
     // Helper classes for visitor
     private record AstList<T>(List<T> Items, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos) where T : CsNitraAst
     {
-        public override void Accept(IAstVisitor visitor)
-        {
-        }
+        public override void Accept(IAstVisitor visitor) { }
     }
 
     private record StringValue(string Value, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos)
