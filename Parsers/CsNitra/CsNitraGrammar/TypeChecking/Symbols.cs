@@ -27,6 +27,11 @@ public sealed partial record PrecedenceSymbol(
     public override string ToString() => $"{Name.Value}={BindingPower}";
 }
 
+public sealed partial record PrecedenceDependency(
+    IReadOnlyList<Identifier> Identifiers,
+    SourceSpan Location
+);
+
 public sealed partial record RuleSymbol(
     Identifier Name,
     Source Source,

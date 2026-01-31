@@ -125,8 +125,3 @@ public sealed partial record TypeChecker(Source source, IEnumerable<Terminal> te
         grammar.Accept(new SymbolReferenceResolver(_context));
 }
 
-public sealed partial record PrecedenceDependency(
-    IReadOnlyList<Identifier> Identifiers,
-    SourceSpan Location
-);
-
