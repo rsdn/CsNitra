@@ -3,7 +3,7 @@ global using CharsRef = System.ReadOnlySpan<char>;
 internal static class ReadOnlySpanExtensions
 {
     public static CharsRef AsSpan(this string text, int start, int length) => text.Substring(start, length);
-    public static CharsRef AsSpan(this string text, int start) => text.Substring(start);
+    public static CharsRef AsSpan(this string text, int start) => text[start..];
 
 }
 
@@ -139,18 +139,17 @@ namespace System.Diagnostics.CodeAnalysis
     internal sealed class DoesNotReturnAttribute : Attribute { }
 
     /// <summary>Specifies that the method will not return if the associated Boolean parameter is passed the specified value.</summary>
+    /// <remarks>Initializes the attribute with the specified parameter value.</remarks>
+    /// <param name="parameterValue">
+    /// The condition parameter value. Code after the method will be considered unreachable by diagnostics if the argument to
+    /// the associated parameter matches this value.
+    /// </param>
     [AttributeUsage(AttributeTargets.Parameter, Inherited = false)]
-    internal sealed class DoesNotReturnIfAttribute : Attribute
+    internal sealed class DoesNotReturnIfAttribute(bool parameterValue) : Attribute
     {
-        /// <summary>Initializes the attribute with the specified parameter value.</summary>
-        /// <param name="parameterValue">
-        /// The condition parameter value. Code after the method will be considered unreachable by diagnostics if the argument to
-        /// the associated parameter matches this value.
-        /// </param>
-        public DoesNotReturnIfAttribute(bool parameterValue) => ParameterValue = parameterValue;
 
         /// <summary>Gets the condition parameter value.</summary>
-        public bool ParameterValue { get; }
+        public bool ParameterValue { get; } = parameterValue;
     }
 }
 
@@ -279,7 +278,7 @@ namespace System
 
         /// <summary>Indicates whether the current Index object is equal to another object of the same type.</summary>
         /// <param name="value">An object to compare with this object</param>
-        public override bool Equals(object? value) => value is Index && _value == ((Index)value)._value;
+        public override bool Equals(object? value) => value is Index index && _value == index._value;
 
         /// <summary>Indicates whether the current Index object is equal to another Index object.</summary>
         /// <param name="other">An object to compare with this object</param>
@@ -322,22 +321,16 @@ namespace System
     /// int[] subArray2 = someArray[1..^0]; // { 2, 3, 4, 5 }
     /// </code>
     /// </remarks>
-    internal readonly struct Range : IEquatable<Range>
+    /// <remarks>Construct a Range object using the start and end indexes.</remarks>
+    /// <param name="start">Represent the inclusive start index of the range.</param>
+    /// <param name="end">Represent the exclusive end index of the range.</param>
+    internal readonly struct Range(Index start, Index end) : IEquatable<Range>
     {
         /// <summary>Represent the inclusive start index of the Range.</summary>
-        public Index Start { get; }
+        public Index Start { get; } = start;
 
         /// <summary>Represent the exclusive end index of the Range.</summary>
-        public Index End { get; }
-
-        /// <summary>Construct a Range object using the start and end indexes.</summary>
-        /// <param name="start">Represent the inclusive start index of the range.</param>
-        /// <param name="end">Represent the exclusive end index of the range.</param>
-        public Range(Index start, Index end)
-        {
-            Start = start;
-            End = end;
-        }
+        public Index End { get; } = end;
 
         /// <summary>Indicates whether the current Range object is equal to another object of the same type.</summary>
         /// <param name="value">An object to compare with this object</param>
@@ -394,13 +387,13 @@ namespace System
         }
 
         /// <summary>Create a Range object starting from start index to the end of the collection.</summary>
-        public static Range StartAt(Index start) => new Range(start, Index.End);
+        public static Range StartAt(Index start) => new(start, Index.End);
 
         /// <summary>Create a Range object starting from first element in the collection to the end Index.</summary>
-        public static Range EndAt(Index end) => new Range(Index.Start, end);
+        public static Range EndAt(Index end) => new(Index.Start, end);
 
         /// <summary>Create a Range object starting from first element to the end.</summary>
-        public static Range All => new Range(Index.Start, Index.End);
+        public static Range All => new(Index.Start, Index.End);
 
         /// <summary>Calculate the start offset and length of range object using a collection length.</summary>
         /// <param name="length">The length of the collection that the range will be used with. length has to be a positive value.</param>
@@ -496,7 +489,7 @@ namespace System.Collections.Generic
         /// <returns>An object that acts as a read-only wrapper around the current <see cref="IList{T}"/>.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="list"/> is null.</exception>
         public static ReadOnlyCollection<T> AsReadOnly<T>(this IList<T> list) =>
-            new ReadOnlyCollection<T>(list);
+            new(list);
 
         /// <summary>
         /// Returns a read-only <see cref="ReadOnlyDictionary{TKey, TValue}"/> wrapper
@@ -508,6 +501,6 @@ namespace System.Collections.Generic
         /// <returns>An object that acts as a read-only wrapper around the current <see cref="IDictionary{TKey, TValue}"/>.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="dictionary"/> is null.</exception>
         public static ReadOnlyDictionary<TKey, TValue> AsReadOnly<TKey, TValue>(this IDictionary<TKey, TValue> dictionary) where TKey : notnull =>
-            new ReadOnlyDictionary<TKey, TValue>(dictionary);
+            new(dictionary);
     }
 }

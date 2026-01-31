@@ -122,6 +122,6 @@ public class NfaBuilder
         return (start, subEnd);
     }
 
-    private NfaState CreateState() => new NfaState(_stateId++);
-    private NfaState CreateFinalState() => new NfaState(_stateId++) { IsFinal = true };
+    private NfaState CreateState() => new(_stateId++);
+    private NfaState CreateFinalState() => new(_stateId++) { IsFinal = true };
 }

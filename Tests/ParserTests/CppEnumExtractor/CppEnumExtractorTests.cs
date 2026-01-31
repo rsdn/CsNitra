@@ -9,7 +9,7 @@ namespace CppSimplifiedParser.Tests;
 [TestClass]
 public class CppParserTests
 {
-    private readonly CppParser _parser = new CppParser();
+    private readonly CppParser _parser = new();
 
     [TestMethod]
     public void Parse_SimpleEnum_ReturnsEnumDeclaration()

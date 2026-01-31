@@ -3,17 +3,14 @@ using ExtensibleParser;
 
 namespace Regex;
 
-public class RegexParser
+public class RegexParser(string pattern)
 {
-    private readonly string _pattern;
     private int _pos;
-
-    public RegexParser(string pattern) => _pattern = pattern;
 
     public RegexNode Parse()
     {
         var node = ParseAlternation();
-        if (_pos < _pattern.Length)
+        if (_pos < pattern.Length)
             throw new FormatException($"Unexpected char at position {_pos}");
         return node;
     }
@@ -117,7 +114,7 @@ public class RegexParser
                 var firstPos = _pos;
                 var first = parse();
 
-                if (Peek() == '-' && _pos + 1 < _pattern.Length && _pattern[_pos + 1] != ']')
+                if (Peek() == '-' && _pos + 1 < pattern.Length && pattern[_pos + 1] != ']')
                 {
                     Accept('-');
                     var secodPos = _pos;
@@ -162,19 +159,19 @@ public class RegexParser
         return classes.Count == 1 ? classes[0] : new RegexAlternation(classes);
     }
 
-    private char? Peek() => _pos < _pattern.Length ? _pattern[_pos] : null;
+    private char? Peek() => _pos < pattern.Length ? pattern[_pos] : null;
     private char Consume()
     {
         Guard.IsTrue(_pos >= 0);
-        Guard.IsTrue(_pos < _pattern.Length);
-        return _pattern[_pos++];
+        Guard.IsTrue(_pos < pattern.Length);
+        return pattern[_pos++];
     }
 
     private char AceptChar()
     {
-        if (_pos >= _pattern.Length)
+        if (_pos >= pattern.Length)
             throw new FormatException("Unexpected end of pattern");
-        return _pattern[_pos++];
+        return pattern[_pos++];
     }
 
     private void Accept(char expected) => Guard.AreEqual(expected: expected, actual: Consume());

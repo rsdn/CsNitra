@@ -57,16 +57,15 @@ public readonly record struct Result
     public Result WithPrefixOnly(Result result) => new(result.Node, result.NewPos, result.MaxFailPos);
 
 #pragma warning disable CS0618 // Type or member is obsolete
-    public override string ToString() => Parser.Input == null
-        ? NewPos < 0 ? $"Failure({~NewPos})" : $"Success(NewPos={NewPos}, {Node})"
-        : ToString(Parser.Input);
-#pragma warning disable CS0618 // Type or member is obsolete
-
-    public string ToString(string input)
+    public override string ToString()
     {
-        return NewPos < 0 ? $"Failure({~NewPos})" : success((Node)Node!);
-        string success(Node node) => $"Success([{node.StartPos}-{node.EndPos}), {node.Debug()})";
+        return Parser.Input == null
+            ? NewPos < 0 ? $"Failure({~NewPos})" : $"Success(NewPos={NewPos}, {Node})"
+            : toString(NewPos, (Node)Node!);
+        static string toString(int newPos, Node node) =>
+            newPos < 0 ? $"Failure({~newPos})" : $"Success([{node.StartPos}-{node.EndPos}), {node.Debug()})";
     }
+#pragma warning disable CS0618 // Type or member is obsolete
 
     public static Result Success(ISyntaxNode result, int newPos, int maxFailPos) => new(result, newPos, maxFailPos);
     public static Result Failure(int failPos) => new(null, newPos: -1, maxFailPos: failPos);

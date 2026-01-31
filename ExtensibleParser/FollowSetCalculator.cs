@@ -93,7 +93,7 @@ public class FollowSetCalculator
                             var followA = _followSets.GetValueOrDefault(aRef.RuleName, new HashSet<Terminal>());
 
                             var beforeCount = followA.Count;
-                            followA.UnionWith(firstBeta.Where(t => !(t is EmptyTerminal)));
+                            followA.UnionWith(firstBeta.Where(t => t is not EmptyTerminal));
 
                             if (firstBeta.Any(t => t is EmptyTerminal))
                                 followA.UnionWith(_followSets.GetValueOrDefault(ruleName, new HashSet<Terminal>()));
@@ -117,7 +117,7 @@ public class FollowSetCalculator
         {
             var rule = sequence[i];
             var ruleFirst = GetFirstForElement(rule);
-            result.UnionWith(ruleFirst.Where(t => !(t is EmptyTerminal)));
+            result.UnionWith(ruleFirst.Where(t => t is not EmptyTerminal));
             if (!ruleFirst.Any(t => t is EmptyTerminal))
                 break;
             if (i == sequence.Count - 1)
