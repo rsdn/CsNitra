@@ -128,7 +128,7 @@ public sealed partial record SequenceExpressionAst(
 }
 
 public sealed partial record NamedExpressionAst(
-    string Name,
+    Identifier Name,
     RuleExpressionAst Expression,
     int StartPos,
     int EndPos

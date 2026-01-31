@@ -57,8 +57,8 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
             NamedExpressionAst named => GenerateNamedExpression(named),
             OptionalExpressionAst opt => new Optional(GenerateExpression(opt.Expression, name: null), name),
             OftenMissedExpressionAst om => new OftenMissed(GenerateExpression(om.Expression, name: null), name ?? "Error"),
-            OneOrManyExpressionAst oneOrMany => new OneOrMany(GenerateExpression(oneOrMany.Expression, name: null), name.AssertIsNonNull()),
-            ZeroOrManyExpressionAst zeroOrMany => new ZeroOrMany(GenerateExpression(zeroOrMany.Expression, name: null), name.AssertIsNonNull()),
+            OneOrManyExpressionAst oneOrMany => new OneOrMany(GenerateExpression(oneOrMany.Expression, name: null), Kind: name.AssertIsNonNull()),
+            ZeroOrManyExpressionAst zeroOrMany => new ZeroOrMany(GenerateExpression(zeroOrMany.Expression, name: null), Kind: name.AssertIsNonNull()),
             AndPredicateExpressionAst and => GenerateAndPredicate(and),
             NotPredicateExpressionAst not => GenerateNotPredicate(not),
             LiteralAst str => new EP.Literal(str.Value, name),
@@ -101,7 +101,7 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
         return new Seq([left, right], name.AssertIsNonNull());
     }
 
-    private Rule GenerateNamedExpression(NamedExpressionAst node) => GenerateExpression(node.Expression, node.Name);
+    private Rule GenerateNamedExpression(NamedExpressionAst node) => GenerateExpression(node.Expression, node.Name.Value);
 
     private Rule GenerateAndPredicate(AndPredicateExpressionAst node)
     {

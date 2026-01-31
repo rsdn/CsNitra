@@ -356,7 +356,7 @@ public sealed partial record TypeChecker
         }
 
         using var _ = _context.EnterScope(node);
-        CheckRuleExpression(node.Expression);
+        CheckRuleExpression(node.Expression, hasName: true);
     }
 
     private void CheckAlternative(AlternativeAst alternative)
@@ -365,7 +365,7 @@ public sealed partial record TypeChecker
         {
             case NamedAlternativeAst named:
                 using (_context.EnterScope(named))
-                    CheckRuleExpression(named.Expression);
+                    CheckRuleExpression(named.Expression, hasName: true);
                 break;
             case AnonymousAlternativeAst anon:
                 CheckRuleReference(anon.RuleRef);
@@ -373,45 +373,70 @@ public sealed partial record TypeChecker
         }
     }
 
-    private void CheckRuleExpression(RuleExpressionAst expression)
+    private void CheckRuleExpression(RuleExpressionAst expression, bool hasName = false)
     {
         switch (expression)
         {
-            case RuleRefExpressionAst ruleRef:
-                CheckRuleRefExpression(ruleRef);
+            case RuleRefExpressionAst node:
+                CheckRuleRefExpression(node);
                 break;
-            case SequenceExpressionAst seq:
-                CheckRuleExpression(seq.Left);
-                CheckRuleExpression(seq.Right);
+            case SequenceExpressionAst node:
+                if (!hasName)
+                    error(node, name: "Name");
+                CheckRuleExpression(node.Left, hasName: node.Left is SequenceExpressionAst);
+                CheckRuleExpression(node.Right, hasName: node.Left is SequenceExpressionAst);
                 break;
-            case NamedExpressionAst named:
-                CheckRuleExpression(named.Expression);
+            case NamedExpressionAst node:
+                if (node.Expression is NamedExpressionAst nested)
+                    _context.ReportError($"Nested name ({node.Name}={nested.Name}=...) assignment is not allowed", nested.Name);
+
+                CheckRuleExpression(node.Expression, hasName: true);
                 break;
-            case OptionalExpressionAst opt:
-                CheckRuleExpression(opt.Expression);
+            case OptionalExpressionAst node:
+                CheckRuleExpression(node.Expression, hasName: false);
                 break;
-            case OftenMissedExpressionAst om:
-                CheckRuleExpression(om.Expression);
+            case OftenMissedExpressionAst node:
+                CheckRuleExpression(node.Expression, hasName: false);
                 break;
-            case OneOrManyExpressionAst oneOrMany:
-                CheckRuleExpression(oneOrMany.Expression);
+            case OneOrManyExpressionAst node:
+                if (!hasName)
+                    error(node);
+                CheckRuleExpression(node.Expression, hasName: false);
                 break;
-            case ZeroOrManyExpressionAst zeroOrMany:
-                CheckRuleExpression(zeroOrMany.Expression);
+            case ZeroOrManyExpressionAst node:
+                if (!hasName)
+                    error(node);
+                CheckRuleExpression(node.Expression, hasName: false);
                 break;
-            case AndPredicateExpressionAst and:
-                CheckRuleExpression(and.Expression);
+            case AndPredicateExpressionAst node:
+                CheckRuleExpression(node.Expression, hasName: false);
                 break;
-            case NotPredicateExpressionAst not:
-                CheckRuleExpression(not.Expression);
+            case NotPredicateExpressionAst node:
+                CheckRuleExpression(node.Expression, hasName: false);
                 break;
-            case GroupExpressionAst group:
-                CheckRuleExpression(group.Expression);
+            case GroupExpressionAst node:
+                if (!hasName)
+                {
+                    error(node, name: "Name");
+                    CheckRuleExpression(node.Expression, hasName: true); // Suppressing the error message reoccurrence
+                    break;
+                }
+
+                CheckRuleExpression(node.Expression, hasName);
                 break;
-            case SeparatedListExpressionAst list:
-                CheckRuleExpression(list.Element);
-                CheckRuleExpression(list.Separator);
+            case SeparatedListExpressionAst node:
+                if (!hasName)
+                    error(node);
+                CheckRuleExpression(node.Element, hasName: false);
+                CheckRuleExpression(node.Separator, hasName: false);
                 break;
+        }
+
+        return;
+        void error(CsNitraAst node, string name = "Items")
+        {
+            var text = node.GetType().Name.Replace("ExpressionAst", "");
+            _context.ReportError($"{node} ({text}) expression must have a name (e.g., Items={node})", node);
         }
     }
 
@@ -449,9 +474,6 @@ public sealed partial record TypeChecker
     }
 }
 
-/// <summary>
-/// Вспомогательный класс для разрешения ссылок на символы в AST
-/// </summary>
 internal sealed partial record SymbolReferenceResolver
 {
     private readonly TypeCheckingContext _context;

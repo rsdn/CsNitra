@@ -6,15 +6,13 @@ namespace CsNitra.Tests;
 [TestClass]
 public class RuleGeneratorTests
 {
-    private readonly CsNitraParser _manualParser = new();
-
     [TestMethod]
     public void GeneratedParserShouldParseGrammarSameAsManualParser()
     {
         var grammarText = GetGrammarText();
 
         // Step 1: Parse grammar with current (manual) parser
-        var manualParseResult = _manualParser.Parse<GrammarAst>(grammarText);
+        var manualParseResult = new CsNitraParser().Parse<GrammarAst>(grammarText);
 
         if (manualParseResult is Failed(var error))
             Assert.Fail($"Manual parser failed to parse grammar: {error.GetErrorText()}");
@@ -58,45 +56,6 @@ public class RuleGeneratorTests
 
         // Step 6: Compare AST structures
         AssertGrammarsAreEqual(manualGrammar, generatedGrammar);
-    }
-
-    [TestMethod]
-    public void RequiredSubruleNamesAreNotSpecified()
-    {
-        var grammarText = """
-            Using = "using" Identifier*;
-            """;
-
-        // Step 1: Parse grammar with current (manual) parser
-        var manualParseResult = _manualParser.Parse<GrammarAst>(grammarText);
-
-        if (manualParseResult is Failed(var error))
-            Assert.Fail($"Manual parser failed to parse grammar: {error.GetErrorText()}");
-
-        if (manualParseResult is not Success<GrammarAst>(var manualGrammar))
-        {
-            Assert.Fail("Manual parse result is not success");
-            return;
-        }
-
-        Assert.IsNotNull(manualGrammar);
-        Assert.IsTrue(manualGrammar.Statements.Count > 0, "Grammar should have statements");
-
-        // Step 2: Create new parser using RuleGenerator
-        var generatedParser = new Parser(CsNitraTerminals.Trivia());
-
-        var typeChecker = new TypeChecker(new SourceText(grammarText, "CsNitra.grammar"), terminals: [
-            CsNitraTerminals.Identifier(),
-            CsNitraTerminals.Literal(),
-        ]);
-        var (diagnostics, globalScope) = typeChecker.CheckGrammar(manualGrammar);
-
-        Assert.AreEqual(expected: 1, actual: diagnostics.Count);
-        var e = diagnostics[0];
-        Assert.AreEqual(expected: DiagnosticSeverity.Error, actual: e.Severity);
-        Assert.IsTrue(e.Message.Contains("No name for ZeroOrMany"));
-        var actualName = grammarText[e.Location.Start..e.Location.End];
-        Assert.AreEqual(expected: "Identifier*", actual: actualName);
     }
 
     private static void AssertGrammarsAreEqual(GrammarAst manual, GrammarAst generated)

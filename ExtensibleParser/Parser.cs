@@ -1,9 +1,9 @@
 ﻿#nullable enable
 
+using Diagnostics;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
-using Diagnostics;
 
 namespace ExtensibleParaser;
 
@@ -103,9 +103,9 @@ public class Parser(Terminal trivia, Log? log = null)
             }
 
             TdoppRules[ruleName] = new TdoppRule(
-                new Ref(ruleName), 
-                Kind: ruleName, 
-                prefix.ToArray(), 
+                new Ref(ruleName),
+                Kind: ruleName,
+                prefix.ToArray(),
                 postfix.ToArray(),
                 recoveryPrefix.ToArray(),
                 recoveryPostfix.ToArray()
@@ -365,9 +365,9 @@ public class Parser(Terminal trivia, Log? log = null)
         int startPos,
         string input)
     {
-        var elements = new List<ISyntaxNode> { currentResult };
         var newPos = startPos;
         var maxFailPos = startPos;
+        List<ISyntaxNode>? elements = null;
 
         foreach (var element in postfix.Seq.Elements)
         {
@@ -382,16 +382,21 @@ public class Parser(Terminal trivia, Log? log = null)
 
             // Skip predicate nodes as they are not part of the AST
             if (node is not PredicateNode)
-                elements.Add(node);
+            {
+                if (elements is null)
+                    elements = new List<ISyntaxNode> { currentResult, node };
+                else
+                    elements.Add(node);
+            }
 
             newPos = parsedPos;
         }
 
         // Optimization: if there is only one element (currentResult), return it directly instead of wrapping in SeqNode
-        if (elements.Count == 1)
+        if (elements!.Count == 1)
             return Result.Success(elements[0], newPos, maxFailPos);
 
-        return Result.Success(new SeqNode(postfix.Seq.Kind ?? "Seq", elements, startPos, newPos), newPos, maxFailPos);
+        return Result.Success(new SeqNode(postfix.Seq.Kind ?? "Seq", elements, currentResult.StartPos, newPos), newPos, maxFailPos);
     }
 
     private Result ParseAlternative(

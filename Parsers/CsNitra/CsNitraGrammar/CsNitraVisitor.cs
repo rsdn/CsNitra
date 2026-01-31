@@ -202,7 +202,7 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
         var expression = children[2] as RuleExpressionAst
             ?? throw new InvalidOperationException("Expected expression in Named expression");
 
-        return new NamedExpressionAst(name.Value, expression, startPos, endPos);
+        return new NamedExpressionAst(name, expression, startPos, endPos);
     }
 
     private CsNitraAst ProcessOptionalExpression(List<CsNitraAst> children, int startPos, int endPos)
