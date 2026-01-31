@@ -258,7 +258,7 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
     private CsNitraAst ProcessPrecedenceWithAssociativity(List<CsNitraAst> children, int startPos, int endPos) => children switch
     {
         [Literal colon, Identifier precedence, Some<CsNitraAst>(AssociativityAst associativity)] => new PrecedenceAst(colon, precedence, associativity, startPos, endPos),
-        [Literal colon, Identifier precedence, None] => new PrecedenceAst(colon, precedence, null, startPos, endPos),
+        [Literal colon, Identifier precedence, None] => new PrecedenceAst(colon, precedence, Associativity: null, startPos, endPos),
         _ => throw new InvalidOperationException($"Expected precedence, associativity. But fond [{string.Join(", ", children.Select(x => x!.ToString()))}]")
     };
 

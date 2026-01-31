@@ -249,7 +249,7 @@ public class Parser(Terminal trivia, Log? log = null)
         var prefixRules = isRecoveryPos ? tdoppRule.RecoveryPrefix : tdoppRule.Prefix;
         var maxFailPos = startPos;
 
-        _ruleStack.Push(new RuleStackEntry(ruleName, null, null, null, null));
+        _ruleStack.Push(new RuleStackEntry(ruleName, ParentRule: null, SeqIndex: null, AltIndex: null, LoopDepth: null));
 
         foreach (var prefix in prefixRules)
         {
