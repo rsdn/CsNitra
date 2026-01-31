@@ -2,20 +2,14 @@
 
 namespace CsNitra.TypeChecking;
 
-internal sealed class DeclarationCollectorVisitor : AstVisitor
+internal sealed class DeclarationCollectorVisitor(
+    TypeCheckingContext context,
+    List<PrecedenceDependency> precedenceDependencies
+) : AstVisitor
 {
-    private readonly TypeCheckingContext _context;
-    private readonly List<PrecedenceDependency> _precedenceDependencies;
-
-    public DeclarationCollectorVisitor(TypeCheckingContext context, List<PrecedenceDependency> precedenceDependencies)
-    {
-        _context = context;
-        _precedenceDependencies = precedenceDependencies;
-    }
-
     public override void Visit(PrecedenceStatementAst node)
     {
-        _precedenceDependencies.Add(new PrecedenceDependency(
+        precedenceDependencies.Add(new PrecedenceDependency(
             node.Precedences.ToList(),
             new SourceSpan(node.StartPos, node.EndPos)
         ));
@@ -23,13 +17,13 @@ internal sealed class DeclarationCollectorVisitor : AstVisitor
 
     public override void Visit(RuleStatementAst node)
     {
-        var symbol = new RuleSymbol(node.Name, _context.Source, node, null);
-        _context.GlobalScope.AddSymbol(symbol);
+        var symbol = new RuleSymbol(node.Name, context.Source, node, null);
+        context.GlobalScope.AddSymbol(symbol);
     }
 
     public override void Visit(SimpleRuleStatementAst node)
     {
-        var symbol = new RuleSymbol(node.Name, _context.Source, null, node);
-        _context.GlobalScope.AddSymbol(symbol);
+        var symbol = new RuleSymbol(node.Name, context.Source, null, node);
+        context.GlobalScope.AddSymbol(symbol);
     }
 }

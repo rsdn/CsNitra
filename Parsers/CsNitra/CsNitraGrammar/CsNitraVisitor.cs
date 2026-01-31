@@ -151,9 +151,10 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
             Literal semicolon
         ] =>
             new RuleStatementAst(
-                Name: ruleName,
-                Eq: equals,
-                Alternatives: alternatives.Items,
+                ruleName,
+                equals,
+                alternatives.Items,
+                semicolon,
                 StartPos: startPos,
                 EndPos: endPos
             ),

@@ -1,7 +1,7 @@
 ﻿using CsNitra.Ast;
 using ExtensibleParser;
 
-namespace CsNitra.Tests;
+namespace CsNitra;
 
 [TestClass]
 public class CsNitraTests

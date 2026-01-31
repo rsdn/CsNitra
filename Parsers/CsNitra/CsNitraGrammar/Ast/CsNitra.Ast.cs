@@ -67,6 +67,7 @@ public sealed partial record RuleStatementAst(
     Identifier Name,
     Literal Eq,
     IReadOnlyList<AlternativeAst> Alternatives,
+    Literal Semicolon,
     int StartPos,
     int EndPos
 ) : StatementAst(StartPos, EndPos)
