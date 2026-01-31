@@ -1,4 +1,5 @@
 ﻿using CsNitra.Ast;
+using CsNitra.TypeChecking;
 using ExtensibleParaser;
 
 namespace CsNitra;

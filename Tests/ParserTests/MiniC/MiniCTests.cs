@@ -91,7 +91,7 @@ public partial class MiniCTests
 
         _parser.Rules["Module"] = [new ZeroOrMany(new Ref("Function"), "ModuleFunctions")];
 
-        _parser.BuildTdoppRules("Module");
+        _parser.BuildTdoppRules();
     }
 
     [TestMethod]

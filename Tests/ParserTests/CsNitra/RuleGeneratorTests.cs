@@ -1,4 +1,5 @@
 ﻿using CsNitra.Ast;
+using CsNitra.TypeChecking;
 using ExtensibleParaser;
 
 namespace CsNitra.Tests;
@@ -35,7 +36,7 @@ public class RuleGeneratorTests
         ]);
 
         // Step 3: Complete building the generated parser
-        generatedParser.BuildTdoppRules("Grammar");
+        generatedParser.BuildTdoppRules();
 
         // Step 4: Test new parser on the same grammar
         var generatedParseResult = generatedParser.Parse(grammarText, startRule: "Grammar", out _);

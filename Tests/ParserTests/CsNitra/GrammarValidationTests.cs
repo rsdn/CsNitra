@@ -1,7 +1,8 @@
 using CsNitra.Ast;
+using CsNitra.TypeChecking;
 using ExtensibleParaser;
 
-namespace CsNitra.Tests;
+namespace CsNitra;
 
 [TestClass]
 public class GrammarValidationTests

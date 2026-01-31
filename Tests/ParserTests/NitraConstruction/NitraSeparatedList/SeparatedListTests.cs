@@ -45,7 +45,7 @@ public partial class SeparatedListTests
             Terminals.ErrorEmpty(),
         };
 
-        _parser.BuildTdoppRules("ExpRequired");
+        _parser.BuildTdoppRules();
     }
 
     // Optional

@@ -29,6 +29,35 @@ public interface IAstVisitor
     void Visit(Literal node);
 }
 
+public abstract class AstVisitor : IAstVisitor
+{
+    public virtual void Visit(GrammarAst node) { }
+    public virtual void Visit(OpenUsingAst node) { }
+    public virtual void Visit(AliasUsingAst node) { }
+    public virtual void Visit(QualifiedIdentifierAst node) { }
+    public virtual void Visit(PrecedenceStatementAst node) { }
+    public virtual void Visit(RuleStatementAst node) { }
+    public virtual void Visit(SimpleRuleStatementAst node) { }
+    public virtual void Visit(NamedAlternativeAst node) { }
+    public virtual void Visit(AnonymousAlternativeAst node) { }
+    public virtual void Visit(SequenceExpressionAst node) { }
+    public virtual void Visit(NamedExpressionAst node) { }
+    public virtual void Visit(OptionalExpressionAst node) { }
+    public virtual void Visit(OftenMissedExpressionAst node) { }
+    public virtual void Visit(OneOrManyExpressionAst node) { }
+    public virtual void Visit(ZeroOrManyExpressionAst node) { }
+    public virtual void Visit(AndPredicateExpressionAst node) { }
+    public virtual void Visit(NotPredicateExpressionAst node) { }
+    public virtual void Visit(LiteralAst node) { }
+    public virtual void Visit(RuleRefExpressionAst node) { }
+    public virtual void Visit(GroupExpressionAst node) { }
+    public virtual void Visit(SeparatedListExpressionAst node) { }
+    public virtual void Visit(AssociativityAst node) { }
+    public virtual void Visit(PrecedenceAst node) { }
+    public virtual void Visit(Identifier node) { }
+    public virtual void Visit(Literal node) { }
+}
+
 public abstract partial record CsNitraAst
 {
     public abstract void Accept(IAstVisitor visitor);

@@ -117,7 +117,7 @@ public partial class CsNitraParser
         // Count = "+" | "*";
         _parser.Rules["Count"] = [new Literal("+"), new Literal("*")];
 
-        _parser.BuildTdoppRules("Grammar");
+        _parser.BuildTdoppRules();
     }
 
     public ParseResult Parse<T>(string input) where T : Ast.CsNitraAst

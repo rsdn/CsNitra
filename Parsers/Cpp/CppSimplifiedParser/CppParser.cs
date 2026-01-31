@@ -95,7 +95,7 @@ public class CppParser
             ], "EnumMember")
         ];
 
-        _parser.BuildTdoppRules("Program");
+        _parser.BuildTdoppRules();
     }
 
     public ParseResult Parse(string input, string startRule = "Program")

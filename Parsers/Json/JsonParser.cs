@@ -46,7 +46,7 @@ public class JsonParser
             JsonTerminals.Null()
         ];
 
-        _parser.BuildTdoppRules("Json");
+        _parser.BuildTdoppRules();
     }
 
     public JsonAst Parse(string input)

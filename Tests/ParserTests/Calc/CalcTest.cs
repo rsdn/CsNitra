@@ -71,7 +71,7 @@ public class CalcTests
             new Seq([new Literal("-"), new ReqRef("Expr", Precedence: 100)], Kind: "Neg"),
         };
 
-        _parser.BuildTdoppRules("Expr");
+        _parser.BuildTdoppRules();
     }
 
     [TestMethod] public void TestSimpleAddition() => TestExpression("1+2", "(1 + 2)", 3);

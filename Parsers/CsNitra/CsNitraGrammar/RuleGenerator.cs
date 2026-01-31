@@ -4,6 +4,7 @@ using EP = ExtensibleParaser;
 namespace CsNitra;
 
 using Ast;
+using CsNitra.TypeChecking;
 
 public sealed class RuleGenerator(Scope globalScope, Parser parser)
 {
