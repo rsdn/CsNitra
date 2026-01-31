@@ -140,7 +140,7 @@ namespace TerminalGenerator
             {
                 // Генерируем полный код класса
                 return $$"""
-                        using ExtensibleParaser;
+                        using ExtensibleParser;
                         
                         namespace {{namespaceName}};
 

@@ -1,5 +1,5 @@
 ﻿#nullable enable
-using ExtensibleParaser;
+using ExtensibleParser;
 
 namespace Regex;
 

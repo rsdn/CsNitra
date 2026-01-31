@@ -1,6 +1,6 @@
-﻿using ExtensibleParaser;
+﻿using ExtensibleParser;
 
-namespace CppEnumExtractor;
+namespace CppSimplifiedParser;
 
 public class CppVisitor(string input) : ISyntaxVisitor
 {
@@ -17,7 +17,7 @@ public class CppVisitor(string input) : ISyntaxVisitor
             "Identifier" => new Identifier(value),
             "EnumExpression" => new EnumExpr(value.Trim()),
             "AnyLine" => new SkippedLine(),
-            "class" => new CppEnumExtractor.Keyword("class"),
+            "class" => new CppSimplifiedParser.Keyword("class"),
             _ => null
         };
     }

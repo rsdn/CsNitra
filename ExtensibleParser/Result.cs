@@ -1,7 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 
-namespace ExtensibleParaser;
+namespace ExtensibleParser;
 
 [DebuggerTypeProxy(typeof(DebugView))]
 public readonly record struct Result

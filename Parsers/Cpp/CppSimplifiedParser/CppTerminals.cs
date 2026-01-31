@@ -1,6 +1,6 @@
-﻿using ExtensibleParaser;
+﻿using ExtensibleParser;
 
-namespace CppEnumExtractor;
+namespace CppSimplifiedParser;
 
 // ==================== Terminals ====================
 [TerminalMatcher]

@@ -1,7 +1,7 @@
 ﻿#nullable enable
 
 using Diagnostics;
-using ExtensibleParaser;
+using ExtensibleParser;
 using NitraConstruction.Common;
 using System.Diagnostics;
 using Tests.Extensions;

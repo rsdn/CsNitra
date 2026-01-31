@@ -3,7 +3,7 @@
 namespace Calc;
 
 using Diagnostics;
-using ExtensibleParaser;
+using ExtensibleParser;
 
 using System.Diagnostics;
 using System.Globalization;

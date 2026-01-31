@@ -1,5 +1,5 @@
-﻿using ExtensibleParaser;
-using EP = ExtensibleParaser;
+﻿using ExtensibleParser;
+using EP = ExtensibleParser;
 
 namespace CsNitra;
 

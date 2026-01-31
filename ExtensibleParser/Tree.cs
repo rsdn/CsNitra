@@ -1,6 +1,6 @@
 ﻿using System.Diagnostics;
 
-namespace ExtensibleParaser;
+namespace ExtensibleParser;
 
 [DebuggerTypeProxy(typeof(TreeDebugView))]
 public sealed record Tree(string Input, object Element)

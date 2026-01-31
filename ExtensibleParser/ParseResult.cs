@@ -1,4 +1,4 @@
-﻿namespace ExtensibleParaser;
+﻿namespace ExtensibleParser;
 
 public abstract record ParseResult
 {
@@ -11,7 +11,7 @@ public sealed record Success<T>(T Program) : ParseResult
     public override bool IsSuccess => true;
 }
 
-public sealed record Failed(ExtensibleParaser.FatalError ErrorInfo) : ParseResult
+public sealed record Failed(ExtensibleParser.FatalError ErrorInfo) : ParseResult
 {
     public override bool IsSuccess => false;
 }

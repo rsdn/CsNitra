@@ -1,4 +1,4 @@
-﻿namespace ExtensibleParaser;
+﻿namespace ExtensibleParser;
 
 [AttributeUsage(AttributeTargets.Class)]
 public class TerminalMatcherAttribute : Attribute

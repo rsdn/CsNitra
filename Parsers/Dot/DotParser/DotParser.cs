@@ -1,6 +1,6 @@
-﻿global using Error = (string Input, int Pos, (int Line, int Col) Location, ExtensibleParaser.Terminal[] Expecteds);
+﻿global using Error = (string Input, int Pos, (int Line, int Col) Location, ExtensibleParser.Terminal[] Expecteds);
 
-using ExtensibleParaser;
+using ExtensibleParser;
 
 namespace Dot;
 

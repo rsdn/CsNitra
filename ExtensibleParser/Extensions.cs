@@ -1,6 +1,6 @@
-﻿namespace ExtensibleParaser;
+﻿namespace ExtensibleParser;
 
-public sealed record FatalError(string Input, int Pos, (int Line, int Col) Location, ExtensibleParaser.Terminal[] Expecteds);
+public sealed record FatalError(string Input, int Pos, (int Line, int Col) Location, ExtensibleParser.Terminal[] Expecteds);
 
 
 public static class Extensions

@@ -1,6 +1,6 @@
 ﻿using CsNitra.Ast;
 using CsNitra.TypeChecking;
-using ExtensibleParaser;
+using ExtensibleParser;
 
 namespace CsNitra;
 

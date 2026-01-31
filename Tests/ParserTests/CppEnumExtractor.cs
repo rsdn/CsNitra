@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace ParaserTests
 {
-    internal class CppEnumExtractor
+    internal class CppSimplifiedParser
     {
     }
 }

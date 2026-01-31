@@ -1,4 +1,4 @@
-﻿namespace ExtensibleParaser;
+﻿namespace ExtensibleParser;
 
 /// <summary>
 /// Base class for all grammar rules in the parser.

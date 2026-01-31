@@ -2,7 +2,7 @@
 
 using System.Runtime.CompilerServices;
 
-namespace ExtensibleParaser;
+namespace ExtensibleParser;
 
 public static class Guard
 {

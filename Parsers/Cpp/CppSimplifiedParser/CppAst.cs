@@ -1,4 +1,4 @@
-﻿namespace CppEnumExtractor;
+﻿namespace CppSimplifiedParser;
 
 public abstract record CppAst;
 

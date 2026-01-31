@@ -1,6 +1,6 @@
 ﻿#nullable enable
 
-using ExtensibleParaser;
+using ExtensibleParser;
 
 namespace MiniC;
 

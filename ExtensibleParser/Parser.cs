@@ -5,7 +5,7 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
 
-namespace ExtensibleParaser;
+namespace ExtensibleParser;
 
 public class Parser(Terminal trivia, Log? log = null)
 {
@@ -676,12 +676,10 @@ public class Parser(Terminal trivia, Log? log = null)
 
         if (listRule.EndBehavior == SeparatorEndBehavior.Forbidden)
         {
-            // Парсинг разделителя
             var sepResult = ParseAlternative(listRule.Separator, currentPos, input);
             if (sepResult.MaxFailPos > maxFailPos)
                 maxFailPos = sepResult.MaxFailPos;
-
-            if (sepResult.TryGetSuccess(out var sepNode, out newPos))
+            if (sepResult.TryGetSuccess(out _, out _))
             {
                 Log($"End sepearator should not be present {currentPos}.");
                 return Result.Failure(maxFailPos);

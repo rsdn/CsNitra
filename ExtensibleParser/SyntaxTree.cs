@@ -1,9 +1,8 @@
 ﻿
 
 using System.Diagnostics;
-using System.Xml.Linq;
 
-namespace ExtensibleParaser;
+namespace ExtensibleParser;
 
 /// <summary>
 /// Represents a node in the syntax tree produced by the parser.
@@ -139,7 +138,7 @@ public abstract record Node(string Kind, int StartPos, int EndPos, bool IsRecove
         [DebuggerBrowsable(DebuggerBrowsableState.RootHidden)]
         public object Elements => Parser.Input == null ? new Tree[0] : new Tree(Parser.Input, node).Elements;
     }
-    #pragma warning restore CS0618 // Type or member is obsolete
+#pragma warning restore CS0618 // Type or member is obsolete
 }
 
 /// <summary>

@@ -1,5 +1,5 @@
 ﻿using CsNitra.Ast;
-using ExtensibleParaser;
+using ExtensibleParser;
 
 namespace CsNitra.Tests;
 

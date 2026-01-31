@@ -1,6 +1,6 @@
-﻿using ExtensibleParaser;
+﻿using ExtensibleParser;
 
-using global::CppEnumExtractor;
+using global::CppSimplifiedParser;
 
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;

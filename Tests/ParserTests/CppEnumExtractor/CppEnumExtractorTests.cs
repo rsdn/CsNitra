@@ -1,10 +1,10 @@
-﻿using ExtensibleParaser;
+﻿using ExtensibleParser;
 
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 using System.Diagnostics;
 
-namespace CppEnumExtractor.Tests;
+namespace CppSimplifiedParser.Tests;
 
 [TestClass]
 public class CppParserTests

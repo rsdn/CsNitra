@@ -1,4 +1,4 @@
-﻿namespace ExtensibleParaser;
+﻿namespace ExtensibleParser;
 
 using System;
 using System.Collections.Generic;
