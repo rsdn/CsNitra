@@ -167,8 +167,6 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
         _ => throw new InvalidOperationException("Expected SimpleRule statement")
     };
 
-    Literal? GetOptonLiteral(Option option) => option switch { Some<CsNitraAst>(Literal result) => result, _ => null };
-
     private IReadOnlyList<RuleExpressionAst> ToList(RuleExpressionAst expr, List<RuleExpressionAst>? result = null)
     {
         result ??= new List<RuleExpressionAst>();
@@ -377,9 +375,15 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
     public void Visit(NoneNode node) => _currentResult = Option.None;
 
     // Helper classes for visitor
-    private record AstList<T>(List<T> Items, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos) where T : CsNitraAst;
-    private record AstDelimitedList<TElement, TDelimiter>(List<TElement> Items, List<TDelimiter> Delimiters, int StartPos, int EndPos) : AstList<TElement>(Items, StartPos, EndPos)
-        where TElement : CsNitraAst
-        where TDelimiter : CsNitraAst;
-    private record StringValue(string Value, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos);
+    private record AstList<T>(List<T> Items, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos) where T : CsNitraAst
+    {
+        public override void Accept(IAstVisitor visitor)
+        {
+        }
+    }
+
+    private record StringValue(string Value, int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos)
+    {
+        public override void Accept(IAstVisitor visitor) { }
+    }
 }

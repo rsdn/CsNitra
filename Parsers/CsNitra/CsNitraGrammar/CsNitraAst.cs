@@ -265,11 +265,11 @@ public abstract partial record Option(int StartPos, int EndPos) : CsNitraAst(Sta
     public abstract bool IsSome { get; }
     public bool IsNone => !IsSome;
 
-    public static Some<T> Some<T>(T value) where T : notnull => new(value);
+    public static Some<T> Some<T>(T value) where T : notnull, CsNitraAst => new(value);
     public static readonly None None = None.Create();
 }
 
-public sealed partial record Some<T>(T Value) : Option where T : notnull
+public sealed partial record Some<T>(T Value) : Option where T : notnull, CsNitraAst
 {
     public override bool IsSome => true;
     public override string ToString() => $"Some({Value})";
