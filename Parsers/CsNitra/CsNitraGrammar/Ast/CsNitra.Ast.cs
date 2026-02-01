@@ -160,23 +160,23 @@ public sealed partial record OftenMissedExpressionAst(
 }
 
 public sealed partial record OneOrManyExpressionAst(
-    RuleExpressionAst Expression,
+    RuleExpressionAst Element,
     Literal Plus,
     int StartPos,
     int EndPos
 ) : RuleExpressionAst(StartPos, EndPos)
 {
-    public override string ToString() => $"{Expression}+";
+    public override string ToString() => $"{Element}+";
 }
 
 public sealed partial record ZeroOrManyExpressionAst(
-    RuleExpressionAst Expression,
+    RuleExpressionAst Element,
     Literal Star,
     int StartPos,
     int EndPos
 ) : RuleExpressionAst(StartPos, EndPos)
 {
-    public override string ToString() => $"{Expression}*";
+    public override string ToString() => $"{Element}*";
 }
 
 public sealed partial record AndPredicateExpressionAst(

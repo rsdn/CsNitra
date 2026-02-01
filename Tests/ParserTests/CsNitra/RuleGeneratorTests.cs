@@ -173,11 +173,11 @@ public class RuleGeneratorTests
                 break;
 
             case OneOrManyExpressionAst manualOneOrMany when generated is OneOrManyExpressionAst generatedOneOrMany:
-                AssertRuleExpressionsAreEqual(manualOneOrMany.Expression, generatedOneOrMany.Expression, $"{context}+");
+                AssertRuleExpressionsAreEqual(manualOneOrMany.Element, generatedOneOrMany.Element, $"{context}+");
                 break;
 
             case ZeroOrManyExpressionAst manualZeroOrMany when generated is ZeroOrManyExpressionAst generatedZeroOrMany:
-                AssertRuleExpressionsAreEqual(manualZeroOrMany.Expression, generatedZeroOrMany.Expression, $"{context}*");
+                AssertRuleExpressionsAreEqual(manualZeroOrMany.Element, generatedZeroOrMany.Element, $"{context}*");
                 break;
 
             case AndPredicateExpressionAst manualAnd when generated is AndPredicateExpressionAst generatedAnd:

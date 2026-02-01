@@ -44,9 +44,9 @@ internal sealed class SymbolReferenceResolver(TypeCheckingContext context) : Ast
 
     public override void Visit(OftenMissedExpressionAst node) => node.Expression.Accept(this);
 
-    public override void Visit(OneOrManyExpressionAst node) => node.Expression.Accept(this);
+    public override void Visit(OneOrManyExpressionAst node) => node.Element.Accept(this);
 
-    public override void Visit(ZeroOrManyExpressionAst node) => node.Expression.Accept(this);
+    public override void Visit(ZeroOrManyExpressionAst node) => node.Element.Accept(this);
 
     public override void Visit(AndPredicateExpressionAst node) => node.Expression.Accept(this);
 

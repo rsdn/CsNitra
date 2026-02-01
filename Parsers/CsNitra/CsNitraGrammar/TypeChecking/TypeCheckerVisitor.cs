@@ -116,7 +116,7 @@ internal sealed class TypeCheckerVisitor(TypeCheckingContext context) : AstVisit
             Error(node);
 
         PushName(hasName: false);
-        node.Expression.Accept(this);
+        node.Element.Accept(this);
         PopName();
     }
 
@@ -126,7 +126,7 @@ internal sealed class TypeCheckerVisitor(TypeCheckingContext context) : AstVisit
             Error(node);
 
         PushName(hasName: false);
-        node.Expression.Accept(this);
+        node.Element.Accept(this);
         PopName();
     }
 
