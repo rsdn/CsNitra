@@ -8,11 +8,6 @@ public partial record RuleStatementAst
     public RuleSymbol? Symbol { get; set; }
 }
 
-public partial record SimpleRuleStatementAst
-{
-    public RuleSymbol? Symbol { get; set; }
-}
-
 public partial record AnonymousAlternativeAst
 {
     public Symbol? ReferencedSymbol { get; set; }

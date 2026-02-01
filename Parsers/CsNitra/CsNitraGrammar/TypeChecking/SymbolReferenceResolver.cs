@@ -20,7 +20,6 @@ internal sealed class SymbolReferenceResolver(TypeCheckingContext context) : Ast
 
     public override void Visit(SimpleRuleStatementAst node)
     {
-        node.Symbol = context.FindRule(node.Name);
         node.Expression.Accept(this);
     }
 
