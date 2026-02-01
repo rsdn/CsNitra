@@ -112,11 +112,11 @@ public class WfGenerator : IIncrementalGenerator
             {
                 if (method.Name.StartsWith("After"))
                 {
-                    handlerNames.Add(method.Name.Substring("After".Length));
+                    handlerNames.Add(method.Name["After".Length..]);
                 }
                 else if (method.Name.StartsWith("On"))
                 {
-                    handlerNames.Add(method.Name.Substring("On".Length));
+                    handlerNames.Add(method.Name["On".Length..]);
                 }
             }
         }

@@ -6,9 +6,9 @@ namespace CsNitra.TypeChecking;
 /// <summary>
 /// Grammar type checker
 /// </summary>
-public sealed partial record TypeChecker(Source source, IEnumerable<Terminal> terminals)
+public sealed partial record TypeChecker(Source Source, IEnumerable<Terminal> Terminals)
 {
-    private readonly TypeCheckingContext _context = new(source, terminals);
+    private readonly TypeCheckingContext _context = new(Source, Terminals);
     private readonly List<PrecedenceDependency> _precedenceDependencies = new();
 
     public (IReadOnlyList<Diagnostic> Diagnostics, Scope GlobalScope) CheckGrammar(GrammarAst grammar)

@@ -25,7 +25,7 @@ public class GrammarValidationTests
             return;
         }
 
-        var typeChecker = new TypeChecker(new SourceText(grammarText, "test.grammar"), terminals: [
+        var typeChecker = new TypeChecker(new SourceText(grammarText, "test.grammar"), Terminals: [
             CsNitraTerminals.Identifier(),
             CsNitraTerminals.Literal(),
         ]);
@@ -83,7 +83,7 @@ public class GrammarValidationTests
             return;
         }
 
-        var typeChecker = new TypeChecker(new SourceText(grammarText, "test.grammar"), terminals: [
+        var typeChecker = new TypeChecker(new SourceText(grammarText, "test.grammar"), Terminals: [
             CsNitraTerminals.Identifier(),
             CsNitraTerminals.Literal(),
         ]);

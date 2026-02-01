@@ -347,7 +347,7 @@ public class EnumGenerator : IIncrementalGenerator
             if (part.Length == 1)
                 return part.ToUpperInvariant();
 
-            return char.ToUpperInvariant(part[0]) + part.Substring(1).ToLowerInvariant();
+            return char.ToUpperInvariant(part[0]) + part[1..].ToLowerInvariant();
         }));
     }
 

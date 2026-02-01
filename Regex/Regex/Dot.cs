@@ -12,7 +12,7 @@ public static class Dot
         var dotFile = Path.ChangeExtension(fullOutputPath, ".dot");
 
         File.WriteAllText(dotFile, dotContent);
-        Dot.GenerateSvg(dotFile, fullOutputPath);
+        GenerateSvg(dotFile, fullOutputPath);
         Trace.TraceInformation($"{dotType} diagram writen into: {fullOutputPath}");
         return fullOutputPath;
     }
