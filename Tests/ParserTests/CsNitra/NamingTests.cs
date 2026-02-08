@@ -268,60 +268,6 @@ public class NamingTests
     }
 
     [TestMethod]
-    public void CollectAllSubruleNames_ShouldCollectNamesRecursively()
-    {
-        // Arrange
-        // Create expression: Named = Left:Expression Right:Expression+
-        var leftName = new Identifier("Left", 0, 4);
-        var eq1 = new Literal("=", 4, 5);
-        var leftExpr = new LiteralAst("Expression", 5, 15);
-        var leftNamed = new NamedExpressionAst(leftName, eq1, leftExpr, 0, 15);
-
-        var rightName = new Identifier("Right", 15, 20);
-        var eq2 = new Literal("=", 20, 21);
-        var rightElement = new LiteralAst("Expression", 21, 31);
-        var plus = new Literal("+", 31, 32);
-        var rightOneOrMany = new OneOrManyExpressionAst(rightElement, plus, 21, 32);
-        var rightNamed = new NamedExpressionAst(rightName, eq2, rightOneOrMany, 15, 32);
-
-        var sequence = new SequenceExpressionAst(leftNamed, rightNamed, 0, 32);
-
-        // Act
-        var names = Naming.CollectAllSubruleNames(sequence, name: "sequence");
-
-        // Debug output to see what we got
-        Console.WriteLine("Collected names:");
-        foreach (var kvp in names)
-        {
-            var exprType = kvp.Key.GetType().Name;
-            var exprStr = kvp.Key.ToString();
-            var nameStr = kvp.Value ?? "null";
-            Console.WriteLine($"  {exprType}: '{exprStr}' -> '{nameStr}'");
-        }
-
-        // Assert
-        // Expected nodes:
-        // 1. sequence (null)
-        // 2. leftNamed (Left)
-        // 3. leftExpr (Expression)
-        // 4. rightNamed (Right)
-        // 5. rightOneOrMany (Expressions)
-        // 6. rightElement (Expression)
-        // Total: 6 nodes
-
-        Assert.AreEqual(6, names.Count,
-            $"Expected 6 nodes but got {names.Count}. Nodes: {string.Join(", ", names.Keys.Select(k => k.GetType().Name))}");
-
-        // Check specific names
-        Assert.AreEqual("sequence", names[sequence], "Sequence should have 'sequence' name");
-        Assert.AreEqual("Left", names[leftNamed], "LeftNamed should be 'Left'");
-        Assert.AreEqual("Expression", names[leftExpr], "LeftExpr should be 'Expression'");
-        Assert.AreEqual("Right", names[rightNamed], "RightNamed should be 'Right'");
-        Assert.AreEqual("Expressions", names[rightOneOrMany], "RightOneOrMany should be 'Expressions'");
-        Assert.AreEqual("Expression", names[rightElement], "RightElement should be 'Expression'");
-    }
-
-    [TestMethod]
     public void TryGetName_ShouldReturnNameAndEmptyError_WhenNameExists()
     {
         // Arrange

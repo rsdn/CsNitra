@@ -25,7 +25,7 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
         {
             var rule = alternative switch
             {
-                NamedAlternativeAst named => GenerateExpression(named.Expression, named.Name.Value),
+                NamedAlternativeAst named => GenerateExpression(named.Expression),
                 AnonymousAlternativeAst anon => GenerateAnonymousAlternative(anon),
                 _ => throw new InvalidOperationException($"Unknown alternative type: {alternative.GetType()}")
             };
@@ -37,7 +37,7 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
     }
 
     private Rule GenerateSimpleRule(SimpleRuleStatementAst node) =>
-        GenerateExpression(node.Expression, node.Name.Value);
+        GenerateExpression(node.Expression);
 
     private Rule GenerateAnonymousAlternative(AnonymousAlternativeAst node)
     {
@@ -45,27 +45,26 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
         return globalScope.FindTerminal(ruleName) is { } terminal ? terminal.Terminal : (Rule)new Ref(ruleName);
     }
 
-    private Rule GenerateExpression(RuleExpressionAst expression, string? name)
+    private Rule GenerateExpression(RuleExpressionAst expression)
     {
         return expression switch
         {
-            RuleRefExpressionAst ruleRef => GenerateRuleRefExpression(ruleRef, name),
-            SequenceExpressionAst seq => GenerateSequenceExpression(seq, name),
-            NamedExpressionAst named => GenerateNamedExpression(named),
-            OptionalExpressionAst opt => new Optional(GenerateExpression(opt.Expression, name: null), name),
-            OftenMissedExpressionAst om => new OftenMissed(GenerateExpression(om.Expression, name: null), name ?? "Error"),
-            OneOrManyExpressionAst oneOrMany => new OneOrMany(GenerateExpression(oneOrMany.Element, name: null), Kind: name.AssertIsNonNull()),
-            ZeroOrManyExpressionAst zeroOrMany => new ZeroOrMany(GenerateExpression(zeroOrMany.Element, name: null), Kind: name.AssertIsNonNull()),
-            AndPredicateExpressionAst and => GenerateAndPredicate(and),
-            NotPredicateExpressionAst not => GenerateNotPredicate(not),
-            LiteralAst str => new EP.Literal(str.Value, name),
-            GroupExpressionAst group => GenerateExpression(group.Expression, name),
-            SeparatedListExpressionAst list => GenerateSeparatedList(list, name),
+            RuleRefExpressionAst a => GenerateRuleRefExpression(a),
+            FlattenSequenceExpressionAst a => GenerateSequenceExpression(a),
+            OptionalExpressionAst a => new Optional(GenerateExpression(a.Expression), a.Kind),
+            OftenMissedExpressionAst a => new OftenMissed(GenerateExpression(a.Expression), a.Kind ?? "Error"),
+            OneOrManyExpressionAst a => new OneOrMany(GenerateExpression(a.Element), a.Kind),
+            ZeroOrManyExpressionAst a => new ZeroOrMany(GenerateExpression(a.Element), a.Kind),
+            AndPredicateExpressionAst a => GenerateAndPredicate(a),
+            NotPredicateExpressionAst a => GenerateNotPredicate(a),
+            LiteralAst a => new EP.Literal(a.Value, a.Kind),
+            GroupExpressionAst a => GenerateExpression(a.Expression),
+            SeparatedListExpressionAst a => GenerateSeparatedList(a),
             _ => throw new InvalidOperationException($"Unknown expression type: {expression.GetType()}")
         };
     }
 
-    private Rule GenerateRuleRefExpression(RuleRefExpressionAst node, string? name)
+    private Rule GenerateRuleRefExpression(RuleRefExpressionAst node)
     {
         var refName = node.Ref.ToString();
 
@@ -73,41 +72,26 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
             ? new ReqRef(
                 refName,
                 Precedence: node.PrecedenceSymbol.AssertIsNonNull().BindingPower,
-                Right: node.Precedence.Associativity != null)
+                Right: node.Precedence.Associativity != null,
+                node.Kind)
             : globalScope.FindTerminal(refName) is { } terminal
                 ? terminal.Terminal
-                : (Rule)new Ref(refName, Kind: name);
+                : (Rule)new Ref(refName, node.Kind);
     }
 
-    private Rule GenerateSequenceExpression(SequenceExpressionAst node, string? name)
-    {
-        var left = GenerateExpression(node.Left, name: node.Left is SequenceExpressionAst ? name : null);
-        var right = GenerateExpression(node.Right, name: node.Right is SequenceExpressionAst ? name : null);
-
-        if (left is Seq leftSeq && right is Seq rightSeq)
-            return new Seq(leftSeq.Elements.Concat(rightSeq.Elements).ToArray(), name.AssertIsNonNull());
-
-        if (left is Seq leftSeq2)
-            return new Seq(leftSeq2.Elements.Append(right).ToArray(), name.AssertIsNonNull());
-
-        if (right is Seq rightSeq2)
-            return new Seq(new[] { left }.Concat(rightSeq2.Elements).ToArray(), name.AssertIsNonNull());
-
-        return new Seq([left, right], name.AssertIsNonNull());
-    }
-
-    private Rule GenerateNamedExpression(NamedExpressionAst node) => GenerateExpression(node.Expression, node.Name.Value);
+    private Rule GenerateSequenceExpression(FlattenSequenceExpressionAst seq) =>
+        new Seq(seq.Elements.Select(GenerateExpression).ToArray(), seq.Kind.AssertIsNonNull());
 
     private Rule GenerateAndPredicate(AndPredicateExpressionAst node) =>
-        new AndPredicate(GenerateExpression(node.Expression, name: null));
+        new AndPredicate(GenerateExpression(node.Expression));
 
     private Rule GenerateNotPredicate(NotPredicateExpressionAst node) =>
-        new NotPredicate(GenerateExpression(node.Expression, name: null));
+        new NotPredicate(GenerateExpression(node.Expression));
 
-    private Rule GenerateSeparatedList(SeparatedListExpressionAst node, string? name)
+    private Rule GenerateSeparatedList(SeparatedListExpressionAst node)
     {
-        var element = GenerateExpression(node.Element, name: null);
-        var separator = GenerateExpression(node.Separator, name: null);
+        var element = GenerateExpression(node.Element);
+        var separator = GenerateExpression(node.Separator);
         var endBehavior = node.Modifier?.Value switch
         {
             "?" => SeparatorEndBehavior.Optional,
@@ -115,6 +99,6 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
             _ => SeparatorEndBehavior.Forbidden
         };
         var canBeEmpty = node.Count.Value == "*";
-        return new SeparatedList(element, separator, Kind: name.AssertIsNonNull(), endBehavior, canBeEmpty);
+        return new SeparatedList(element, separator, node.Kind.AssertIsNonNull(), endBehavior, canBeEmpty);
     }
 }

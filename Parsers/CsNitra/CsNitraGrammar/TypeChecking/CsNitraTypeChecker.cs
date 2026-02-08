@@ -15,15 +15,7 @@ public sealed partial record TypeChecker(Source Source, IEnumerable<Terminal> Te
     {
         CollectDeclarations(grammar);
         ResolveAndCheck(grammar);
-        ValidateSubruleNames(grammar);
         return (_context.Diagnostics, _context.GlobalScope);
-    }
-
-    private void ValidateSubruleNames(GrammarAst grammar)
-    {
-        var validator = new NameValidatorVisitor(_context);
-        foreach (var statement in grammar.Statements)
-            statement.Accept(validator);
     }
 
     private void CollectDeclarations(GrammarAst grammar)

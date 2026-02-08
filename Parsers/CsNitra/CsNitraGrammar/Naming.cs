@@ -303,9 +303,6 @@ public static class Naming
         Dictionary<RuleExpressionAst, string?> result,
         Func<string, string?>? tryGetLiteralAlias)
     {
-        //if (expression is OptionalExpressionAst optional)
-        //    expression = optional.Expression;
-
         if (result.ContainsKey(expression))
             return;
 
