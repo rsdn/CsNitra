@@ -3,7 +3,7 @@ using ExtensibleParser;
 
 namespace CsNitra.TypeChecking;
 
-public abstract partial record Symbol
+public abstract class Symbol
 {
     public Identifier Name { get; }
     public Source Source { get; }
@@ -18,35 +18,55 @@ public abstract partial record Symbol
     }
 }
 
-public sealed partial record PrecedenceSymbol(
-    Identifier Name,
-    Source Source,
-    int BindingPower
-) : Symbol(Name, Source)
+public sealed class PrecedenceSymbol : Symbol
 {
+    public int BindingPower { get; }
+
+    public PrecedenceSymbol(Identifier name, Source source, int bindingPower)
+        : base(name, source)
+    {
+        BindingPower = bindingPower;
+    }
+
     public override string ToString() => $"{Name.Value}={BindingPower}";
 }
 
-public sealed partial record PrecedenceDependency(
-    IReadOnlyList<Identifier> Identifiers,
-    SourceSpan Location
-);
-
-public sealed partial record RuleSymbol(
-    Identifier Name,
-    Source Source,
-    RuleStatementAst? RuleStatement,
-    SimpleRuleStatementAst? SimpleRuleStatement
-) : Symbol(Name, Source)
+public sealed class PrecedenceDependency
 {
+    public IReadOnlyList<Identifier> Identifiers { get; }
+    public SourceSpan Location { get; }
+
+    public PrecedenceDependency(IReadOnlyList<Identifier> identifiers, SourceSpan location)
+    {
+        Identifiers = identifiers;
+        Location = location;
+    }
+}
+
+public sealed class RuleSymbol : Symbol
+{
+    public RuleStatementAst? RuleStatement { get; }
+    public SimpleRuleStatementAst? SimpleRuleStatement { get; }
+
+    public RuleSymbol(Identifier name, Source source, RuleStatementAst? ruleStatement, SimpleRuleStatementAst? simpleRuleStatement)
+        : base(name, source)
+    {
+        RuleStatement = ruleStatement;
+        SimpleRuleStatement = simpleRuleStatement;
+    }
+
     public override string ToString() => $"Rule({Name.Value})";
 }
 
-public sealed partial record TerminalSymbol(
-    Identifier Name,
-    Source Source,
-    Terminal Terminal
-) : Symbol(Name, Source)
+public sealed class TerminalSymbol : Symbol
 {
+    public Terminal Terminal { get; }
+
+    public TerminalSymbol(Identifier name, Source source, Terminal terminal)
+        : base(name, source)
+    {
+        Terminal = terminal;
+    }
+
     public override string ToString() => $"Terminal({Name.Value})";
 }

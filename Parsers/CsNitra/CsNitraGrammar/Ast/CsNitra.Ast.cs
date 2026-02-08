@@ -1,9 +1,12 @@
-﻿namespace CsNitra.Ast;
+﻿using CsNitra.TypeChecking;
+
+namespace CsNitra.Ast;
 
 public abstract partial record CsNitraAst(int StartPos, int EndPos)
 {
     public CsNitraAst() : this(StartPos: 0, EndPos: 0) { }
     public int Length => EndPos - StartPos;
+    public SourceSpan Span => new(StartPos, EndPos);
 }
 
 public sealed partial record GrammarAst(
@@ -116,16 +119,45 @@ public sealed partial record AnonymousAlternativeAst(
     public override string ToString() => RuleRef.ToString();
 }
 
-public abstract partial record RuleExpressionAst(int StartPos, int EndPos) : CsNitraAst(StartPos, EndPos);
+public abstract partial record RuleExpressionAst(int StartPos, int EndPos, string? Kind = null) : CsNitraAst(StartPos, EndPos)
+{
+    public RuleExpressionAst() : this(StartPos: 0, EndPos: 0, Kind: null) { }
+}
 
 public sealed partial record SequenceExpressionAst(
     RuleExpressionAst Left,
     RuleExpressionAst Right,
     int StartPos,
-    int EndPos
-) : RuleExpressionAst(StartPos, EndPos)
+    int EndPos,
+    string? Kind = null
+) : RuleExpressionAst(StartPos, EndPos, Kind)
 {
+    public IEnumerable<RuleExpressionAst> FlattenSequence()
+    {
+        if (Left is SequenceExpressionAst seqLeft)
+            foreach (var expr in seqLeft.FlattenSequence())
+                yield return expr;
+        else
+            yield return Left;
+
+        if (Right is SequenceExpressionAst seqRight)
+            foreach (var expr in seqRight.FlattenSequence())
+                yield return expr;
+        else
+            yield return Right;
+    }
+
     public override string ToString() => $"{Left} {Right}";
+}
+
+public sealed partial record FlattenSequenceExpressionAst(
+    IReadOnlyList<RuleExpressionAst> Elements,
+    int StartPos,
+    int EndPos,
+    string? Kind = null
+) : RuleExpressionAst(StartPos, EndPos, Kind)
+{
+    public override string ToString() => string.Join(" ", Elements);
 }
 
 public sealed partial record NamedExpressionAst(
@@ -134,7 +166,7 @@ public sealed partial record NamedExpressionAst(
     RuleExpressionAst Expression,
     int StartPos,
     int EndPos
-) : RuleExpressionAst(StartPos, EndPos)
+) : RuleExpressionAst(StartPos, EndPos, null) // Kind будет установлен при трансформации
 {
     public override string ToString() => $"{Name}=«{Expression}»";
 }
@@ -143,8 +175,9 @@ public sealed partial record OptionalExpressionAst(
     RuleExpressionAst Expression,
     Literal Operator,
     int StartPos,
-    int EndPos
-) : RuleExpressionAst(StartPos, EndPos)
+    int EndPos,
+    string? Kind = null
+) : RuleExpressionAst(StartPos, EndPos, Kind)
 {
     public override string ToString() => $"{Expression}?";
 }
@@ -153,8 +186,9 @@ public sealed partial record OftenMissedExpressionAst(
     RuleExpressionAst Expression,
     Literal Operator,
     int StartPos,
-    int EndPos
-) : RuleExpressionAst(StartPos, EndPos)
+    int EndPos,
+    string? Kind = null
+) : RuleExpressionAst(StartPos, EndPos, Kind)
 {
     public override string ToString() => $"{Expression}??";
 }
@@ -163,8 +197,9 @@ public sealed partial record OneOrManyExpressionAst(
     RuleExpressionAst Element,
     Literal Plus,
     int StartPos,
-    int EndPos
-) : RuleExpressionAst(StartPos, EndPos)
+    int EndPos,
+    string? Kind = null
+) : RuleExpressionAst(StartPos, EndPos, Kind)
 {
     public override string ToString() => $"{Element}+";
 }
@@ -173,8 +208,9 @@ public sealed partial record ZeroOrManyExpressionAst(
     RuleExpressionAst Element,
     Literal Star,
     int StartPos,
-    int EndPos
-) : RuleExpressionAst(StartPos, EndPos)
+    int EndPos,
+    string? Kind = null
+) : RuleExpressionAst(StartPos, EndPos, Kind)
 {
     public override string ToString() => $"{Element}*";
 }
@@ -183,8 +219,9 @@ public sealed partial record AndPredicateExpressionAst(
     Literal Predicate,
     RuleExpressionAst Expression,
     int StartPos,
-    int EndPos
-) : RuleExpressionAst(StartPos, EndPos)
+    int EndPos,
+    string? Kind = null
+) : RuleExpressionAst(StartPos, EndPos, Kind)
 {
     public override string ToString() => $"&{Expression}";
 }
@@ -193,8 +230,9 @@ public sealed partial record NotPredicateExpressionAst(
     Literal Predicate,
     RuleExpressionAst Expression,
     int StartPos,
-    int EndPos
-) : RuleExpressionAst(StartPos, EndPos)
+    int EndPos,
+    string? Kind = null
+) : RuleExpressionAst(StartPos, EndPos, Kind)
 {
     public override string ToString() => $"!{Expression}";
 }
@@ -202,8 +240,9 @@ public sealed partial record NotPredicateExpressionAst(
 public sealed partial record LiteralAst(
     string Value,
     int StartPos,
-    int EndPos
-) : RuleExpressionAst(StartPos, EndPos)
+    int EndPos,
+    string? Kind = null
+) : RuleExpressionAst(StartPos, EndPos, Kind)
 {
     public override string ToString() => $"\"{Value}\"";
 }
@@ -212,8 +251,9 @@ public sealed partial record RuleRefExpressionAst(
     QualifiedIdentifierAst Ref,
     PrecedenceAst? Precedence,
     int StartPos,
-    int EndPos
-) : RuleExpressionAst(StartPos, EndPos)
+    int EndPos,
+    string? Kind = null
+) : RuleExpressionAst(StartPos, EndPos, Kind)
 {
     public override string ToString() => $"{Ref}{Precedence}";
 }
@@ -223,8 +263,9 @@ public sealed partial record GroupExpressionAst(
     RuleExpressionAst Expression,
     Literal Close,
     int StartPos,
-    int EndPos
-) : RuleExpressionAst(StartPos, EndPos)
+    int EndPos,
+    string? Kind = null
+) : RuleExpressionAst(StartPos, EndPos, Kind)
 {
     public override string ToString() => $"({Expression})";
 }
@@ -235,8 +276,9 @@ public sealed partial record SeparatedListExpressionAst(
     Literal? Modifier,
     Literal Count,
     int StartPos,
-    int EndPos
-) : RuleExpressionAst(StartPos, EndPos)
+    int EndPos,
+    string? Kind = null
+) : RuleExpressionAst(StartPos, EndPos, Kind)
 {
     public override string ToString()
     {

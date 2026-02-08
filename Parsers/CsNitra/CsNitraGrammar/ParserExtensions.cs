@@ -8,8 +8,10 @@ public static class ParserExtensions
 {
     public static void BuildFromAst(this Parser parser, GrammarAst grammar, Source source, IEnumerable<Terminal> terminals)
     {
+        var simplifier = new AstSimplifier();
+        var transformedGrammar = simplifier.Transform(grammar);
         var typeChecker = new TypeChecker(source, terminals);
-        var (diagnostics, globalScope) = typeChecker.CheckGrammar(grammar);
+        var (diagnostics, globalScope) = typeChecker.CheckGrammar(transformedGrammar);
 
         if (diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error))
         {

@@ -154,7 +154,7 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
     {
         result ??= new List<RuleExpressionAst>();
 
-        if (expr is SequenceExpressionAst(var left, var right, _, _))
+        if (expr is SequenceExpressionAst(var left, var right, _, _, _))
         {
             result.Add(left);
             return ToList(right, result);

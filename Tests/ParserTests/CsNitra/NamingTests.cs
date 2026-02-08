@@ -287,7 +287,7 @@ public class NamingTests
         var sequence = new SequenceExpressionAst(leftNamed, rightNamed, 0, 32);
 
         // Act
-        var names = Naming.CollectAllSubruleNames(sequence);
+        var names = Naming.CollectAllSubruleNames(sequence, name: "sequence");
 
         // Debug output to see what we got
         Console.WriteLine("Collected names:");
@@ -313,7 +313,7 @@ public class NamingTests
             $"Expected 6 nodes but got {names.Count}. Nodes: {string.Join(", ", names.Keys.Select(k => k.GetType().Name))}");
 
         // Check specific names
-        Assert.AreEqual(null, names[sequence], "Sequence should have null name");
+        Assert.AreEqual("sequence", names[sequence], "Sequence should have 'sequence' name");
         Assert.AreEqual("Left", names[leftNamed], "LeftNamed should be 'Left'");
         Assert.AreEqual("Expression", names[leftExpr], "LeftExpr should be 'Expression'");
         Assert.AreEqual("Right", names[rightNamed], "RightNamed should be 'Right'");

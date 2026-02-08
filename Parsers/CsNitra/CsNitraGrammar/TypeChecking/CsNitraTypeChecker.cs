@@ -66,7 +66,7 @@ public sealed partial record TypeChecker(Source Source, IEnumerable<Terminal> Te
             var symbol = new PrecedenceSymbol(
                 orderedPrecedences[i],
                 _context.Source,
-                BindingPower: bp
+                bindingPower: bp
             );
             _context.GlobalScope.AddSymbol(symbol);
         }

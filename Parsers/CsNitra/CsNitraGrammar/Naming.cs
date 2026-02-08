@@ -1,4 +1,5 @@
 ﻿using CsNitra.Ast;
+using Literal = CsNitra.Ast.Literal;
 
 namespace CsNitra;
 
@@ -122,7 +123,6 @@ public static class Naming
             SeparatedListExpressionAst separatedList => InferNameForLoop(separatedList.Element, plural: true, tryGetLiteralAlias),
             NamedExpressionAst named => named.Name.Value,
             GroupExpressionAst group => InferName(group.Expression, tryGetLiteralAlias),
-            OptionalExpressionAst optional => InferName(optional.Expression, tryGetLiteralAlias),
             OftenMissedExpressionAst oftenMissed => InferName(oftenMissed.Expression, tryGetLiteralAlias),
             AndPredicateExpressionAst andPredicate => InferName(andPredicate.Expression, tryGetLiteralAlias),
             NotPredicateExpressionAst notPredicate => InferName(notPredicate.Expression, tryGetLiteralAlias),
@@ -133,15 +133,9 @@ public static class Naming
     }
 
     /// <summary>
-    /// Type-safe wrapper for RuleExpressionAst.
-    /// </summary>
-    public static string? InferName(RuleExpressionAst expression, Func<string, string?>? tryGetLiteralAlias = null) =>
-        InferName((CsNitraAst)expression, tryGetLiteralAlias);
-
-    /// <summary>
     /// Infers name for loop expressions (pluralizes if needed).
     /// </summary>
-    private static string? InferNameForLoop(RuleExpressionAst element, bool plural, Func<string, string?> tryGetLiteralAlias)
+    public static string? InferNameForLoop(RuleExpressionAst element, bool plural, Func<string, string?> tryGetLiteralAlias)
     {
         var elementName = InferName(element, tryGetLiteralAlias);
 
@@ -293,59 +287,64 @@ public static class Naming
     /// </summary>
     public static Dictionary<RuleExpressionAst, string?> CollectAllSubruleNames(
         RuleExpressionAst expression,
+        string? name,
         Func<string, string?>? tryGetLiteralAlias = null)
     {
         var result = new Dictionary<RuleExpressionAst, string?>();
-        CollectNamesRecursive(expression, result, tryGetLiteralAlias);
+        if (expression is SequenceExpressionAst)
+            result[expression] = name;
+        CollectNamesRecursive(expression, name, result, tryGetLiteralAlias);
         return result;
     }
 
     private static void CollectNamesRecursive(
         RuleExpressionAst expression,
+        string? name,
         Dictionary<RuleExpressionAst, string?> result,
         Func<string, string?>? tryGetLiteralAlias)
     {
+        //if (expression is OptionalExpressionAst optional)
+        //    expression = optional.Expression;
+
         if (result.ContainsKey(expression))
             return;
 
         // Get name for current expression
-        var name = InferName(expression, tryGetLiteralAlias);
+        name ??= InferName(expression, tryGetLiteralAlias);
+
+        if (expression is NamedExpressionAst named)
+            expression = named.Expression;
+
         result[expression] = name;
 
         // Recursively process child expressions
         switch (expression)
         {
             case SequenceExpressionAst seq:
-                CollectNamesRecursive(seq.Left, result, tryGetLiteralAlias);
-                CollectNamesRecursive(seq.Right, result, tryGetLiteralAlias);
+                foreach (var expr in seq.FlattenSequence())
+                    CollectNamesRecursive(expr, name: null, result, tryGetLiteralAlias);
                 break;
-
-            case NamedExpressionAst named:
-                CollectNamesRecursive(named.Expression, result, tryGetLiteralAlias);
-                break;
-
             case OptionalExpressionAst optional:
-                CollectNamesRecursive(optional.Expression, result, tryGetLiteralAlias);
+                CollectNamesRecursive(optional.Expression, name: null, result, tryGetLiteralAlias);
                 break;
-
             case OftenMissedExpressionAst oftenMissed:
-                CollectNamesRecursive(oftenMissed.Expression, result, tryGetLiteralAlias);
+                CollectNamesRecursive(oftenMissed.Expression, name: null, result, tryGetLiteralAlias);
                 break;
 
             case OneOrManyExpressionAst oneOrMany:
-                CollectNamesRecursive(oneOrMany.Element, result, tryGetLiteralAlias);
+                CollectNamesRecursive(oneOrMany.Element, name: null, result, tryGetLiteralAlias);
                 break;
 
             case ZeroOrManyExpressionAst zeroOrMany:
-                CollectNamesRecursive(zeroOrMany.Element, result, tryGetLiteralAlias);
+                CollectNamesRecursive(zeroOrMany.Element, name: null, result, tryGetLiteralAlias);
                 break;
 
             case AndPredicateExpressionAst andPredicate:
-                CollectNamesRecursive(andPredicate.Expression, result, tryGetLiteralAlias);
+                CollectNamesRecursive(andPredicate.Expression, name, result, tryGetLiteralAlias);
                 break;
 
             case NotPredicateExpressionAst notPredicate:
-                CollectNamesRecursive(notPredicate.Expression, result, tryGetLiteralAlias);
+                CollectNamesRecursive(notPredicate.Expression, name, result, tryGetLiteralAlias);
                 break;
 
             case RuleRefExpressionAst ruleRef:
@@ -353,12 +352,12 @@ public static class Naming
                 break;
 
             case GroupExpressionAst group:
-                CollectNamesRecursive(group.Expression, result, tryGetLiteralAlias);
+                CollectNamesRecursive(group.Expression, name, result, tryGetLiteralAlias);
                 break;
 
             case SeparatedListExpressionAst separatedList:
-                CollectNamesRecursive(separatedList.Element, result, tryGetLiteralAlias);
-                CollectNamesRecursive(separatedList.Separator, result, tryGetLiteralAlias);
+                CollectNamesRecursive(separatedList.Element, name, result, tryGetLiteralAlias);
+                CollectNamesRecursive(separatedList.Separator, name, result, tryGetLiteralAlias);
                 break;
 
             // Terminal nodes don't have child expressions

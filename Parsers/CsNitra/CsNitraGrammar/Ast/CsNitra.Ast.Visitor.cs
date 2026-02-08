@@ -27,6 +27,7 @@ public interface IAstVisitor
     void Visit(PrecedenceAst node);
     void Visit(Identifier node);
     void Visit(Literal node);
+    void Visit(FlattenSequenceExpressionAst flattenSequenceExpressionAst);
 }
 
 public abstract class AstVisitor : IAstVisitor
@@ -41,6 +42,7 @@ public abstract class AstVisitor : IAstVisitor
     public virtual void Visit(NamedAlternativeAst node) { }
     public virtual void Visit(AnonymousAlternativeAst node) { }
     public virtual void Visit(SequenceExpressionAst node) { }
+    public virtual void Visit(FlattenSequenceExpressionAst flattenSequenceExpressionAst) { }
     public virtual void Visit(NamedExpressionAst node) { }
     public virtual void Visit(OptionalExpressionAst node) { }
     public virtual void Visit(OftenMissedExpressionAst node) { }
@@ -132,6 +134,12 @@ public sealed partial record SequenceExpressionAst
 {
     public override void Accept(IAstVisitor visitor) => visitor.Visit(this);
 }
+
+public sealed partial record FlattenSequenceExpressionAst
+{
+    public override void Accept(IAstVisitor visitor) => visitor.Visit(this);
+}
+
 
 public sealed partial record NamedExpressionAst
 {
