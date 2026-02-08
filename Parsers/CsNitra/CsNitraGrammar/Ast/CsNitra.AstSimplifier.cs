@@ -2,7 +2,7 @@
 
 namespace CsNitra.Ast;
 
-internal sealed class AstSimplifier
+public sealed class AstSimplifier
 {
     private readonly List<Diagnostic> _errors = new();
 

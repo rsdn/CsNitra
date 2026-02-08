@@ -45,17 +45,17 @@ public class GrammarValidationTests
         Grammar = Statements=Identifier*;                 // Test all cases where subrule names are required
     
         // ERROR CASES:
-        Rule1 = "test" Identifier*;                      // CASE 1: ZeroOrMany without name - ERROR
-        Rule2 = "test" Identifier+;                      // CASE 2: OneOrMany without name - ERROR  
-        Rule3 = "test" (Identifier; ",")+;               // CASE 3: SeparatedList without name - ERROR
         BadNestedName = "test" Second=Items=Identifier;  // CASE 4: Nested name assignment - ERROR
     
         // NO ERROR CASES:
-        Rule4 = "test" Identifier Identifier;            // CASE 5: Sequence directly in rule - NO ERROR (gets name from rule)
-        Rule5 = "test" Identifier Identifier Identifier; // CASE 6: Long sequence directly in rule - NO ERROR (gets name from rule)
-        Rule6 = "test" (Identifier Identifier);          // CASE 7: Group with sequence - NO ERROR (inherits name)
-        Rule7 = "test" Identifier?;                      // CASE 8: Optional without name - NO ERROR (allowed)
-        Rule8 = "test" Identifier??;                     // CASE 9: OftenMissed without name - NO ERROR (allowed)
+        Rule1 = "test" Identifier*;                      // CASE 1: ZeroOrMany without name - OK: Identifiers
+        Rule2 = "test" Identifier+;                      // CASE 2: OneOrMany without name - OK: Identifiers
+        Rule3 = "test" (Identifier; ",")+;               // CASE 3: SeparatedList without name - OK: Identifiers
+        Rule4 = "test" Identifier Identifier;            // CASE 5: Sequence directly in rule - OK (gets name from rule)
+        Rule5 = "test" Identifier Identifier Identifier; // CASE 6: Long sequence directly in rule - OK (gets name from rule)
+        Rule6 = "test" (Identifier Identifier);          // CASE 7: Group with sequence - OK (inherits name)
+        Rule7 = "test" Identifier?;                      // CASE 8: Optional without name - OK (allowed)
+        Rule8 = "test" Identifier??;                     // CASE 9: OftenMissed without name - OK (allowed)
     
         // CORRECT cases (with names):
         GoodRule1 = "test" Items=Identifier*;            // ZeroOrMany with name
@@ -82,6 +82,9 @@ public class GrammarValidationTests
             Assert.Fail("Manual parse result is not success");
             return;
         }
+
+        manualGrammar = new AstSimplifier().Transform(manualGrammar);
+
 
         var typeChecker = new TypeChecker(new SourceText(grammarText, "test.grammar"), Terminals: [
             CsNitraTerminals.Identifier(),
