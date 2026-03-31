@@ -80,7 +80,7 @@ public class CalcTests
     [TestMethod] public void TestPrecedence3() => TestExpression("3+2+5", "((3 + 2) + 5)", 10);
     [TestMethod] public void TestPrecedence4() => TestExpression("5+4+1^2^3", "((5 + 4) + (1 ^ (2 ^ 3)))", 5 + 4 + (int)Math.Pow(1, Math.Pow(2, 3)));
     [TestMethod] public void TestParentheses() => TestExpression("(3+2)*4", "((3 + 2) * 4)", 20);
-    [TestMethod] public void TestUnary() => TestExpression(" - 1 + 2", "(-1 + 2)", 1);
+    [TestMethod] public void TestUnary() => TestExpression(" - 1 + 2", "(-(1) + 2)", 1);
     [TestMethod] public void TestRightAssociativity() => TestExpression("2^3^4", "(2 ^ (3 ^ 4))", BigInteger.Pow(2, (int)BigInteger.Pow(3, 4)));
 
     private void TestExpression(string input, string expectedAst, BigInteger expectedResult, [CallerArgumentExpression(nameof(expectedResult))] string? expectedText = null)
@@ -163,6 +163,6 @@ public class CalcTests
     private record NegateExpr(Expr Inner) : Expr
     {
         public override BigInteger Evaluate() => -Inner.Evaluate();
-        public override string ToString() => $"-{Inner}";
+        public override string ToString() => $"-({Inner})";
     }
 }
