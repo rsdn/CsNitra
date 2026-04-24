@@ -1,4 +1,4 @@
-﻿#nullable enable
+#nullable enable
 
 using Diagnostics;
 using System.Diagnostics;
@@ -43,6 +43,8 @@ public class Parser(Terminal trivia, Log? log = null)
     public Dictionary<string, TdoppRule> TdoppRules { get; } = new();
 
     private readonly Dictionary<(int pos, string rule, int precedence), Result> _memo = new();
+    private readonly Dictionary<(int pos, string rule, int precedence), Result> _partialMemo = new();
+    private Result? _partialAccumulated;
 
     public void BuildTdoppRules()
     {
@@ -154,6 +156,7 @@ public class Parser(Terminal trivia, Log? log = null)
         _recoverySkipPos = -1;
         var currentStartPos = startPos;
         _memo.Clear();
+        _partialMemo.Clear();
 
         if (input.Length > 0)
         {
@@ -200,6 +203,23 @@ public class Parser(Terminal trivia, Log? log = null)
 
             _recoverySkipPos = ErrorPos;
 
+            // First recovery iteration: try to continue from partial results
+            if (i == 0 && _partialMemo.Count > 0)
+            {
+                foreach (var kvp in _partialMemo)
+                {
+                    if (kvp.Value.TryGetPartial(out var partialTree, out var partialPos) && partialPos == ErrorPos)
+                    {
+                        Log($"Found partial at ErrorPos: {partialTree.Kind}", LogImportance.High);
+                        _partialMemo.Clear();
+                        var recoveryResult = ContinueFromPartial(kvp.Key.rule, kvp.Value, minPrecedence: 0, startPos: currentStartPos, input);
+                        if (recoveryResult.IsSuccess)
+                            return recoveryResult;
+                        break;
+                    }
+                }
+            }
+
             foreach (var x in _memo.ToArray())
             {
                 var pos = x.Key.pos;
@@ -213,6 +233,8 @@ public class Parser(Terminal trivia, Log? log = null)
                 if (x.Value.NewPos == ErrorPos)
                     _memo.Remove(x.Key);
             }
+
+            _partialMemo.Clear();
         }
     }
 
@@ -227,7 +249,9 @@ public class Parser(Terminal trivia, Log? log = null)
 
         if (_memo.TryGetValue(memoKey, out var cached))
         {
-            if (_recoverySkipPos == cached.MaxFailPos)
+            if (cached.ResultKind == Result.Kind.Partial && _recoverySkipPos == cached.MaxFailPos)
+                Log($"Ignoring possible partial memo in recovery mode: {memoKey} => {cached}");
+            else if (_recoverySkipPos == cached.MaxFailPos)
                 Log($"Ignoring posible failed memo in recovery mode: {memoKey} => {cached}");
             else
             {
@@ -238,6 +262,15 @@ public class Parser(Terminal trivia, Log? log = null)
 
         if (!TdoppRules.TryGetValue(ruleName, out var tdoppRule))
             throw new InvalidDataException($"The rule '{ruleName}' does not exist. Existing rules: [{TdoppRules.Keys.OrderBy(x => x)}].");
+
+        // During recovery, try to continue from partial result
+        if (isRecoveryPos && _partialMemo.TryGetValue(memoKey, out var partialCached))
+        {
+            Log($"Found partial memo in recovery mode: {memoKey}", LogImportance.High);
+            var recoveryResult = ContinueFromPartial(ruleName, partialCached, minPrecedence, startPos, input);
+            if (recoveryResult.IsSuccess)
+                return _memo[memoKey] = recoveryResult;
+        }
 
         if (isRecoveryPos)
             Log($"Recover at {startPos} rule: {ruleName} Prefixs: [{string.Join<Rule>(", ", tdoppRule.Prefix)}]", LogImportance.High);
@@ -259,13 +292,30 @@ public class Parser(Terminal trivia, Log? log = null)
             if (prefixResult.MaxFailPos > maxFailPos)
                 maxFailPos = prefixResult.MaxFailPos;
 
-            if (!prefixResult.TryGetSuccess(out var node, out var newPos))
+            // Check for partial result - store it and treat as failure
+            if (prefixResult.ResultKind == Result.Kind.Partial)
+            {
+                Log($"  Partial result at {startPos}: {prefixResult.Node?.Kind}", LogImportance.High);
+                _partialAccumulated = prefixResult;
+                _partialMemo[memoKey] = _partialAccumulated.Value;
+                continue;
+            }
+
+            // Try success first, then partial (partial continues parsing but marks as incomplete)
+            bool gotSuccess = prefixResult.TryGetSuccess(out var node, out var newPos);
+            bool gotPartial = !gotSuccess && prefixResult.TryGetPartial(out node, out newPos);
+            
+            if (!gotSuccess && !gotPartial)
                 continue;
 
             Log($"  Prefix at {newPos} success: {node.Kind} prefixResult: {prefixResult}");
-            var postfixResult = ProcessPostfix(tdoppRule, node, minPrecedence, newPos, input);
+            var postfixResult = ContinueFromPartialPostfix(tdoppRule, node, minPrecedence, newPos, input);
 
-            if (postfixResult.TryGetSuccess(out var postNode, out var postNewPos))
+            // If prefix was partial, propagate partial status
+            if (gotPartial && postfixResult.ResultKind != Result.Kind.Partial)
+                postfixResult = Result.Partial(postfixResult.Node!, postfixResult.NewPos, postfixResult.MaxFailPos);
+
+            if (postfixResult.TryGetSuccess(out var postNode, out var postNewPos) || postfixResult.TryGetPartial(out postNode, out postNewPos))
             {
                 Log($"  Postfix at {newPos} to {postNewPos} success: {postNode.Kind}: «{input[newPos..postNewPos]}» full expr at {startPos}: «{input[startPos..postNewPos]}»");
                 if (postNewPos > maxPos)
@@ -284,6 +334,12 @@ public class Parser(Terminal trivia, Log? log = null)
             }
         }
 
+        if (_partialAccumulated is { } p)
+        {
+            _partialMemo[memoKey] = p;
+            return _memo[memoKey] = Result.Failure(p.MaxFailPos);
+        }
+
         _ruleStack.Pop();
 
         if (bestResult is { } result)
@@ -292,7 +348,132 @@ public class Parser(Terminal trivia, Log? log = null)
         return _memo[memoKey] = Result.Failure(maxFailPos);
     }
 
-    private Result ProcessPostfix(
+    /// <summary>
+    /// Continues parsing from a partial result using recovery rules.
+    /// When we have a partial tree (e.g., parsed left operand but failed on operator),
+    /// we try to recover by parsing from the error position using recovery rules,
+    /// then merge the recovered content with the partial tree.
+    /// </summary>
+    private Result ContinueFromPartial(string ruleName, Result partialResult, int minPrecedence, int startPos, string input)
+    {
+        if (!partialResult.TryGetPartial(out var partialTree, out var partialPos))
+            return Result.Failure(partialResult.MaxFailPos);
+
+        if (!TdoppRules.TryGetValue(ruleName, out var tdoppRule))
+            return Result.Failure(partialResult.MaxFailPos);
+
+        Log($"ContinueFromPartial: rule={ruleName} partialPos={partialPos} treeKind={partialTree.Kind}", LogImportance.High);
+        
+        _partialMemo.Clear();
+        
+        // Try to recover by parsing from the error position using recovery rules.
+        // The partial tree contains what was successfully parsed so far.
+        // Recovery rules can fill in the missing parts (e.g., missing operators).
+        var recoveryResult = TryRecoverFromPartial(ruleName, partialTree, minPrecedence, startPos, input);
+        
+        if (recoveryResult.TryGetSuccess(out var recoveredNode, out var recoveredPos))
+        {
+            // Merge the recovered content with the partial tree.
+            // We need to combine: partialTree (already parsed) + recovered content (newly recovered).
+            var merged = MergeWithPartialTree(partialTree, recoveredNode);
+            return Result.Success(merged, recoveredPos, recoveryResult.MaxFailPos);
+        }
+
+        // If recovery failed, fall back to continuing with postfix processing
+        return ContinueFromPartialPostfixFallback(tdoppRule, partialTree, minPrecedence, partialPos, input);
+    }
+
+    /// <summary>
+    /// Try to recover by parsing from the error position using recovery rules.
+    /// </summary>
+    private Result TryRecoverFromPartial(string ruleName, ISyntaxNode partialTree, int minPrecedence, int startPos, string input)
+    {
+        if (!TdoppRules.TryGetValue(ruleName, out var tdoppRule))
+            return Result.Failure(startPos);
+
+        // Save the current recovery skip position
+        var savedRecoverySkipPos = _recoverySkipPos;
+
+        // Temporarily set recovery position to partial tree's end position
+        // so recovery rules can trigger at the correct position
+        _recoverySkipPos = partialTree.EndPos;
+
+        // Try recovery prefixes at the partial position
+        foreach (var prefix in tdoppRule.RecoveryPrefix)
+        {
+            var prefixResult = ParseAlternative(prefix, partialTree.EndPos, input);
+
+            if (prefixResult.TryGetSuccess(out var node, out var newPos))
+            {
+                Log($"Recovery prefix matched: {node.Kind} at {newPos}", LogImportance.High);
+                var recoveryPostfix = ContinueFromPartialPostfix(tdoppRule, node, minPrecedence, newPos, input);
+                _recoverySkipPos = savedRecoverySkipPos;
+                if (recoveryPostfix.TryGetSuccess(out var postNode, out var postNewPos))
+                {
+                    return Result.Success(postNode, postNewPos, recoveryPostfix.MaxFailPos);
+                }
+                continue;
+            }
+
+            if (prefixResult.TryGetPartial(out node, out newPos))
+            {
+                Log($"Recovery partial matched: {node.Kind} at {newPos}", LogImportance.High);
+                var recoveryPostfix = ContinueFromPartialPostfix(tdoppRule, node, minPrecedence, newPos, input);
+                _recoverySkipPos = savedRecoverySkipPos;
+                if (recoveryPostfix.TryGetSuccess(out var postNode, out var postNewPos) ||
+                    recoveryPostfix.TryGetPartial(out postNode, out postNewPos))
+                {
+                    return Result.Success(postNode, postNewPos, recoveryPostfix.MaxFailPos);
+                }
+            }
+        }
+
+        // No recovery prefix matched - restore and return failure
+        _recoverySkipPos = savedRecoverySkipPos;
+        return Result.Failure(startPos);
+    }
+
+    /// <summary>
+    /// Fallback: continue from partial tree using only postfix processing (original behavior).
+    /// </summary>
+    private Result ContinueFromPartialPostfixFallback(TdoppRule rule, ISyntaxNode partialTree, int minPrecedence, int startPos, string input)
+    {
+        Log($"Continuing from partial tree (fallback) at {startPos}: {partialTree.Kind}", LogImportance.High);
+        return ContinueFromPartialPostfix(rule, partialTree, minPrecedence, startPos, input);
+    }
+
+    /// <summary>
+    /// Merge a partial tree with a recovered node by creating a SeqNode.
+    /// The partial tree represents what was already parsed; the recovered node
+    /// represents what was recovered via recovery rules.
+    /// </summary>
+    private ISyntaxNode MergeWithPartialTree(ISyntaxNode partial, ISyntaxNode recovered)
+    {
+        // If partial is already a SeqNode, append recovered elements
+        if (partial is SeqNode existingSeq)
+        {
+            var newElements = new List<ISyntaxNode>(existingSeq.Elements.Count + 1);
+            foreach (var elem in existingSeq.Elements)
+                newElements.Add(elem);
+            newElements.Add(recovered);
+            return new SeqNode(existingSeq.Kind, newElements, existingSeq.StartPos, recovered.EndPos);
+        }
+        
+        // If recovered is a SeqNode, merge its elements with the partial tree
+        if (recovered is SeqNode recoveredSeq)
+        {
+            var newElements = new List<ISyntaxNode>(1 + recoveredSeq.Elements.Count);
+            newElements.Add(partial);
+            foreach (var elem in recoveredSeq.Elements)
+                newElements.Add(elem);
+            return new SeqNode("Recovery", newElements, partial.StartPos, recovered.EndPos);
+        }
+        
+        // Otherwise create a new SeqNode with both
+        return new SeqNode("Recovery", new List<ISyntaxNode> { partial, recovered }, partial.StartPos, recovered.EndPos);
+    }
+
+    private Result ContinueFromPartialPostfix(
         TdoppRule rule,
         ISyntaxNode prefixNode,
         int minPrecedence,
@@ -302,6 +483,7 @@ public class Parser(Terminal trivia, Log? log = null)
         var newPos = startPos;
         var currentResult = prefixNode;
         var maxFailPos = startPos;
+        var isPartial = false;
 
         while (true)
         {
@@ -329,8 +511,15 @@ public class Parser(Terminal trivia, Log? log = null)
                 if (result.MaxFailPos > maxFailPos)
                     maxFailPos = result.MaxFailPos;
 
-                if (!result.TryGetSuccess(out var node, out var parsedPos))
+                // Try success first, then partial
+                bool gotSuccess = result.TryGetSuccess(out var node, out var parsedPos);
+                bool gotPartial = !gotSuccess && result.TryGetPartial(out node, out parsedPos);
+                
+                if (!gotSuccess && !gotPartial)
                     continue;
+
+                if (gotPartial)
+                    isPartial = true;
 
                 // Выбираем самый длинный или самый левый вариант
                 if (parsedPos > bestPos || parsedPos == bestPos && (bestPostfix == null || !postfix.Right && bestPostfix!.Right))
@@ -356,6 +545,8 @@ public class Parser(Terminal trivia, Log? log = null)
             newPos = bestPos;
         }
 
+        if (isPartial)
+            return Result.Partial(currentResult, newPos, maxFailPos);
         return Result.Success(currentResult, newPos, maxFailPos);
     }
 
@@ -368,6 +559,7 @@ public class Parser(Terminal trivia, Log? log = null)
         var newPos = startPos;
         var maxFailPos = startPos;
         List<ISyntaxNode>? elements = null;
+        var isPartial = false;
 
         foreach (var element in postfix.Seq.Elements)
         {
@@ -377,8 +569,15 @@ public class Parser(Terminal trivia, Log? log = null)
             if (result.MaxFailPos > maxFailPos)
                 maxFailPos = result.MaxFailPos;
 
-            if (!result.TryGetSuccess(out var node, out var parsedPos))
+            // Try success first, then partial
+            bool gotSuccess = result.TryGetSuccess(out var node, out var parsedPos);
+            bool gotPartial = !gotSuccess && result.TryGetPartial(out node, out parsedPos);
+            
+            if (!gotSuccess && !gotPartial)
                 return result;
+
+            if (gotPartial)
+                isPartial = true;
 
             // Skip predicate nodes as they are not part of the AST
             if (node is not PredicateNode)
@@ -394,9 +593,16 @@ public class Parser(Terminal trivia, Log? log = null)
 
         // Optimization: if there is only one element (currentResult), return it directly instead of wrapping in SeqNode
         if (elements!.Count == 1)
+        {
+            if (isPartial)
+                return Result.Partial(elements[0], newPos, maxFailPos);
             return Result.Success(elements[0], newPos, maxFailPos);
+        }
 
-        return Result.Success(new SeqNode(postfix.Seq.Kind ?? "Seq", elements, currentResult.StartPos, newPos), newPos, maxFailPos);
+        var seqNode = new SeqNode(postfix.Seq.Kind ?? "Seq", elements, currentResult.StartPos, newPos);
+        if (isPartial)
+            return Result.Partial(seqNode, newPos, maxFailPos);
+        return Result.Success(seqNode, newPos, maxFailPos);
     }
 
     private Result ParseAlternative(
@@ -467,10 +673,16 @@ public class Parser(Terminal trivia, Log? log = null)
 
         // Parse at least one element
         var firstResult = ParseAlternative(oneOrMany.Element, currentPos, input);
-        if (!firstResult.TryGetSuccess(out var firstNode, out var newPos))
+        
+        // Try success first, then partial
+        bool gotSuccess = firstResult.TryGetSuccess(out var firstNode, out var newPos);
+        bool gotPartial = !gotSuccess && firstResult.TryGetPartial(out firstNode, out newPos);
+        
+        if (!gotSuccess && !gotPartial)
             return Result.Failure(firstResult.MaxFailPos);
 
         var maxFailPos = firstResult.MaxFailPos;
+        var isPartial = gotPartial;
 
         elements.Add(firstNode);
         currentPos = newPos;
@@ -483,13 +695,22 @@ public class Parser(Terminal trivia, Log? log = null)
             if (result.MaxFailPos > maxFailPos)
                 maxFailPos = result.MaxFailPos;
 
-            if (!result.TryGetSuccess(out var node, out newPos))
+            // Try success first, then partial
+            gotSuccess = result.TryGetSuccess(out var node, out newPos);
+            gotPartial = !gotSuccess && result.TryGetPartial(out node, out newPos);
+            
+            if (!gotSuccess && !gotPartial)
                 break;
+
+            if (gotPartial)
+                isPartial = true;
 
             elements.Add(node);
             currentPos = newPos;
         }
 
+        if (isPartial)
+            return Result.Partial(new SeqNode(oneOrMany.Kind ?? "OneOrMany", elements, startPos, currentPos), currentPos, maxFailPos);
         return Result.Success(new SeqNode(oneOrMany.Kind ?? "OneOrMany", elements, startPos, currentPos), currentPos, maxFailPos);
     }
 
@@ -499,6 +720,7 @@ public class Parser(Terminal trivia, Log? log = null)
         var currentPos = startPos;
         var elements = new List<ISyntaxNode>();
         var maxFailPos = startPos;
+        var isPartial = false;
 
         while (true)
         {
@@ -507,17 +729,26 @@ public class Parser(Terminal trivia, Log? log = null)
             if (result.MaxFailPos > maxFailPos)
                 maxFailPos = result.MaxFailPos;
 
-            if (!result.TryGetSuccess(out var node, out var newPos))
+            // Try success first, then partial
+            bool gotSuccess = result.TryGetSuccess(out var node, out var newPos);
+            bool gotPartial = !gotSuccess && result.TryGetPartial(out node, out newPos);
+            
+            if (!gotSuccess && !gotPartial)
                 break;
+
+            if (gotPartial)
+                isPartial = true;
 
             elements.Add(node);
             currentPos = newPos;
         }
 
+        if (isPartial)
+            return Result.Partial(new SeqNode(zeroOrMany.Kind ?? "ZeroOrMany", elements, startPos, currentPos), currentPos, maxFailPos);
         return Result.Success(new SeqNode(zeroOrMany.Kind ?? "ZeroOrMany", elements, startPos, currentPos), currentPos, maxFailPos);
     }
 
-    private static CharsRef Preview(string input, int pos, int len = 5) => pos >= input.Length
+    private static string Preview(string input, int pos, int len = 5) => pos >= input.Length
         ? "«»"
         : $"«{input.AsSpan(pos, Math.Min(input.Length - pos, len)).Str()}»";
 
@@ -536,7 +767,7 @@ public class Parser(Terminal trivia, Log? log = null)
                 }
                 _expected.Add(terminal);
             }
-            Log($"Terminal mismatch: {terminal.Kind} at {startPos}: {Preview(input, startPos).Str()}");
+            Log($"Terminal mismatch: {terminal.Kind} at {startPos}: {Preview(input, startPos)}");
             return Result.Failure(startPos);
         }
 
@@ -571,6 +802,7 @@ public class Parser(Terminal trivia, Log? log = null)
         var elements = new List<ISyntaxNode>();
         var newPos = currentPos;
         var maxFailPos = startPos;
+        var isPartial = false;
 
         foreach (var element in seq.Elements)
         {
@@ -579,11 +811,18 @@ public class Parser(Terminal trivia, Log? log = null)
             if (result.MaxFailPos > maxFailPos)
                 maxFailPos = result.MaxFailPos;
 
-            if (!result.TryGetSuccess(out var node, out var parsedPos))
+            // Try success first, then partial
+            bool gotSuccess = result.TryGetSuccess(out var node, out var parsedPos);
+            bool gotPartial = !gotSuccess && result.TryGetPartial(out node, out parsedPos);
+            
+            if (!gotSuccess && !gotPartial)
             {
                 Log($"Seq element failed: {element} at {newPos}");
                 return result;
             }
+
+            if (gotPartial)
+                isPartial = true;
 
             // Skip predicate nodes as they are not part of the AST
             if (node is not PredicateNode)
@@ -594,9 +833,16 @@ public class Parser(Terminal trivia, Log? log = null)
 
         // Optimization: if there is only one element, return it directly instead of wrapping in SeqNode
         if (elements.Count == 1)
+        {
+            if (isPartial)
+                return Result.Partial(elements[0], newPos, maxFailPos);
             return Result.Success(elements[0], newPos, maxFailPos);
+        }
 
-        return Result.Success(new SeqNode(seq.Kind ?? "Seq", elements, startPos, newPos), newPos, maxFailPos);
+        var seqNode = new SeqNode(seq.Kind ?? "Seq", elements, startPos, newPos);
+        if (isPartial)
+            return Result.Partial(seqNode, newPos, maxFailPos);
+        return Result.Success(seqNode, newPos, maxFailPos);
     }
 
     // пока сделал разделение что было наглядно на ревью, по идее нужно объединить после обсуждения норм или не норм.
@@ -612,7 +858,11 @@ public class Parser(Terminal trivia, Log? log = null)
         // Первый элемент
         var firstResult = ParseAlternative(listRule.Element, currentPos, input);
 
-        if (!firstResult.TryGetSuccess(out var firstNode, out var newPos))
+        // Try success first, then partial
+        bool gotSuccess = firstResult.TryGetSuccess(out var firstNode, out var newPos);
+        bool gotPartial = !gotSuccess && firstResult.TryGetPartial(out firstNode, out newPos);
+        
+        if (!gotSuccess && !gotPartial)
         {
             if (listRule.CanBeEmpty)
             {
@@ -628,6 +878,8 @@ public class Parser(Terminal trivia, Log? log = null)
         }
 
         var maxFailPos = firstResult.MaxFailPos;
+        var isPartial = gotPartial;
+
         elements.Add(firstNode);
         currentPos = newPos;
 
@@ -639,16 +891,25 @@ public class Parser(Terminal trivia, Log? log = null)
             if (sepResult.MaxFailPos > maxFailPos)
                 maxFailPos = sepResult.MaxFailPos;
 
-            if (!sepResult.TryGetSuccess(out var sepNode, out newPos))
+            // Try success first, then partial
+            gotSuccess = sepResult.TryGetSuccess(out var sepNode, out newPos);
+            gotPartial = !gotSuccess && sepResult.TryGetPartial(out sepNode, out newPos);
+            
+            if (!gotSuccess && !gotPartial)
             {
                 if (listRule.EndBehavior == SeparatorEndBehavior.Required)
                 {
                     Log($"Missing separator at {currentPos}.");
+                    if (isPartial)
+                        return Result.Partial(new ListNode(listRule.Kind, elements, delimiters, startPos, currentPos), currentPos, maxFailPos);
                     return Result.Failure(maxFailPos);
                 }
 
                 break;
             }
+
+            if (gotPartial)
+                isPartial = true;
 
             // Добавляем разделитель
             delimiters.Add(sepNode);
@@ -659,16 +920,25 @@ public class Parser(Terminal trivia, Log? log = null)
             if (elemResult.MaxFailPos > maxFailPos)
                 maxFailPos = elemResult.MaxFailPos;
 
-            if (!elemResult.TryGetSuccess(out var elemNode, out newPos))
+            // Try success first, then partial
+            gotSuccess = elemResult.TryGetSuccess(out var elemNode, out newPos);
+            gotPartial = !gotSuccess && elemResult.TryGetPartial(out elemNode, out newPos);
+            
+            if (!gotSuccess && !gotPartial)
             {
                 if (listRule.EndBehavior == SeparatorEndBehavior.Forbidden)
                 {
                     Log($"End sepearator should not be present {currentPos}.");
+                    if (isPartial)
+                        return Result.Partial(new ListNode(listRule.Kind, elements, delimiters, startPos, currentPos), currentPos, maxFailPos);
                     return Result.Failure(maxFailPos);
                 }
 
                 break;
             }
+
+            if (gotPartial)
+                isPartial = true;
 
             elements.Add(elemNode);
             currentPos = newPos;
@@ -682,14 +952,15 @@ public class Parser(Terminal trivia, Log? log = null)
             if (sepResult.TryGetSuccess(out _, out _))
             {
                 Log($"End sepearator should not be present {currentPos}.");
+                if (isPartial)
+                    return Result.Partial(new ListNode(listRule.Kind, elements, delimiters, startPos, currentPos), currentPos, maxFailPos);
                 return Result.Failure(maxFailPos);
             }
         }
 
-        return Result.Success(
-            new ListNode(listRule.Kind, elements, delimiters, startPos, currentPos),
-            newPos: currentPos,
-            maxFailPos: maxFailPos
-        );
+        var listNode = new ListNode(listRule.Kind, elements, delimiters, startPos, currentPos);
+        if (isPartial)
+            return Result.Partial(listNode, currentPos, maxFailPos);
+        return Result.Success(listNode, currentPos, maxFailPos);
     }
 }

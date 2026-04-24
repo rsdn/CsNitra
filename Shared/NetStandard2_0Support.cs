@@ -1,11 +1,6 @@
 global using CharsRef = System.ReadOnlySpan<char>;
 
-internal static class ReadOnlySpanExtensions
-{
-    public static CharsRef AsSpan(this string text, int start, int length) => text.Substring(start, length);
-    public static CharsRef AsSpan(this string text, int start) => text[start..];
 
-}
 
 namespace System.Numerics.Hashing
 {

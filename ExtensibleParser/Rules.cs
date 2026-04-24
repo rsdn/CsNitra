@@ -1,4 +1,4 @@
-﻿namespace ExtensibleParser;
+namespace ExtensibleParser;
 
 /// <summary>
 /// Base class for all grammar rules in the parser.
@@ -67,7 +67,7 @@ public sealed record Literal(string Value, string? Kind = null) : Terminal(Kind 
     public override Rule InlineReferences(Dictionary<string, Rule> inlineableRules) => this;
 
     public override int TryMatch(string input, int startPos) =>
-        input.AsSpan(startPos).StartsWith(Value, StringComparison.Ordinal) ? Value.Length : -1;
+        input.AsSpan(startPos).StartsWith(Value.AsSpan(), StringComparison.Ordinal) ? Value.Length : -1;
 
     public override string ToString() => $"\"{Value}\"";
 

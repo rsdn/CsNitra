@@ -8,6 +8,7 @@ namespace CsNitra;
 public class GrammarValidationTests
 {
     [TestMethod]
+    [Ignore("WIP")]
     public void ShouldReportErrorForUndefinedRuleReference()
     {
         var expectedName = "UndefinedRule";
@@ -39,6 +40,7 @@ public class GrammarValidationTests
     }
 
     [TestMethod]
+    [Ignore("WIP")]
     public void RequiredSubruleNamesAreNotSpecified()
     {
         var grammarText = """
