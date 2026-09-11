@@ -29,10 +29,9 @@ public class Parser(Terminal trivia, Log? log = null)
     private FollowSetCalculator? _followCalculator;
 
 
-    // Структура для хранения информации о положении в правиле
-    private record struct RuleStackEntry(string RuleName, string? ParentRule, int? SeqIndex, int? AltIndex, int? LoopDepth);
+    private readonly List<StackFrame> _stackFrames = [];
 
-    private readonly Stack<RuleStackEntry> _ruleStack = new();
+    public IReadOnlyList<StackFrame> CurrentStackFrames => _stackFrames;
     private readonly HashSet<Terminal> _expected = [];
     public Terminal Trivia { get; private set; } = trivia;
     public Log? Logger { get; set; } = log;
@@ -188,10 +187,8 @@ public class Parser(Terminal trivia, Log? log = null)
                 // Recovery in recovery rules mode failed.
                 // Выводим стек правил с метаинформацией
                 Log($"--- RULE STACK TRACE ---", LogImportance.High);
-                foreach (var entry in _ruleStack.Reverse())
-                {
-                    Log($"  Rule: {entry.RuleName}, Parent: {entry.ParentRule}, SeqIndex: {entry.SeqIndex}, AltIndex: {entry.AltIndex}, LoopDepth: {entry.LoopDepth}", LogImportance.High);
-                }
+                foreach (var frame in _stackFrames)
+                    Log($"  Rule: {frame.RuleName}, Prec: {frame.Precedence}, Loc: {frame.Location}, Expected: [{string.Join(", ", (frame.Expected ?? Array.Empty<Terminal>()).Select(t => t.Kind))}]", LogImportance.High);
                 Log($"------------------------", LogImportance.High);
 
                 var debugInfos = MemoizationVisualazer(input);
@@ -284,9 +281,11 @@ public class Parser(Terminal trivia, Log? log = null)
         var prefixRules = isRecoveryPos ? tdoppRule.RecoveryPrefix : tdoppRule.Prefix;
         var maxFailPos = startPos;
 
-        _ruleStack.Push(new RuleStackEntry(ruleName, ParentRule: null, SeqIndex: null, AltIndex: null, LoopDepth: null));
-
-       foreach (var prefix in prefixRules)
+        for (var altIdx = 0; altIdx < prefixRules.Length; altIdx++)
+        {
+            var prefix = prefixRules[altIdx];
+            _stackFrames.Add(new StackFrame(ruleName, minPrecedence, new RuleFrameLocation(altIdx), null, null));
+            try
             {
                 Log($"  Trying prefix: {prefix}");
                 var prefixResult = ParseAlternative(prefix, startPos, input);
@@ -298,49 +297,50 @@ public class Parser(Terminal trivia, Log? log = null)
                 if (prefixResult.ResultKind == Result.Kind.Partial)
                 {
                     Log($"  Partial result at {startPos}: {prefixResult.Node?.Kind}", LogImportance.High);
-                    var prefixCtx = new ParseContext(
-                        ruleName,
-                        new PrefixLocation(prefixRules.ToList().IndexOf(prefix)),
-                        GetExpectedTerminals(prefix),
-                        null);
+                    var prefixCtx = new ParseContext(ruleName, new PrefixLocation(altIdx), GetExpectedTerminals(prefix), null);
                     _partialAccumulated = Result.Partial(prefixResult.Node!, prefixResult.NewPos, prefixResult.MaxFailPos, prefixCtx);
                     _partialMemo[memoKey] = _partialAccumulated.Value;
                     continue;
                 }
 
-            // Try success first, then partial (partial continues parsing but marks as incomplete)
-            bool gotSuccess = prefixResult.TryGetSuccess(out var node, out var newPos);
-            bool gotPartial = !gotSuccess && prefixResult.TryGetPartial(out node, out newPos);
-            
-            if (!gotSuccess && !gotPartial)
-                continue;
+                // Try success first, then partial (partial continues parsing but marks as incomplete)
+                bool gotSuccess = prefixResult.TryGetSuccess(out var node, out var newPos);
+                bool gotPartial = !gotSuccess && prefixResult.TryGetPartial(out node, out newPos);
 
-            Log($"  Prefix at {newPos} success: {node.Kind} prefixResult: {prefixResult}");
-            var postfixResult = ContinueFromPartialPostfix(tdoppRule, node, minPrecedence, newPos, input);
+                if (!gotSuccess && !gotPartial)
+                    continue;
 
-            // If prefix was partial, propagate partial status
-            if (gotPartial && postfixResult.ResultKind != Result.Kind.Partial)
-            {
-                var propCtx = new ParseContext(ruleName, new PrefixLocation(prefixRules.ToList().IndexOf(prefix)), GetExpectedTerminals(prefix), null);
-                postfixResult = Result.Partial(postfixResult.Node!, postfixResult.NewPos, postfixResult.MaxFailPos, propCtx);
+                Log($"  Prefix at {newPos} success: {node.Kind} prefixResult: {prefixResult}");
+                var postfixResult = ContinueFromPartialPostfix(tdoppRule, node, minPrecedence, newPos, input);
+
+                // If prefix was partial, propagate partial status
+                if (gotPartial && postfixResult.ResultKind != Result.Kind.Partial)
+                {
+                    var propCtx = new ParseContext(ruleName, new PrefixLocation(altIdx), GetExpectedTerminals(prefix), null);
+                    postfixResult = Result.Partial(postfixResult.Node!, postfixResult.NewPos, postfixResult.MaxFailPos, propCtx);
+                }
+
+                if (postfixResult.TryGetSuccess(out var postNode, out var postNewPos) || postfixResult.TryGetPartial(out postNode, out postNewPos))
+                {
+                    Log($"  Postfix at {newPos} to {postNewPos} success: {postNode.Kind}: «{input[newPos..postNewPos]}» full expr at {startPos}: «{input[startPos..postNewPos]}»");
+                    if (postNewPos > maxPos)
+                    {
+                        maxPos = postNewPos;
+                        bestResult = postfixResult;
+                    }
+                    else if (postNewPos == maxPos && bestResult == null && isRecoveryPos)
+                    {
+                        // Это if нужен для обработки Error-правил восстанавливающих парсинг в случае недописанных конструкаций
+                        // (в которых пропущен терминал). Например, в случае пропущенного подврыважния в "1 + ".
+                        // Далее сдесь можно сделать логику разрешения неоднозначностей и более качественная работа с Error-правилами.
+                        maxPos = postNewPos;
+                        bestResult = postfixResult;
+                    }
+                }
             }
-
-            if (postfixResult.TryGetSuccess(out var postNode, out var postNewPos) || postfixResult.TryGetPartial(out postNode, out postNewPos))
+            finally
             {
-                Log($"  Postfix at {newPos} to {postNewPos} success: {postNode.Kind}: «{input[newPos..postNewPos]}» full expr at {startPos}: «{input[startPos..postNewPos]}»");
-                if (postNewPos > maxPos)
-                {
-                    maxPos = postNewPos;
-                    bestResult = postfixResult;
-                }
-                else if (postNewPos == maxPos && bestResult == null && isRecoveryPos)
-                {
-                    // Это if нужен для обработки Error-правил восстанавливающих парсинг в случае недописанных конструкаций
-                    // (в которых пропущен терминал). Например, в случае пропущенного подврыважния в "1 + ".
-                    // Далее сдесь можно сделать логику разрешения неоднозначностей и более качественная работа с Error-правилами.
-                    maxPos = postNewPos;
-                    bestResult = postfixResult;
-                }
+                PopFrame();
             }
         }
 
@@ -349,8 +349,6 @@ public class Parser(Terminal trivia, Log? log = null)
             _partialMemo[memoKey] = p;
             return _memo[memoKey] = Result.Failure(p.MaxFailPos);
         }
-
-        _ruleStack.Pop();
 
         if (bestResult is { } result)
             return _memo[memoKey] = result;
@@ -574,10 +572,12 @@ public class Parser(Terminal trivia, Log? log = null)
         List<ISyntaxNode>? elements = null;
         var isPartial = false;
 
-        foreach (var element in postfix.Seq.Elements)
+        for (var elemIdx = 0; elemIdx < postfix.Seq.Elements.Length; elemIdx++)
         {
+            var element = postfix.Seq.Elements[elemIdx];
             Log($"    Parsing at {newPos} postfix element: {element}");
-            var result = ParseAlternative(element, newPos, input);
+            var result = WithFrame(new PostfixFrameLocation(elemIdx), ComputeExpected(element), postfix.Seq.Kind ?? "Seq",
+                () => ParseAlternative(element, newPos, input));
 
             if (result.MaxFailPos > maxFailPos)
                 maxFailPos = result.MaxFailPos;
@@ -697,7 +697,8 @@ public class Parser(Terminal trivia, Log? log = null)
         var elements = new List<ISyntaxNode>();
 
         // Parse at least one element
-        var firstResult = ParseAlternative(oneOrMany.Element, currentPos, input);
+        var firstResult = WithFrame(new LoopFrameLocation("OneOrMany", 0), ComputeExpected(oneOrMany.Element), oneOrMany.Kind ?? "OneOrMany",
+            () => ParseAlternative(oneOrMany.Element, currentPos, input));
 
         // Try success first, then partial
         bool gotSuccess = firstResult.TryGetSuccess(out var firstNode, out var newPos);
@@ -716,7 +717,8 @@ public class Parser(Terminal trivia, Log? log = null)
         int iteration = 1;
         while (true)
         {
-            var result = ParseAlternative(oneOrMany.Element, currentPos, input);
+            var result = WithFrame(new LoopFrameLocation("OneOrMany", iteration), ComputeExpected(oneOrMany.Element), oneOrMany.Kind ?? "OneOrMany",
+                () => ParseAlternative(oneOrMany.Element, currentPos, input));
 
             if (result.MaxFailPos > maxFailPos)
                 maxFailPos = result.MaxFailPos;
@@ -759,7 +761,8 @@ public class Parser(Terminal trivia, Log? log = null)
         int iteration = 0;
         while (true)
         {
-            var result = ParseAlternative(zeroOrMany.Element, currentPos, input);
+            var result = WithFrame(new LoopFrameLocation("ZeroOrMany", iteration), ComputeExpected(zeroOrMany.Element), zeroOrMany.Kind ?? "ZeroOrMany",
+                () => ParseAlternative(zeroOrMany.Element, currentPos, input));
 
             if (result.MaxFailPos > maxFailPos)
                 maxFailPos = result.MaxFailPos;
@@ -850,7 +853,8 @@ public class Parser(Terminal trivia, Log? log = null)
         for (int elemIdx = 0; elemIdx < seq.Elements.Length; elemIdx++)
         {
             var element = seq.Elements[elemIdx];
-            var result = ParseAlternative(element, newPos, input);
+            var result = WithFrame(new SeqFrameLocation(elemIdx), ComputeExpected(element), seq.Kind ?? "Seq",
+                () => ParseAlternative(element, newPos, input));
 
             if (result.MaxFailPos > maxFailPos)
                 maxFailPos = result.MaxFailPos;
@@ -910,6 +914,38 @@ public class Parser(Terminal trivia, Log? log = null)
             _ => []
         };
     }
+
+    private Result WithFrame(FrameLocation location, Terminal[]? expected, string fallbackRuleName, Func<Result> parse)
+    {
+        PushFrame(location, expected, fallbackRuleName);
+        try
+        {
+            return parse();
+        }
+        finally
+        {
+            PopFrame();
+        }
+    }
+
+    private void PushFrame(FrameLocation location, Terminal[]? expected, string fallbackRuleName)
+    {
+        var ruleName = _stackFrames.Count > 0 ? _stackFrames[_stackFrames.Count - 1].RuleName : fallbackRuleName;
+        var precedence = _stackFrames.Count > 0 ? _stackFrames[_stackFrames.Count - 1].Precedence : 0;
+        _stackFrames.Add(new StackFrame(ruleName, precedence, location, expected, null));
+    }
+
+    private void PopFrame() => _stackFrames.RemoveAt(_stackFrames.Count - 1);
+
+    private static Terminal[]? ComputeExpected(Rule rule) => rule switch
+    {
+        Terminal t => [t],
+        Seq s => s.Elements.Length > 0 ? ComputeExpected(s.Elements[0]) : [],
+        OneOrMany o => ComputeExpected(o.Element),
+        SeparatedList sl => sl.CanBeEmpty ? [] : ComputeExpected(sl.Element),
+        Optional or ZeroOrMany or OftenMissed or AndPredicate or NotPredicate => [],
+        _ => null
+    };
 
     private Result ParseSeparatedList(SeparatedList listRule, int startPos, string input)
     {

@@ -210,7 +210,7 @@ public class EnumGenerator : IIncrementalGenerator
         if (string.IsNullOrEmpty(cppName))
             return cppName;
 
-        if (cppName.IndexOf('_', StringComparison.Ordinal) < 0 && cppName.Length > 0 && char.IsUpper(cppName[0]))
+        if (cppName.IndexOf('_') < 0 && cppName.Length > 0 && char.IsUpper(cppName[0]))
             return cppName.EndsWith(";", StringComparison.Ordinal) ? cppName[..^1] : cppName;
 
         var length = cppName.Length;

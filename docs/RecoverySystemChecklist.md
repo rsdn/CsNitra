@@ -10,7 +10,7 @@
 - `[x]` — выполнен и проверен
 - `[!]` — есть проблемы / отложено
 
-**Текущий пункт:** 0.1
+**Текущий пункт:** 0.2
 
 ---
 
@@ -19,11 +19,19 @@
 Цель: починить базу, на которой строится engine. После Фазы 0 recovery-поведение на корректных и текущих некорректных входах не меняется (кроме устранения зацикливания), но `Partial` и снимки становятся реальными.
 
 ### 0.1 Дисциплина `_ruleStack` → `List<StackFrame>`
-- [ ] Статус
+- [x] Статус — выполнен, проверен (сборка 0 ошибок; StackFrameTests 4/4; ParserTests 176/176)
 - **Что:** push с локациями (Seq/Loop/Postfix/Alt + `Expected` + `Precedence` + `Options`), pop в `finally`.
 - **Файлы:** `Parser.cs`, `Recovery/StackFrame.cs`
 - **Тесты:** `StackFrameTests`: глубина/локации/очистка при исключениях.
 - **Заметки:**
+  - Создан `Recovery/StackFrame.cs` (`StackFrame` + `FrameLocation` и 4 локации). `RuleStackEntry`/`_ruleStack` заменены на `List<StackFrame> _stackFrames`; доступ для тестов — `public IReadOnlyList<StackFrame> Parser.CurrentStackFrames` (в проекте нет InternalsVisibleTo, поэтому свойство public).
+  - Push-дисциплина: `ParseRule` — `RuleFrameLocation(altIdx)` перед каждой альтернативой (prefix), `ParseSeq` — `SeqFrameLocation(i)` + `Expected`, `ParseOneOrMany`/`ParseZeroOrMany` — `LoopFrameLocation(kind, iteration)` (первый элемент OneOrMany = iteration 0, второй элемент любого цикла = iteration 1), `TryParsePostfix` — `PostfixFrameLocation(i)`. Все pop'ы — в `finally` (хелперы `WithFrame`/`PushFrame`/`PopFrame`); устранён пропуск pop на раннем возврате через `_partialAccumulated`.
+  - Ненулевые (не-правило) кадры наследуют `RuleName`/`Precedence` от кадра сверху (fallback — kind правила при пустом стеке, на практике недостижимо).
+  - `Expected` — временный локальный расчёт `ComputeExpected` (Terminal → `[t]`; Seq → first первого элемента рекурсивно; `OneOrMany` → first элемента; `SeparatedList` → `[]` если `CanBeEmpty`, иначе first элемента; `Optional`/`ZeroOrMany`/`OftenMissed`/предикаты → `[]`; `Ref`/`ReqRef` → `null`). Заменится на `FirstSets.Get` в пункте 0.3.
+  - `Options` всегда `null` (`RecoveryRule` появится в 1.5/2.1). Логика v1 (`_partialMemo`, `ContinueFromPartial`, `_partialAccumulated`, RecoveryPrefix/Postfix) не тронута.
+  - Лог "RULE STACK TRACE" в `Parse` переписан под новую структуру (Rule/Prec/Loc/Expected); в момент вывода стек пуст (все pop'ы отработали) — живой снимок в момент ошибки появится в пункте 0.2.
+  - **Проблема (вне пункта):** HEAD-коммит 9497b0d содержит ошибку сборки `CppInteropGenerator/EnumGenerator.cs:213` — `IndexOf(char, StringComparison)` недоступен в netstandard2.0 (коммит «fix netstandard2.0 build error» заменил один недоступный API на другой). Решение: минимальное однострочное исправление `IndexOf('_')` — без него `dotnet build Nitra.sln` не даёт 0 ошибок и не на чём проверять регрессию.
+  - **Результаты:** сборка `Nitra.sln` — 0 ошибок (57 предупреждений — все предсуществующие); `StackFrameTests` — 4/4 зелёные (глубина/локации на MiniC-подобной грамматике Module→ZeroOrMany(Function)→Seq, очистка после успеха, очистка при исключении из `TryMatch`, Iteration==1 для второго элемента обоих циклов); регрессия `Tests/ParserTests` — 176 пройдено, 0 упало, 2 пропущено (предсуществующие `[Ignore("WIP")]`).
 
 ### 0.2 `FailureSnapshot`
 - [ ] Статус
