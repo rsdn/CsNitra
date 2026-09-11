@@ -67,3 +67,7 @@ $tf/
 *.VC.opendb
 *.VC.VC.opendb
 wf.svg
+
+# RoslynMcpServer per-project config (machine-local paths)
+RoslynMcp.jsonc
+.opencode/opencode.json
