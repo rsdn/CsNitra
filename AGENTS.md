@@ -9,8 +9,9 @@ dotnet test
 ```
 
 - **SDK**: .NET 8.0 (`global.json` pins 8.0.100 with `latestFeature` rollforward).
-- **Solution**: Always build through `Nitra.sln`. Building individual `.csproj` files bypasses `Directory.Build.props`, causing stray `obj/` and `bin/` directories to appear inside each project subfolder.
-- **Output**: `bin/` (build), `obj/` (intermediate) — both gitignored, rooted at repo root via `Directory.Build.props`.
+- **Build/test from repo root** so `Nitra.sln` is picked up. `Directory.Build.props` centralizes `bin/` and `obj/` at repo root for every project — even a direct single-`.csproj` build. Do not expect per-project `bin/`/`obj/` folders.
+- **Single test**: `dotnet test Tests/ParserTests --filter "FullyQualifiedName~JsonParserTests"` (vstest `--filter` works on all three test projects).
+- **GraphViz is a test prerequisite**: `RegexTests` shells out to `dot` (`Regex/Regex/Dot.cs`) to render NFA/DFA SVGs. Without GraphViz on PATH, those tests throw.
 - **Entry point**: `ExtensibleParser/Parser.cs` — the most important file. Start code analysis here to understand the parser engine.
 
 ## Architecture
@@ -33,36 +34,50 @@ dotnet test
 | `Parsers/Dot/DotParser/` | DOT graph format |
 | `Parsers/Dot/Workflow/` | Workflow domain model |
 | `Parsers/Dot/WorkflowGenerator/` | DOT workflow code generator |
-| `Parsers/Dot/WiWorkflow/` | Workflow implementation |
+| `Parsers/Dot/WiWorkflow/` | Workflow implementation (console exe) |
 | `Parsers/CsNitra/CsNitraGrammar/` | CsNitra grammar parser (meta-circular) |
 
 ### Tests
 | Path | Framework | Tests |
 |---|---|---|
 | `Tests/ParserTests/` | MSTest 3.6.4 (`MSTest.Sdk`) | Parser engine + all parser implementations |
-| `Tests/RegexTests/` | MSTest 3.6.4 (`MSTest.Sdk`) | Regex/DFAl engine |
-| `Tests/WiWorkflowTests/` | MSTest 3.6.4 (`Microsoft.NET.Sdk`) | Workflow integration |
+| `Tests/RegexTests/` | MSTest 3.6.4 (`MSTest.Sdk`) | Regex/DFA engine (needs GraphViz on PATH for SVG tests) |
+| `Tests/WiWorkflowTests/` | MSTest 3.6.4 (`Microsoft.NET.Sdk`) | Workflow integration (currently a single placeholder test) |
 
-## Source Generator — Critical Build Detail
+- All three test projects set `[assembly: Parallelize(Scope = ExecutionScope.MethodLevel)]` — tests run concurrently at method level. Keep tests stateless/thread-safe; avoid shared statics or shared output files (e.g. `RegexTests` writes `regex_*.svg` files — keep such paths unique per test).
 
-`TerminalGenerator` is a Roslyn analyzer that processes classes marked with `[TerminalMatcher]` and methods with `[Regex("pattern")]`. It generates the `TryMatch` DFA implementation at compile time.
+## Build-Time Source Generators
 
-**Every parser project that defines terminals must reference both:**
+Two Roslyn generators run at build time — no separate codegen step.
+
+**`TerminalGenerator`** processes classes marked `[TerminalMatcher]` whose methods carry `[Regex("pattern")]` and generates the DFA-based `TryMatch` implementation. Terminal classes must be declared `partial` (the generator emits the matching partial half).
+
+**Every project that defines terminals must reference both:**
 - `Regex/Regex` with `OutputItemType="Analyzer"` — provides the runtime DFA library
 - `TerminalGenerator` with `OutputItemType="Analyzer" ReferenceOutputAssembly="false"` — the source generator
 
-If terminals fail to compile with missing `TryMatch`, verify these analyzer references are present. The generator runs during build — no separate codegen step needed.
+If terminals fail to compile with missing `TryMatch`, verify these analyzer references are present.
+
+**`WorkflowGenerator`** is a second generator: it reads a DOT file passed via `AdditionalFiles` (e.g. `Parsers/Dot/WiWorkflow/wf.dot`) and generates C# workflow code for the `WiWorkflow` console app.
 
 ## Shared Projects
 
 Several `.shproj` / `.projitems` pairs exist (e.g. `Shared/`, `ExtensibleParser.ExtensibleParser.Shared/`). These import shared `.cs` files into multiple consuming projects via `<Import Project="...\*.projitems" Label="Shared" />`. Do not delete `.projitems` files — they are the binding between shared code and consumers.
+
+## In Progress: Error Recovery
+
+Error recovery is mid-implementation (tracked in git: `ExtensibleParser/Recovery/` is new). Before touching recovery-related code:
+
+- `docs/RecoverySystemPlan.md` — architecture and phased plan (written in Russian)
+- `docs/RecoverySystemChecklist.md` — phase-by-phase status (e.g. 0.1–0.2 done, 0.3+ pending)
+- Tests live in `Tests/ParserTests/Recovery/`
 
 ## CI
 
 - **Workflow**: `.github/workflows/dotnet.yml`
 - Runs on ubuntu-latest, windows-latest, macOS-latest with .NET 8.0.x
 - Steps: `dotnet restore` → `dotnet test --configuration Release --no-restore`
-- Installs GraphViz via `.github/actions/install-graphviz` (some tests may use it)
+- Installs GraphViz via `.github/actions/install-graphviz` — required by `RegexTests`, which shells out to `dot`
 
 ## Conventions
 
@@ -75,7 +90,6 @@ Several `.shproj` / `.projitems` pairs exist (e.g. `Shared/`, `ExtensibleParser.
 - **Separated loops**: `SeparatedList` replaces manual recursion for `Element, Separator, Element, ...` patterns. It supports `CanBeEmpty` and configurable `SeparatorEndBehavior` (`Optional`, `Required`, `Forbidden`) to control trailing separators. `OneOrMany` and `ZeroOrMany` cover unadorned repetition.
 - **Parse Tree**: Not a traditional AST — it's a more detailed, highly abstract tree automatically constructed from the grammar structure. Every grammar rule produces a corresponding node, preserving the full parse structure including separators, trivia, and intermediate constructs.
 - **TDOPP**: Expression parsing uses precedence-based left-recursive rules via `ReqRef`. Call `parser.BuildTdoppRules()` before parsing if grammar uses TDOPP rules.
-- **All projects target `Any CPU`** — no platform-specific builds needed.
 
 ## Code Formatting
 
