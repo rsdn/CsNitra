@@ -10,7 +10,7 @@
 - `[x]` — выполнен и проверен
 - `[!]` — есть проблемы / отложено
 
-**Текущий пункт:** 0.2
+**Текущий пункт:** 0.3
 
 ---
 
@@ -34,7 +34,7 @@
   - **Результаты:** сборка `Nitra.sln` — 0 ошибок (57 предупреждений — все предсуществующие); `StackFrameTests` — 4/4 зелёные (глубина/локации на MiniC-подобной грамматике Module→ZeroOrMany(Function)→Seq, очистка после успеха, очистка при исключении из `TryMatch`, Iteration==1 для второго элемента обоих циклов); регрессия `Tests/ParserTests` — 176 пройдено, 0 упало, 2 пропущено (предсуществующие `[Ignore("WIP")]`).
 
 ### 0.2 `FailureSnapshot`
-- [~] Статус — в работе (сборка 0 ошибок; SnapshotTests 6/6; ParserTests 182 passed / 0 failed / 2 skipped)
+- [x] Статус — выполнен, проверен (SnapshotTests 6/6; ParserTests 182/182) — в работе (сборка 0 ошибок; SnapshotTests 6/6; ParserTests 182 passed / 0 failed / 2 skipped)
 - **Что:** `CaptureSnapshot` в точке самого дальнего mismatch, `_lastSnapshot`, `Speculative`-хелпер, изоляция предикатов + speculative-проверки `SeparatedList`.
 - **Файлы:** `Parser.cs`, `Recovery/FailureSnapshot.cs`
 - **Тесты:** `SnapshotTests`: снимок при самом дальнем mismatch; спекуляция не портит снимок/`ErrorPos`/`_expected`.
