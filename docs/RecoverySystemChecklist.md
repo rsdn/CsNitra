@@ -1,104 +1,167 @@
-# Recovery System Implementation Checklist
+# Recovery System v2 — Implementation Checklist
 
-## Фаза 0: Исследование и инфраструктура диагностики
+**План:** `docs/RecoverySystemPlan.v2.md` (v1 — в `docs/Old/`, superseded).
+**Тестирование:** на MiniC (грамматика `Tests/ParserTests/MiniC/`).
+**Процесс:** каждый пункт — отдельный коммит. Субагент реализует один пункт, доводит до компилируемости, пишет тест к пункту, отлаживает, и дописывает в «Заметки» что сделал, с какими проблемами столкнулся и какие решения принял. Основной агент проверяет качество, помечает пункт `[x]` и коммитит.
 
-- [x] **0.1** Расширение FollowSetCalculator
-  - Переписать `FlattenRule`: SeparatedList, ReqRef, OneOrMany, ZeroOrMany, Optional
-  - Terminal identity: Literal по Value, остальные по инстансу
-  - Конфигурируемый start symbol
-  - Nested follow-sets
-  - Тесты: `FollowSetTests.cs`
+**Легенда статуса:**
+- `[ ]` — не начат
+- `[~]` — в работе (субагент запущен)
+- `[x]` — выполнен и проверен
+- `[!]` — есть проблемы / отложено
 
-- [ ] **0.2** Контекст восстановления в Result.Partial [ЗН-5]
-  - nullable `ParseContext?` в `Result` struct
-  - `ParseContext`, `ParseLocation`, `SeqLocation`, `LoopLocation`, `PrefixLocation`
-  - `RecoveryStackReconstructor`
-  - Модификация Parser.cs — создание Partial с Context
-  - Тесты: `ParseContextTests.cs`
+**Текущий пункт:** 0.1
 
-- [ ] **0.3** Представление ошибок в дереве [ЗН-4]
-  - `_skippedTextMap` в Parser
-  - `GetSkippedText`, `RegisterSkippedText`
-  - `RecoveryDiagnostic`
-  - `RecoveryTreeExtensions`
-  - Тесты: `ErrorRepresentationTests.cs`
+---
 
-## Фаза 1: Мемо-инъекция и итеративное восстановление
+## Фаза 0. Фундамент парсера (исправления кода, нового recovery-поведения нет)
 
-- [ ] **1.1** Алгоритм итеративного восстановления [ЗН-1,2,3,7,11]
-  - `_terminalMemo`, `_isRecoveryMode`
-  - `IsRecoveryPatch` в Context
-  - Изоляция предикатов
-  - `CleanMemoForRecovery`
-  - Инвариант прогресса
-  - `RecoveryEngine`, `MemoPatch`, `RecoveryContextSnapshot`
-  - Миграция старого recovery-кода
-  - Тесты: `IterativeRecoveryTests.cs`
+Цель: починить базу, на которой строится engine. После Фазы 0 recovery-поведение на корректных и текущих некорректных входах не меняется (кроме устранения зацикливания), но `Partial` и снимки становятся реальными.
 
-- [ ] **1.2** Стратегия 1: Вставка ожидаемого токена
-  - `InsertTokenStrategy`
-  - `ModifyPartialForContinuation`
-  - Тесты: `InsertTokenTests.cs`
+### 0.1 Дисциплина `_ruleStack` → `List<StackFrame>`
+- [ ] Статус
+- **Что:** push с локациями (Seq/Loop/Postfix/Alt + `Expected` + `Precedence` + `Options`), pop в `finally`.
+- **Файлы:** `Parser.cs`, `Recovery/StackFrame.cs`
+- **Тесты:** `StackFrameTests`: глубина/локации/очистка при исключениях.
+- **Заметки:**
 
-- [ ] **1.3** Стратегия 2: Пропуск текста
-  - `SkipAheadStrategy`
-  - `CachedTryMatch`
-  - Тесты: `SkipAheadTests.cs`
+### 0.2 `FailureSnapshot`
+- [ ] Статус
+- **Что:** `CaptureSnapshot` в точке самого дальнего mismatch, `_lastSnapshot`, `Speculative`-хелпер, изоляция предикатов + speculative-проверки `SeparatedList`.
+- **Файлы:** `Parser.cs`, `Recovery/FailureSnapshot.cs`
+- **Тесты:** `SnapshotTests`: снимок при самом дальнем mismatch; спекуляция не портит снимок/`ErrorPos`/`_expected`.
+- **Заметки:**
 
-- [ ] **1.4** OftenMissed — улучшение
-  - Интеграция с memo-патчами
-  - Тесты: `OftenMissedTests.cs`
+### 0.3 Базовый случай `Partial` в `ParseSeq`
+- [ ] Статус
+- **Что:** базовый случай Partial + `FirstSets.Get` + тай-брейк (Success бьёт Partial при равной длине) + guard нуля в `OneOrMany`/`ZeroOrMany` (break при `newPos == currentPos`) + удаление хака `Parser.cs:336-343`.
+- **Файлы:** `Parser.cs`, `Recovery/FirstSets.cs`
+- **Тесты:** `PartialBaseCaseTests`: `int x int y;` даёт Partial с `SeqFrameLocation(2)`; ε-цикл не виснет; тай-брейки.
+- **Заметки:**
 
-## Фаза 2: Multi-path exploration с cost-based выбором
+### 0.4 Терминальный кэш + слой инъекций + единый `TerminalComparer`
+- [ ] Статус
+- **Что:** чистый `_terminalCache`, слой `_injections`, `ReportMismatch`; единый `TerminalComparer`; общий стабильный `EofTerminal`/`EmptyTerminal`-синглтон вместо приватных non-singleton'ов `FollowSetCalculator.cs:9-18`.
+- **Файлы:** `Parser.cs`, `Recovery/TerminalComparer.cs`, `Recovery/Injection.cs`, `FollowSetCalculator.cs`
+- **Тесты:** `TerminalCacheTests`: кэш mismatch'а стабилен; инъекция поверх кэша; идентичность `Literal` vs instance; EOF-синглтон идентичен между калькулятором и engine.
+- **Заметки:**
 
-- [ ] **2.1** Recovery Candidate и Cost Model
-  - `MemoPatch`, `CostCalculator`
-  - Cost comparison в Parser.ParseRule
-  - Тесты: `CostModelTests.cs`
+### 0.5 `FollowSetCalculator`: вложенные циклы, `GetTerminators(stack)`
+- [ ] Статус
+- **Что:** единый обход дерева правила с накоплением «что следует после» (first/nullable suffix); `GetTerminators(stack)` (EOF — общий синглтон); компаратор.
+- **Файлы:** `FollowSetCalculator.cs`
+- **Тесты:** `FollowSetTests` (расширить: цикл в теле цикла; follow стартового правила содержит EOF-синглтон).
+- **Заметки:**
 
-- [ ] **2.2** Генерация кандидатов на восстановление
-  - `GenerateMemoPatches`, `SelectBestPatchSet`
-  - Тесты: `CandidateGenerationTests.cs`
+### 0.6 `RecoveryDiagnostic` + `Parser.RecoveryDiagnostics`
+- [ ] Статус
+- **Что:** тип `RecoveryDiagnostic`, свойство `Parser.RecoveryDiagnostics` (пустой список в Фазе 0).
+- **Файлы:** `Parser.cs`, `Recovery/RecoveryDiagnostic.cs`
+- **Тесты:** —
+- **Заметки:**
 
-- [ ] **2.3** Rollback с вставкой из Follow-Set
-  - `RollbackWithInsertionStrategy`
-  - Тесты: `RollbackTests.cs`
+### 0.7 Удаление мёртвого кода
+- [ ] Статус
+- **Что:** удалить `ContinueFromPartial`, `TryRecoverFromPartial`, `MergeWithPartialTree`, `ContinueFromPartialPostfixFallback`, `_partialAccumulated`, `_partialMemo`, `RecoveryStackReconstructor.cs` (+ его тесты), ветки `_partialMemo` в `ParseRule`/`Parse`; переименование `_recoverySkipPos` → `_recoveryPoint` (поведение RecoveryPrefix/Postfix сохраняется).
+- **Файлы:** `Parser.cs`, `Recovery/`, `Tests/`
+- **Тесты:** Регрессия: все существующие тесты ParserTests без изменений.
+- **Заметки:**
 
-## Фаза 3: Представление пропущенного текста в дереве
+**Регрессия Фазы 0 (I6):** дерево на корректных входах не меняется (JSON, CppSimplified, DOT, CsNitra) — все существующие тесты зелёны.
 
-- [ ] **3.1** Пропущенный текст во внешней хэш-таблице
-  - `_skippedTextMap`, `RecoveryTreeExtensions`
-  - Тесты: `RecoveryTreeTests.cs`
+---
 
-- [ ] **3.2** Diagnostics collection
-  - `RecoveryDiagnostics` свойство в Parser
-  - Тесты: `DiagnosticsTests.cs`
+## Фаза 1. Recovery engine (итеративный цикл)
 
-## Фаза 4: Пользовательские расширения через аннотации грамматики
+### 1.1 Главный цикл §3.1
+- [ ] Статус
+- **Что:** `RecoveryPointOf`, `FailureSnapshotAt`, `_recoveryPoint`, неявный S0-кандидат (ре-парсинг как есть: Hygiene без патчей), счётчики, fail-safe `ePrev`.
+- **Файлы:** `Parser.cs`
+- **Тесты:** `IterativeRecoveryTests`: один проход на одну ошибку; предельные случаи; существующие recovery-тесты MiniC (Error-правила) зелёны без изменений.
+- **Заметки:**
 
-- [ ] **4.1** RecoveryRule — обёртка правила с аннотациями
-  - `RecoveryRule`, `RecoveryOptions`
-  - Интеграция с RecoveryEngine
-  - Тесты: `RecoveryRuleTests.cs`
+### 1.2 `RecoveryEngine.Generate`
+- [ ] Статус
+- **Что:** S1 (вставка), S2 (resync: T1 якоря / T2 CanStart, pre-filter по First, спекулятивная валидация с кэшем `(rule, pos)`, completion stack), S3 (токен-скан со вложенностью пар, кэшем, MaxSkip), S4 (EOF), S5 (хвост); детерминированная сортировка.
+- **Файлы:** `Recovery/RecoveryEngine.cs`, `Recovery/RecoveryCandidate.cs`
+- **Тесты:** `CandidateGenerationTests` (per-стратегия + порядок + детерминизм); `AnchorResyncTests`: T1 находит следующий Member/Statement; T2 (CanStart) на двойной ошибке; completion stack вставляет `;`+`}`; мусор между e и якорем → абсорбер.
+- **Заметки:**
 
-- [ ] **4.2** TerminatorPredicate — предикат терминатора
-  - `TerminatorPredicate`
-  - Тесты: `TerminatorPredicateTests.cs`
+### 1.3 Применение/откат, `Hygiene`
+- [ ] Статус
+- **Что:** `MemoPatch`-лог, акцепт при E2 > E, `Hygiene` с обратным индексом `_index`.
+- **Файлы:** `Recovery/MemoPatch.cs`, `Parser.cs`
+- **Тесты:** `PatchRollbackTests`: откат восстанавливает memo побайтово; префикс не тронут (I2); hygiene удаляет только Failure на e.
+- **Заметки:**
 
-- [ ] **4.3** Integration с существующими механизмами
-  - OftenMissed → RecoveryRule
-  - RecoveryTerminal → Trivia absorption
+### 1.4 Семантика финала §3.6
+- [ ] Статус
+- **Что:** `ErrorInfo`/`RecoveryDiagnostics`, Partial-при-EOF как восстановленное.
+- **Файлы:** `Parser.cs`
+- **Тесты:** `FinalStateTests`
+- **Заметки:**
 
-## Фаза 5: Финальная интеграция и полировка
+### 1.5 `RecoveryRule`-развёртка в `ParseAlternative`
+- [ ] Статус
+- **Что:** развёртка (поведение = `Inner`, только чтение аннотаций, без `RecoveryOptions`-полных — они в Фазе 2); S0-кандидат в единой детерминированной сортировке.
+- **Файлы:** `Parser.cs`
+- **Тесты:** `S0IntegrationTests`: MiniC с Error-правилами; `RecoveryRuleTests.ParsesLikeInner`.
+- **Заметки:**
 
-- [ ] **5.1** Longest-match с recovery-aware scoring
-  - `IsBetterResult`
-  - `CleanPreferenceThreshold`
-  - Тесты: `LongestMatchRecoveryTests.cs`
+**Интеграционные тесты Фазы 1:** пропущенная `;`, пропущенная `}` (вкл. вложенные), неожиданный токен в выражении, хвостовой мусор, несколько ошибок (проходы 1→2→3), корректный код без recovery-узлов (I6), «всё в дереве» (I4), детерминизм (I5).
 
-- [ ] **5.2** End-to-end тесты
-  - Комплексные тесты на MiniC
-  - `EndToEndTests.cs`
+---
 
-- [ ] **5.3** API обобщения
-  - Финальный публичный API
+## Фаза 2. Аннотации автора + качество
+
+### 2.1 `RecoveryRule`/`RecoveryOptions`
+- [ ] Статус
+- **Что:** `RecoveryRule`/`RecoveryOptions` (§3.9) в `Rules.cs`; развёртка в `ParseAlternative`; engine читает опции из кадров (ближайший wins); вывод якорей из циклов.
+- **Файлы:** `Rules.cs`, `Parser.cs`, `RecoveryEngine.cs`
+- **Тесты:** `RecoveryRuleTests`: `Terminators` переопределяет follow; `Anchors` (авторские + выводимые, T1); `CanStart` (T2); `TryInsert`; `MaxSkip`; `Recoverable=false`.
+- **Заметки:**
+
+### 2.2 Единый cost model
+- [ ] Статус
+- **Что:** вставка 1; skip = слова+переносы; tier-penalty T1:0, T2:1; S4 = число вставок; `CountRecoveryNodes`.
+- **Файлы:** `Recovery/CostCalculator.cs`
+- **Тесты:** `CostModelTests`
+- **Заметки:**
+
+### 2.3 `OftenMissed` → сахар над `TryInsert`
+- [ ] Статус
+- **Что:** документированный сахар; поведенческая совместимость.
+- **Файлы:** `Rules.cs`, `Parser.cs`
+- **Тесты:** `OftenMissedTests` (расширить v1)
+- **Заметки:**
+
+### 2.4 Производительность
+- [ ] Статус
+- **Что:** бенчмарк «N ошибок → число проходов, время, размер memo»; оптимизация скана (дешёвые терминаторы первыми).
+- **Файлы:** `Tests/ParserTests` (benchmark)
+- **Тесты:** `RecoveryPerfTests`
+- **Заметки:**
+
+---
+
+## Фаза 3. End-to-end и документация
+
+### 3.1 E2E-набор на MiniC
+- [ ] Статус
+- **Что:** `Test_MissingClosingBrace_Function`, `Test_MissingSemicolon_MultipleStatements`, `Test_UnexpectedToken_Expression`, `Test_NestedErrors_MultipleBlocks`, `Test_TrailingGarbage`, `Test_Recovery_DoesNotBreakCorrectCode` (I6), `Test_EverythingRepresentedInTree` (I4), `Test_ParsingReachesEndOfString`, `Test_Deterministic` (I5), `Test_Anchor_Resync_NextMember` (T1), `Test_DoubleError_CanStart` (T2).
+- **Заметки:**
+
+### 3.2 Документация
+- [ ] Статус
+- **Что:** (а) гайд автора грамматики; (б) семантика восстановления; (в) известные ограничения.
+- **Заметки:**
+
+### 3.3 Опционально
+- [ ] Статус
+- **Что:** `ParseWithStackGuard`-аналог; `RecoveryEnabled=false` (полное отключение → однопассовый режим).
+- **Заметки:**
+
+### 3.4 Обновить чек-лист + пометить v1
+- [ ] Статус
+- **Что:** обновить `RecoverySystemChecklist.md` по Фазам v2; пометить `RecoverySystemPlan.md` (v1) как superseded.
+- **Заметки:**

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "roslyn": {
+      "type": "local",
+      "command": ["C:/RSDN/RoslynMcpServer/bin/Debug/net10.0/RoslynMcpServer.exe"],
+      "cwd": "C:/RSDN/CsNitra",
+      "enabled": true
+    }
+  }
+}

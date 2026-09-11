@@ -1,0 +1,21 @@
+// RoslynMcp.jsonc — per-project config for RoslynMcpServer (CsNitra).
+// The server merges two configs: the exe directory first, then the current
+// working directory (cwd wins for conflicting keys). The cwd here is set via
+// "cwd" in .opencode/opencode.json, so this file is what the server reads for CsNitra.
+{
+  // Workspace: .sln / .slnx / .csproj, loaded lazily in the background at server start.
+  "workspace-path": "C:/RSDN/CsNitra/Nitra.sln",
+
+  // Optional MSBuild global properties (inherited by run_dotnet_build / run_dotnet_test).
+  "configuration": "Debug",
+  "platform": "AnyCPU",
+
+  // Empty on purpose: overrides "target-framework": "net10.0" from the exe-directory config
+  // (RoslynMcpServer's dogfood config). Forcing a global TargetFramework breaks this solution's
+  // netstandard2.0/net8.0 projects (restored NuGet assets don't match -> CS0518, no references).
+  "target-framework": "",
+
+  // Search output (optional).
+  "max-results": 50,
+  "preview": false
+}

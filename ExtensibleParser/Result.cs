@@ -12,6 +12,7 @@ public readonly record struct Result
     public readonly int NewPos;
     public readonly int MaxFailPos;
     internal readonly ISyntaxNode? Node;
+    internal readonly Recovery.ParseContext? Context;
 
     public bool IsSuccess => ResultKind == Kind.Success;
 
@@ -55,6 +56,22 @@ public readonly record struct Result
         return false;
     }
 
+    public readonly bool TryGetPartial([MaybeNullWhen(false)] out ISyntaxNode node, out int newPos, out Recovery.ParseContext? context)
+    {
+        if (ResultKind == Kind.Partial)
+        {
+            node = Node!;
+            newPos = NewPos;
+            context = Context;
+            return true;
+        }
+
+        node = null;
+        newPos = -1;
+        context = null;
+        return false;
+    }
+
     public readonly string? GetErrorOrDefault() => ResultKind == Kind.Success ? null : "Error";
 
     public readonly string GetError() => ResultKind == Kind.Success ? throw new InvalidCastException("Result is Success") : "Error";
@@ -71,18 +88,20 @@ public readonly record struct Result
         return false;
     }
 
-    public Result WithPrefixOnly(Result result) => new(result.ResultKind, result.Node, result.NewPos, result.MaxFailPos);
+    public Result WithPrefixOnly(Result result) => new(result.ResultKind, result.Node, result.NewPos, result.MaxFailPos, result.Context);
 
-    public static Result Success(ISyntaxNode result, int newPos, int maxFailPos) => new(Kind.Success, result, newPos, maxFailPos);
-    public static Result Failure(int failPos) => new(Kind.Failure, null, newPos: -1, maxFailPos: failPos);
-    public static Result Partial(ISyntaxNode partialTree, int parsedUpTo, int maxFailPos) => new(Kind.Partial, partialTree, parsedUpTo, maxFailPos);
+    public static Result Success(ISyntaxNode result, int newPos, int maxFailPos) => new(Kind.Success, result, newPos, maxFailPos, context: null);
+    public static Result Failure(int failPos) => new(Kind.Failure, null, newPos: -1, maxFailPos: failPos, context: null);
+    public static Result Partial(ISyntaxNode partialTree, int parsedUpTo, int maxFailPos) => new(Kind.Partial, partialTree, parsedUpTo, maxFailPos, context: null);
+    public static Result Partial(ISyntaxNode partialTree, int parsedUpTo, int maxFailPos, Recovery.ParseContext context) => new(Kind.Partial, partialTree, parsedUpTo, maxFailPos, context);
 
-    private Result(Kind kind, ISyntaxNode? node, int newPos, int maxFailPos)
+    private Result(Kind kind, ISyntaxNode? node, int newPos, int maxFailPos, Recovery.ParseContext? context)
     {
         ResultKind = kind;
         Node = node;
         NewPos = newPos;
         MaxFailPos = maxFailPos;
+        Context = context;
     }
 
 #pragma warning disable CS0618 // Type or member is obsolete
