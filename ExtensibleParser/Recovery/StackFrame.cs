@@ -1,4 +1,4 @@
-namespace ExtensibleParser.Recovery;
+﻿namespace ExtensibleParser.Recovery;
 
 public readonly record struct StackFrame(
     string RuleName,

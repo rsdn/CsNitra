@@ -32,7 +32,10 @@ public class Parser(Terminal trivia, Log? log = null)
     private readonly List<StackFrame> _stackFrames = [];
 
     public IReadOnlyList<StackFrame> CurrentStackFrames => _stackFrames;
-    private readonly HashSet<Terminal> _expected = [];
+    private HashSet<Terminal> _expected = [];
+    private FailureSnapshot? _lastSnapshot;
+    private bool _suppressSideEffects;
+    public FailureSnapshot? LastSnapshot => _lastSnapshot;
     public Terminal Trivia { get; private set; } = trivia;
     public Log? Logger { get; set; } = log;
 
@@ -155,6 +158,8 @@ public class Parser(Terminal trivia, Log? log = null)
         triviaLength = 0;
         ErrorPos = startPos;
         _recoverySkipPos = -1;
+        _lastSnapshot = null;
+        _suppressSideEffects = false;
         var currentStartPos = startPos;
         _memo.Clear();
         _partialMemo.Clear();
@@ -645,12 +650,7 @@ public class Parser(Terminal trivia, Log? log = null)
 
     private Result ParseAndPredicate(AndPredicate a, int startPos, string input)
     {
-        var savedErrorPos = ErrorPos;
-        var savedExpected = _expected.ToList();
-        var predicateResult = ParseAlternative(a.PredicateRule, startPos, input);
-        ErrorPos = savedErrorPos;
-        _expected.Clear();
-        foreach (var t in savedExpected) _expected.Add(t);
+        var predicateResult = Speculative(() => ParseAlternative(a.PredicateRule, startPos, input));
         if (predicateResult.IsSuccess)
             return Result.Success(new PredicateNode(a.Kind, startPos, startPos), startPos, predicateResult.MaxFailPos);
         else
@@ -659,12 +659,7 @@ public class Parser(Terminal trivia, Log? log = null)
 
     private Result ParseNotPredicate(NotPredicate predicate, int startPos, string input)
     {
-        var savedErrorPos = ErrorPos;
-        var savedExpected = _expected.ToList();
-        var predicateResult = ParseAlternative(predicate.PredicateRule, startPos, input);
-        ErrorPos = savedErrorPos;
-        _expected.Clear();
-        foreach (var t in savedExpected) _expected.Add(t);
+        var predicateResult = Speculative(() => ParseAlternative(predicate.PredicateRule, startPos, input));
         if (!predicateResult.IsSuccess)
             return Result.Success(new PredicateNode(predicate.Kind, startPos, startPos), startPos, predicateResult.MaxFailPos);
         else
@@ -798,18 +793,53 @@ public class Parser(Terminal trivia, Log? log = null)
         ? "«»"
         : $"«{input.AsSpan(pos, Math.Min(input.Length - pos, len)).Str()}»";
 
+    private void CaptureSnapshot(int pos, Terminal failedTerminal)
+    {
+        var stack = _stackFrames.ToArray();
+        var expected = new List<Terminal>();
+        if (stack.Length > 0)
+        {
+            var topExpected = stack[stack.Length - 1].Expected;
+            if (topExpected is not null)
+                expected.AddRange(topExpected);
+        }
+        if (!expected.Contains(failedTerminal))
+            expected.Add(failedTerminal);
+        _lastSnapshot = new FailureSnapshot(pos, stack, failedTerminal, expected.ToArray());
+    }
+
+    private T Speculative<T>(Func<T> parse)
+    {
+        var savedErrorPos = ErrorPos;
+        var savedExpected = _expected.ToArray();
+        var savedSnapshot = _lastSnapshot;
+        _suppressSideEffects = true;
+        try
+        {
+            return parse();
+        }
+        finally
+        {
+            _suppressSideEffects = false;
+            ErrorPos = savedErrorPos;
+            _expected = new HashSet<Terminal>(savedExpected);
+            _lastSnapshot = savedSnapshot;
+        }
+    }
+
     private Result ParseTerminal(Terminal terminal, int startPos, string input)
     {
         var currentPos = startPos;
         var contentLength = terminal.TryMatch(input, startPos);
         if (contentLength < 0)
         {
-            if (startPos >= ErrorPos)
+            if (!_suppressSideEffects && startPos >= ErrorPos)
             {
                 if (startPos > ErrorPos)
                 {
                     _expected.Clear();
                     ErrorPos = startPos;
+                    CaptureSnapshot(startPos, terminal);
                 }
                 _expected.Add(terminal);
             }
@@ -1053,7 +1083,7 @@ public class Parser(Terminal trivia, Log? log = null)
 
         if (listRule.EndBehavior == SeparatorEndBehavior.Forbidden)
         {
-            var sepResult = ParseAlternative(listRule.Separator, currentPos, input);
+            var sepResult = Speculative(() => ParseAlternative(listRule.Separator, currentPos, input));
             if (sepResult.MaxFailPos > maxFailPos)
                 maxFailPos = sepResult.MaxFailPos;
             if (sepResult.TryGetSuccess(out _, out _))
