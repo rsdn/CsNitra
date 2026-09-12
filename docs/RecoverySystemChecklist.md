@@ -190,7 +190,7 @@
 - **Файлы:** `Parser.cs`, `Tests/ParserTests/Recovery/PatchRollbackTests.cs`
 
 #### 1.3.2.1 Фантомный баг `RecordMemo`
-- [~] Статус — в работе (failing→pass подтверждён; ParserTests 243 passed / 0 failed / 2 skipped)
+- [x] Статус — завершено (failing→pass подтверждён; ParserTests 243 passed / 0 failed / 2 skipped)
 - **Что:** `RecordMemo` (Parser.cs ~125-126): при отсутствии ключа `TryGetValue` → `default(Result)` боксуется в не-null `OldValue` → `RollbackPatches` восстанавливает фантомный нулевой `Result` вместо удаления ключа. Фикс: тот же паттерн, что в `RecordInjection` (`had ? (object)old : null`).
 - **Тесты:** сначала failing-тест (кандидат с `SetMemo` на НОВЫЙ ключ → Apply → Rollback → в `Memo` нет фантома/ключа), затем фикс, затем полный прогон.
 - **Заметки:**
@@ -199,9 +199,14 @@
   - **Результаты:** failing→pass подтверждён; регрессия `Tests/ParserTests` — **243 passed / 0 failed / 2 skipped** (Total 245; 242 базовых + 1 новый; 2 — предсуществующие `[Ignore("WIP")]`). Фикс регрессии не дал (все ранее зелёные тесты остались зелёными).
 
 #### 1.3.2.2 Обратный индекс `_index` (мёртвый код)
-- [ ] Статус
-- **Что:** `_index` ведётся во всех точках мутации `_memo`, но `HygieneCore` идёт по всей таблице (`_memo.Keys.ToList()`), `GetPrecedences` нигде не вызывается. Подключить `GetPrecedences` в `HygieneCore` (план §3.5: O(правил снимка), а не O(таблицы)). Если поведение тестов ломается — вернуть обход таблицы и УДАЛИТЬ `_index`/`IndexMemo`/`UnindexMemo`/`GetPrecedences` (документировать).
-- **Тесты:** существующие `PatchRollbackTests` (поведение Hygiene) + регрессия.
+- [~] Статус — в работе (сборка 0 ошибок; ParserTests 243 passed / 0 failed / 2 skipped)
+- **Что:** `_index` ведётся во всех точках мутации `_memo`, но `HygieneCore` идёт по всей таблице (`_memo.Keys.ToList()`), `GetPrecedences` нигде не вызывается. **Решение (уточнено):** УДАЛИТЬ `_index`/`IndexMemo`/`UnindexMemo`/`GetPrecedences` и все их вызовы. Обоснование: фактический scope Hygiene включает (c) «ВСЕ stale Failure в любой позиции» — он требует полного обхода таблицы ВСЕГДА, поэтому индекс не снижает сложность Hygiene (он был рассчитан на узкий scope §3.5). Подключение индекса для (a)/(b) не убирает полный обход из-за (c) — лишняя сложность без пользы. **Отклонение от §3.5** (узкий scope Hygiene, рассчитанный на индекс) зафиксировано в тексте пункта: фактический Hygiene шире (включает (c)), поэтому индекс бесполезен и удалён.
+- **Тесты:** существующие `PatchRollbackTests` (поведение Hygiene) + регрессия (поведение не меняется — чистое удаление мёртвого кода).
+- **Заметки:**
+  - **Удалено из `Parser.cs` (~43 строки):** поле `_index` + 2 строки комментария; 3 метода `IndexMemo`/`UnindexMemo`/`GetPrecedences` + секция-заголовок `// ============ Обратный индекс memo (позиция → ключи) ============`; 8 точек мутации: `IndexMemo` ×5 (`SetMemo`, `PatchMemo`, `RollbackPatches`, `ParseRule`×2), `UnindexMemo` ×2 (`RemoveMemo`, `RollbackPatches`), `_index.Clear()` ×1 (инициализация `Parse`). Комментарий «Индекс восстанавливается» в `RollbackPatches` поправлен (индекса больше нет).
+  - **Логика rollback'а не тронута:** в memo-ветке `RollbackPatches` сохранены восстановление/удаление ключа в `_memo` — удалены только вызовы `IndexMemo`/`UnindexMemo`.
+  - **Ссылки:** после удаления `find_symbol_references` для `_index`/`IndexMemo`/`UnindexMemo`/`GetPrecedences` — 0 совпадений по коду (`GetPrecedences` был без вызовов — мёртвый).
+  - **Результаты:** сборка `Nitra.sln` — 0 ошибок (все предупреждения предсуществующие: CS8602/CS8604/CS8600/CS8620/CS0618); диагностика `Parser.cs` — без новых предупреждений/ошибок; регрессия `Tests/ParserTests` — **243 passed / 0 failed / 2 skipped** (Total 245; 2 — предсуществующие `[Ignore("WIP")]`). Поведение не изменилось (чистое удаление мёртвого кода).
 
 #### 1.3.2.3 Дыры в тестах (`PatchRollbackTests`)
 - [ ] Статус

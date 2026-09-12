@@ -77,7 +77,6 @@ public class Parser(Terminal trivia, Log? log = null)
         var key = (pos, rule, precedence);
         RecordMemo(key, value);
         _memo[key] = value;
-        IndexMemo(key);
     }
 
     public void RemoveMemo(string rule, int pos, int precedence)
@@ -85,7 +84,6 @@ public class Parser(Terminal trivia, Log? log = null)
         var key = (pos, rule, precedence);
         RecordMemoRemove(key);
         _memo.Remove(key);
-        UnindexMemo(key);
     }
 
     // Патч для всех прецедентов (e, rule, prec'), присутствующих в memo (TDOPP, §3.4 S3).
@@ -95,7 +93,6 @@ public class Parser(Terminal trivia, Log? log = null)
         {
             RecordMemo(key, value);
             _memo[key] = value;
-            IndexMemo(key);
         }
     }
 
@@ -175,7 +172,7 @@ public class Parser(Terminal trivia, Log? log = null)
                 RemoveMemo(key.rule, key.pos, key.precedence);
     }
 
-    // Откат логa (обратный порядок): возвращает OldValue (или удаляет ключ, если OldValue == null). Индекс восстанавливается.
+    // Откат логa (обратный порядок): возвращает OldValue (или удаляет ключ, если OldValue == null).
     public void RollbackPatches(List<Recovery.MemoPatch> log)
     {
         for (var i = log.Count - 1; i >= 0; i--)
@@ -187,12 +184,10 @@ public class Parser(Terminal trivia, Log? log = null)
                 if (patch.OldValue is { } old)
                 {
                     _memo[key] = (Result)old;
-                    IndexMemo(key);
                 }
                 else
                 {
                     _memo.Remove(key);
-                    UnindexMemo(key);
                 }
             }
             else
@@ -210,38 +205,6 @@ public class Parser(Terminal trivia, Log? log = null)
     private Recovery.RecoveryCandidate CandidateS0(int e, Recovery.FailureSnapshot? snapshot, string startRule) =>
         new("S0", 0, e, 0, startRule, null, _ => { }, _ => { }, []);
 
-    // ============ Обратный индекс memo (позиция → ключи) ============
-
-    private void IndexMemo((int pos, string rule, int precedence) key)
-    {
-        if (!_index.TryGetValue(key.pos, out var set))
-        {
-            set = new HashSet<(string, int)>();
-            _index[key.pos] = set;
-        }
-        set.Add((key.rule, key.precedence));
-    }
-
-    private void UnindexMemo((int pos, string rule, int precedence) key)
-    {
-        if (_index.TryGetValue(key.pos, out var set))
-        {
-            set.Remove((key.rule, key.precedence));
-            if (set.Count == 0)
-                _index.Remove(key.pos);
-        }
-    }
-
-    // Прецеденты правила в позиции по обратному индексу (Hygiene за O(числа правил), а не O(таблицы)).
-    private IEnumerable<int> GetPrecedences(int pos, string rule)
-    {
-        if (!_index.TryGetValue(pos, out var set))
-            yield break;
-        foreach (var (r, prec) in set)
-            if (r == rule)
-                yield return prec;
-    }
-
     public Terminal Trivia { get; private set; } = trivia;
     public Log? Logger { get; set; } = log;
 
@@ -253,10 +216,6 @@ public class Parser(Terminal trivia, Log? log = null)
     public Dictionary<string, TdoppRule> TdoppRules { get; } = new();
 
     private readonly Dictionary<(int pos, string rule, int precedence), Result> _memo = new();
-
-    // Обратный индекс memo: позиция → ключи (rule, prec). Ведётся при каждой записи/удалении в _memo,
-    // чтобы Hygiene за O(числа правил в снимке), а не O(таблицы).
-    private readonly Dictionary<int, HashSet<(string Rule, int Prec)>> _index = new();
 
     // Чистый кэш результата TryMatch (length >= 0 или -1); mismatch кэшируется и никогда не чистится в ходе прохода.
     private readonly Dictionary<(int Pos, Terminal Terminal), int> _terminalCache = new(TerminalComparer.KeyComparer);
@@ -376,7 +335,6 @@ public class Parser(Terminal trivia, Log? log = null)
         _suppressSideEffects = false;
         var currentStartPos = startPos;
         _memo.Clear();
-        _index.Clear();
         _terminalCache.Clear();
         _injections.Clear();
         _recoveryDiagnostics.Clear();
@@ -605,14 +563,12 @@ public class Parser(Terminal trivia, Log? log = null)
         {
             RecordMemo(memoKey, result);
             _memo[memoKey] = result;
-            IndexMemo(memoKey);
             return result;
         }
 
         var failure = Result.Failure(maxFailPos);
         RecordMemo(memoKey, failure);
         _memo[memoKey] = failure;
-        IndexMemo(memoKey);
         return failure;
     }
 
