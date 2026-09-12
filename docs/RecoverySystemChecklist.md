@@ -10,7 +10,7 @@
 - `[x]` — выполнен и проверен
 - `[!]` — есть проблемы / отложено
 
-**Текущий пункт:** 1.1
+**Текущий пункт:** 1.2
 
 ---
 
@@ -145,11 +145,22 @@
   - **Регрессия:** `Tests/ParserTests` — **222 passed / 0 failed / 2 skipped** (216 базовых + 6 новых; 2 — предсуществующие `[Ignore("WIP")]`); MiniC 36/36 без изменений; `RegexTests` 9/9, `WiWorkflowTests` 1/1.
 
 ### 1.2 `RecoveryEngine.Generate`
-- [ ] Статус
+- [~] Статус — в работе (сборка 0 ошибок; CandidateGenerationTests 11/11 + AnchorResyncTests 3/3; ParserTests 236 passed / 0 failed / 2 skipped)
 - **Что:** S1 (вставка), S2 (resync: T1 якоря / T2 CanStart, pre-filter по First, спекулятивная валидация с кэшем `(rule, pos)`, completion stack), S3 (токен-скан со вложенностью пар, кэшем, MaxSkip), S4 (EOF), S5 (хвост); детерминированная сортировка.
-- **Файлы:** `Recovery/RecoveryEngine.cs`, `Recovery/RecoveryCandidate.cs`
+- **Файлы:** `Recovery/RecoveryEngine.cs`, `Recovery/RecoveryCandidate.cs`, `Recovery/ParseContext.cs` (поля `RecoveryOptions`), `Parser.cs` (хуки)
 - **Тесты:** `CandidateGenerationTests` (per-стратегия + порядок + детерминизм); `AnchorResyncTests`: T1 находит следующий Member/Statement; T2 (CanStart) на двойной ошибке; completion stack вставляет `;`+`}`; мусор между e и якорем → абсорбер.
 - **Заметки:**
+  - **Создано:** `Recovery/RecoveryCandidate.cs` (record по §3.4) и `Recovery/RecoveryEngine.cs` — `public static class`, чистый генератор: side-эффекты на Parser'е только через Apply/Rollback кандидатов. `Generate(e, snapshot, input, parser, resultKind)` → детерминированно отсортированный список (§3.4.3: Rank, Cost, Pos, RuleName, TerminalKind — ordinal).
+  - **`RecoveryOptions`** (`Recovery/ParseContext.cs`): добавлены `Anchors`/`CanStart`/`TryInsert`/`MaxSkip`/`Recoverable` (только данные; переезд в Rules.cs — 2.1).
+  - **Хуки Parser:** `ApplyInjection`/`RollbackInjection` (oldValue null → удалить ключ), `SetMemo`/`RemoveMemo`/`PatchMemo` (все прецеденты `(pos, rule, prec)` в memo), read-only `Injections`/`Memo`, `FollowCalculator`, `GetTerminators(stack)`, `ParseRuleOnce` (прямой `ParseRule` без recovery-цикла). **Ключевое решение:** старые значения (инъекции/memo) захватываются в момент Generate (до любого Apply) — захват внутри Rollback-lambda не работает: Apply уже изменил состояние (поймано тестом S4 rollback).
+  - **S1:** источники в порядке §3.4: `FailedTerminal` → `Expected` (топ кадра) → `TryInsert` (ближайший кадр с полем, ранг 0) → `FollowSet(top.RuleName)`; дедуп по `TerminalComparer`; EOF/ε-синглтоны никогда не вставляются; терминал, совпадающий в e (`TryMatch >= 0`) — кандидат не генерируется; cost 1; Apply = `Insert(T.Kind)` в `(e, T)`.
+  - **S2:** T1-якоря = авторские (`Anchors` ближайшего кадра) + выводимые (кадры `LoopFrameLocation`: циклы `ZeroOrMany`/`OneOrMany`/`SeparatedList` с Ref-телом в правиле кадра, дедуп по имени, внутренние кадры первыми); T2 = только авторские `CanStart`. Pre-filter: ни один First-терминал не матчит в S → skip. Спекулятивный parse — одноразовый `Parser` (копия Rules/TdoppRules/Trivia, свой memo как кэш) + кэш `(rule, pos) → (ok, endPos)` на время Generate. T1 (ok && endPos > S) → кандидат, скан окончен; T2 (ok) → кандидат, скан продолжается. Completion stack: S > e → абсорбер `[e..S)` упавшего элемента (Ref → memo `Success(AbsorberNode)`, Terminal → injection `Absorb`), S == e → нулевые вставки First-терминалов упавшего элемента (совпадающие в e пропускаются); внешние Seq-кадры (наружу): не-nullable суффикс (i+1..end) → First-терминалы в S (совпадающие пропускаются), цикл/postfix-кадры обязательств не имеют. Cost = skip-cost + вставки + tier-penalty (T1: 0, T2: 1); одна диагностика Skipped/Inserted.
+  - **S3:** терминаторы = `GetTerminators(snapshot.Stack)` (0.5); скан `e+1..min(e+MaxSkip, EOF)`; общий кэш `(pos, terminal) → len` на время Generate; вложенность пар: счётчики `{}`/`()`/`[]` по символам региона, закрывающая терминатор на глубине > 0 — «чужая», скан продолжается (счётчик гаснет, когда символ обрабатывается как часть региона на следующей итерации); EOF-терминатор «совпадает» только при S == EOF. Патч: элемент SeqFrameLocation → Ref → `PatchMemo` absorber для всех прецедентов в memo, Terminal → injection `Absorb`; fallback (локация не Seq / элемент не найден) → `Absorb` на `FailedTerminal`. Cost = слова + переносы в `[e..S)`; одна диагностика Skipped.
+  - **S4:** S := input.Length; Seq-кадры (внутренние наружу): не-nullable суффикс после упавшего элемента → First-терминалы, вставляемые в S (для реальных терминалов в EOF матч всегда < 0); EOF не вставляется; cost = число вставок; диагностика на каждую. Без вставок — кандидата нет.
+  - **S5:** только `resultKind == Success && e < EOF`. **Механизм (упрощение 1.2, задокументировано в коде):** инъекция `Absorb("Trailing", EOF-e)` в `(e, T)`, где T — первый терминал правила верхнего кадра (обход первой альтернативы с разрешением Ref'ов); для хвостового мусора это синтетический кадр start-правила (§3.4 S5) — снимок передаёт вызывающий (в 1.3 цикл сам соберёт его, имя start-правила в сигнатуре Generate нет); `snapshot == null` → кандидата S5 нет. Cost = слова + переносы в `[e..EOF)` + 1; одна диагностика Skipped.
+  - **Упрощения (отмечены в коде):** `FindSeq` — первый Seq в альтернативах правила с числом элементов > elementIndex (вложенные Seq разрешаются первым совпадением — достаточно для патча упавшего/суффиксного элемента); якоря/CanStart поддерживаются только как `Ref` (не-Ref правила пропускаются — в 1.2 из тестов/авторских аннотаций якоря всегда Ref); `MaxSkip` — ближайший кадр с полем ?? 1000.
+  - **Тесты (14):** `CandidateGenerationTests` (11): S1 вставка FailedTerminal/Expected в e + Apply/Rollback-инспекция инъекций; S1 TryInsert (ранг 0) + совпадающий в e терминал → нет кандидата; S4 суффикс в EOF + nullable-пропуск + нет кандидата без суффикса; S5 абсорбер `[e..EOF)` (только Success < EOF); S3 терминатор с учётом вложенности (чужая `}` внутри не стоп) + простой терминатор; порядок `(Rank, Cost, Pos, RuleName, TerminalKind)`; детерминизм (два Generate → один порядок Id'ов). `AnchorResyncTests` (3, MiniC-подобная грамматика Module/Function/Block/Statement/MemberStart): T1 Пример 1 §3.4 (пропущенная `}`: S == e, вставки `;`+`}`, cost 2); мусор `###` между e и якорем → S > e, абсорбер `[e..S)` + вставка `}`; T2 Пример 2 §3.4 (двойная ошибка: T1 в S == e не срабатывает, авторский `CanStart` через Options кадра снимка → кандидат T2 cost +1; скан продолжается и находит T1 дальше).
+  - **Результаты:** сборка `Nitra.sln` — 0 ошибок (42 предупреждения — все предсуществующие); `Tests/ParserTests` — **236 passed / 0 failed / 2 skipped** (222 базовых + 14 новых; 2 — предсуществующие `[Ignore("WIP")]`).
 
 ### 1.3 Применение/откат, `Hygiene`
 - [ ] Статус

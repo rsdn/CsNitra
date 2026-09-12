@@ -49,6 +49,39 @@ public class Parser(Terminal trivia, Log? log = null)
     // Хук для тестов/engine: инжекции в Фазе 0 никто не порождает, слой активен с Фазы 1.
     public void AddInjection(Terminal terminal, int pos, Injection injection) => _injections[(pos, terminal)] = injection;
 
+    // Хуки engine (1.2): применение/откат инъекций с сохранением старого значения.
+    public IReadOnlyDictionary<(int Pos, Terminal Terminal), Injection> Injections => _injections;
+    public void ApplyInjection(Terminal terminal, int pos, Injection injection) => _injections[(pos, terminal)] = injection;
+
+    // oldValue == null — ключа не было (удалить), иначе — вернуть старое значение.
+    public void RollbackInjection(Terminal terminal, int pos, Injection? oldValue)
+    {
+        if (oldValue is { } old)
+            _injections[(pos, terminal)] = old;
+        else
+            _injections.Remove((pos, terminal));
+    }
+
+    // Хуки engine (1.2): доступ к memo для патчей/инспекции.
+    public IReadOnlyDictionary<(int pos, string rule, int precedence), Result> Memo => _memo;
+    public void SetMemo(string rule, int pos, int precedence, Result value) => _memo[(pos, rule, precedence)] = value;
+    public void RemoveMemo(string rule, int pos, int precedence) => _memo.Remove((pos, rule, precedence));
+
+    // Патч для всех прецедентов (e, rule, prec'), присутствующих в memo (TDOPP, §3.4 S3).
+    public void PatchMemo(string rule, int pos, Result value)
+    {
+        foreach (var key in _memo.Keys.Where(k => k.pos == pos && k.rule == rule).ToList())
+            _memo[key] = value;
+    }
+
+    public FollowSetCalculator? FollowCalculator => _followCalculator;
+    public Terminal[] GetTerminators(IReadOnlyList<StackFrame> stack) =>
+        _followCalculator?.GetTerminators(stack) ?? [EofTerminal.Instance];
+
+    // Одноразовый parse правила без recovery-цикла (спекулятивная валидация engine'а, §3.4 S2).
+    public Result ParseRuleOnce(string ruleName, int minPrecedence, int startPos, string input) =>
+        ParseRule(ruleName, minPrecedence, startPos, input);
+
     public Terminal Trivia { get; private set; } = trivia;
     public Log? Logger { get; set; } = log;
 
