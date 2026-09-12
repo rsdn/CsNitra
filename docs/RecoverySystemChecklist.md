@@ -51,11 +51,21 @@
   - **Результаты:** `dotnet build Nitra.sln` — 0 ошибок (57 предупреждений — все предсуществующие); `SnapshotTests` — 6/6 зелёные; регрессия `Tests/ParserTests` — 182 passed / 0 failed / 2 skipped (2 — предсуществующие `[Ignore("WIP")]`; 182 = 176 старых + 6 новых).
 
 ### 0.3 Базовый случай `Partial` в `ParseSeq`
-- [ ] Статус
+- [~] Статус — часть А (FirstSets + ParseContext миграция) выполнена; часть Б (базовый случай Partial) не начата
 - **Что:** базовый случай Partial + `FirstSets.Get` + тай-брейк (Success бьёт Partial при равной длине) + guard нуля в `OneOrMany`/`ZeroOrMany` (break при `newPos == currentPos`) + удаление хака `Parser.cs:336-343`.
 - **Файлы:** `Parser.cs`, `Recovery/FirstSets.cs`
 - **Тесты:** `PartialBaseCaseTests`: `int x int y;` даёт Partial с `SeqFrameLocation(2)`; ε-цикл не виснет; тай-брейки.
 - **Заметки:**
+  - **Часть А (FirstSets + ParseContext миграция) — выполнено:**
+    - Создан `Recovery/FirstSets.cs`: `FirstSets.Get(Rule, FollowSetCalculator?)` + `FirstSets.IsNullable(Rule, FollowSetCalculator?)`. Семантика §3.6: `Terminal` (вкл. Literal/RecoveryTerminal/EmptyTerminal) → `[t]`, не nullable; `Seq` → first-цепочка с nullable-сходом; `OneOrMany` → first(el), не nullable; `ZeroOrMany`/`Optional`/`OftenMissed` → first(el), nullable; `AndPredicate`/`NotPredicate` → `[]`, nullable; `Ref`/`ReqRef` → `calculator?.GetFirstSet(name) ?? []`; `SeparatedList` → `CanBeEmpty ? [] : first(el)`, nullable = CanBeEmpty; `TdoppRule` → объединение first по `Prefix`, nullable если какой-то prefix nullable; незнакомый тип → `[]`, не nullable. Дедупликация по value-equality (Literal по Value, остальное по инстансу): `FollowSetCalculator.TerminalEqualityComparer` приватный → логика продублирована в FirstSets (просто, без изменения видимости).
+    - **Решение (ε):** `FollowSetCalculator.GetFirstSet` возвращает ε-терминал (Kind `"ε"`) для nullable-правил; в FirstSets для `Ref` он отфильтрован (`.Where(t => t.Kind != "ε")`) — контракт «ε не представляется».
+    - **Решение (IsNullable для Ref):** `FollowSetCalculator.IsNullable(string)` сделан `public` (был `private`) — используется в FirstSets для `Ref`/`ReqRef`; без calculator → false.
+    - `ParseContext.Location`: `ParseLocation` → `FrameLocation`; удалены типы `ParseLocation`/`SeqLocation`/`LoopLocation`/`PrefixLocation` (`RecoveryOptions` не тронут). В `Parser.cs` при создании `ParseContext`: `new PrefixLocation(i)`→`new RuleFrameLocation(i)`, `new SeqLocation(i)`→`new SeqFrameLocation(i)`, `new LoopLocation(k,i)`→`new LoopFrameLocation(k,i)`. `RecoveryStackReconstructor`: `SeqLocation(0)`→`SeqFrameLocation(0)`, `Location.GetDepth()` (всегда 0, метода в `FrameLocation` нет)→константа `0`.
+    - Замена: все `ComputeExpected(...)` и `GetExpectedTerminals(...)` → `FirstSets.Get(..., _followCalculator)`; оба старых метода удалены. Калькулятор инициализируется жадно в конструкторе Parser (на практике не null); null-ветка в FirstSets — защитная (`Ref` → `[]`).
+    - **Следствие (metadata):** `Expected` в кадре Seq-элемента-`Ref` теперь = First(правила) (а не null, как у старого `ComputeExpected`). Обновлён `StackFrameTests.Test_Stack_Depth_And_Locations` (элемент `Ref("Block")`: `Expected` = `{"{","["}`). Поведение парсинга (дерево/позиции/результат) НЕ изменилось.
+    - **Тесты:** новый `FirstSetsTests` (20 тестов: Terminal/EmptyTerminal, Seq-цепочки (вкл. глубокую nullable и dedup), OneOrMany/ZeroOrMany/Optional/OftenMissed, предикаты, SeparatedList (±CanBeEmpty), Ref с/без calculator, ε-фильтр, TdoppRule, IsNullable-варианты). `ParseContextTests` обновлён на FrameLocation-аналоги (`Test_ParseLocation_Types`→`Test_FrameLocation_Types`, `PrefixIndex`→`AltIndex`).
+    - **Результаты:** сборка `Nitra.sln` — 0 ошибок; `FirstSetsTests` — 20/20; регрессия `Tests/ParserTests` — **202 passed / 0 failed / 2 skipped** (182 базовых + 20 новых; 2 — предсуществующие `[Ignore("WIP")]`).
+  - **Часть Б (базовый случай Partial в ParseSeq + тай-брейк + guard нуля + удаление хака)** — не начата.
 
 ### 0.4 Терминальный кэш + слой инъекций + единый `TerminalComparer`
 - [ ] Статус

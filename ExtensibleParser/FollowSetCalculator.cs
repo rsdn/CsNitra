@@ -206,8 +206,8 @@ public class FollowSetCalculator
         return result;
     }
 
-   private bool IsNullable(string ruleName)
-    {
+   public bool IsNullable(string ruleName)
+   {
         if (_nullableCache.TryGetValue(ruleName, out var cached))
             return cached;
 

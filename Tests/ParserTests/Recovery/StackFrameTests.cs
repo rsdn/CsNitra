@@ -114,7 +114,12 @@ public sealed class StackFrameTests
         Assert.IsTrue(stack[2].Location is RuleFrameLocation { AltIndex: 0 });
         Assert.AreEqual("Function", stack[3].RuleName);
         Assert.IsTrue(stack[3].Location is SeqFrameLocation { ElementIndex: 4 });
-        Assert.IsNull(stack[3].Expected);
+        // Element 4 = Ref("Block"); Expected = First(Block) = {"{", "["}
+        var blockExpected = stack[3].Expected!;
+        Assert.AreEqual(2, blockExpected.Length);
+        var blockKinds = blockExpected.Select(t => t.Kind).ToArray();
+        CollectionAssert.Contains(blockKinds, "{");
+        CollectionAssert.Contains(blockKinds, "[");
         Assert.AreEqual("Block", stack[4].RuleName);
         Assert.IsTrue(stack[4].Location is RuleFrameLocation { AltIndex: 0 });
         Assert.AreEqual("Block", stack[5].RuleName);

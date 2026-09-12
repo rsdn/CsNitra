@@ -302,7 +302,7 @@ public class Parser(Terminal trivia, Log? log = null)
                 if (prefixResult.ResultKind == Result.Kind.Partial)
                 {
                     Log($"  Partial result at {startPos}: {prefixResult.Node?.Kind}", LogImportance.High);
-                    var prefixCtx = new ParseContext(ruleName, new PrefixLocation(altIdx), GetExpectedTerminals(prefix), null);
+                    var prefixCtx = new ParseContext(ruleName, new RuleFrameLocation(altIdx), FirstSets.Get(prefix, _followCalculator), null);
                     _partialAccumulated = Result.Partial(prefixResult.Node!, prefixResult.NewPos, prefixResult.MaxFailPos, prefixCtx);
                     _partialMemo[memoKey] = _partialAccumulated.Value;
                     continue;
@@ -321,7 +321,7 @@ public class Parser(Terminal trivia, Log? log = null)
                 // If prefix was partial, propagate partial status
                 if (gotPartial && postfixResult.ResultKind != Result.Kind.Partial)
                 {
-                    var propCtx = new ParseContext(ruleName, new PrefixLocation(altIdx), GetExpectedTerminals(prefix), null);
+                    var propCtx = new ParseContext(ruleName, new RuleFrameLocation(altIdx), FirstSets.Get(prefix, _followCalculator), null);
                     postfixResult = Result.Partial(postfixResult.Node!, postfixResult.NewPos, postfixResult.MaxFailPos, propCtx);
                 }
 
@@ -560,7 +560,7 @@ public class Parser(Terminal trivia, Log? log = null)
 
         if (isPartial)
             {
-                var postfixCtx = new ParseContext(rule.Kind, new SeqLocation(0), [], null);
+                var postfixCtx = new ParseContext(rule.Kind, new SeqFrameLocation(0), [], null);
                 return Result.Partial(currentResult, newPos, maxFailPos, postfixCtx);
             }
         return Result.Success(currentResult, newPos, maxFailPos);
@@ -581,7 +581,7 @@ public class Parser(Terminal trivia, Log? log = null)
         {
             var element = postfix.Seq.Elements[elemIdx];
             Log($"    Parsing at {newPos} postfix element: {element}");
-            var result = WithFrame(new PostfixFrameLocation(elemIdx), ComputeExpected(element), postfix.Seq.Kind ?? "Seq",
+            var result = WithFrame(new PostfixFrameLocation(elemIdx), FirstSets.Get(element, _followCalculator), postfix.Seq.Kind ?? "Seq",
                 () => ParseAlternative(element, newPos, input));
 
             if (result.MaxFailPos > maxFailPos)
@@ -614,7 +614,7 @@ public class Parser(Terminal trivia, Log? log = null)
         {
             if (isPartial)
             {
-                var pCtx = new ParseContext(postfix.Seq.Kind ?? "Seq", new SeqLocation(postfix.Seq.Elements.Length), [], null);
+                var pCtx = new ParseContext(postfix.Seq.Kind ?? "Seq", new SeqFrameLocation(postfix.Seq.Elements.Length), [], null);
                 return Result.Partial(elements[0], newPos, maxFailPos, pCtx);
             }
             return Result.Success(elements[0], newPos, maxFailPos);
@@ -623,7 +623,7 @@ public class Parser(Terminal trivia, Log? log = null)
         var seqNode = new SeqNode(postfix.Seq.Kind ?? "Seq", elements, currentResult.StartPos, newPos);
         if (isPartial)
         {
-            var pCtx = new ParseContext(postfix.Seq.Kind ?? "Seq", new SeqLocation(postfix.Seq.Elements.Length), [], null);
+            var pCtx = new ParseContext(postfix.Seq.Kind ?? "Seq", new SeqFrameLocation(postfix.Seq.Elements.Length), [], null);
             return Result.Partial(seqNode, newPos, maxFailPos, pCtx);
         }
         return Result.Success(seqNode, newPos, maxFailPos);
@@ -692,7 +692,7 @@ public class Parser(Terminal trivia, Log? log = null)
         var elements = new List<ISyntaxNode>();
 
         // Parse at least one element
-        var firstResult = WithFrame(new LoopFrameLocation("OneOrMany", 0), ComputeExpected(oneOrMany.Element), oneOrMany.Kind ?? "OneOrMany",
+        var firstResult = WithFrame(new LoopFrameLocation("OneOrMany", 0), FirstSets.Get(oneOrMany.Element, _followCalculator), oneOrMany.Kind ?? "OneOrMany",
             () => ParseAlternative(oneOrMany.Element, currentPos, input));
 
         // Try success first, then partial
@@ -712,7 +712,7 @@ public class Parser(Terminal trivia, Log? log = null)
         int iteration = 1;
         while (true)
         {
-            var result = WithFrame(new LoopFrameLocation("OneOrMany", iteration), ComputeExpected(oneOrMany.Element), oneOrMany.Kind ?? "OneOrMany",
+            var result = WithFrame(new LoopFrameLocation("OneOrMany", iteration), FirstSets.Get(oneOrMany.Element, _followCalculator), oneOrMany.Kind ?? "OneOrMany",
                 () => ParseAlternative(oneOrMany.Element, currentPos, input));
 
             if (result.MaxFailPos > maxFailPos)
@@ -735,8 +735,8 @@ public class Parser(Terminal trivia, Log? log = null)
 
         var loopCtx = isPartial ? new ParseContext(
                 oneOrMany.Kind ?? "OneOrMany",
-                new LoopLocation("OneOrMany", iteration),
-                GetExpectedTerminals(oneOrMany.Element),
+                new LoopFrameLocation("OneOrMany", iteration),
+                FirstSets.Get(oneOrMany.Element, _followCalculator),
                 null)
             : null;
 
@@ -756,7 +756,7 @@ public class Parser(Terminal trivia, Log? log = null)
         int iteration = 0;
         while (true)
         {
-            var result = WithFrame(new LoopFrameLocation("ZeroOrMany", iteration), ComputeExpected(zeroOrMany.Element), zeroOrMany.Kind ?? "ZeroOrMany",
+            var result = WithFrame(new LoopFrameLocation("ZeroOrMany", iteration), FirstSets.Get(zeroOrMany.Element, _followCalculator), zeroOrMany.Kind ?? "ZeroOrMany",
                 () => ParseAlternative(zeroOrMany.Element, currentPos, input));
 
             if (result.MaxFailPos > maxFailPos)
@@ -779,8 +779,8 @@ public class Parser(Terminal trivia, Log? log = null)
 
         var loopCtx = isPartial ? new ParseContext(
                 zeroOrMany.Kind ?? "ZeroOrMany",
-                new LoopLocation("ZeroOrMany", iteration),
-                GetExpectedTerminals(zeroOrMany.Element),
+                new LoopFrameLocation("ZeroOrMany", iteration),
+                FirstSets.Get(zeroOrMany.Element, _followCalculator),
                 null)
             : null;
 
@@ -883,7 +883,7 @@ public class Parser(Terminal trivia, Log? log = null)
         for (int elemIdx = 0; elemIdx < seq.Elements.Length; elemIdx++)
         {
             var element = seq.Elements[elemIdx];
-            var result = WithFrame(new SeqFrameLocation(elemIdx), ComputeExpected(element), seq.Kind ?? "Seq",
+            var result = WithFrame(new SeqFrameLocation(elemIdx), FirstSets.Get(element, _followCalculator), seq.Kind ?? "Seq",
                 () => ParseAlternative(element, newPos, input));
 
             if (result.MaxFailPos > maxFailPos)
@@ -911,7 +911,7 @@ public class Parser(Terminal trivia, Log? log = null)
 
         var seqCtx = isPartial ? new ParseContext(
                 seq.Kind ?? "Seq",
-                new SeqLocation(seq.Elements.Length),
+                new SeqFrameLocation(seq.Elements.Length),
                 [],
                 null)
             : null;
@@ -928,21 +928,6 @@ public class Parser(Terminal trivia, Log? log = null)
         if (isPartial)
             return Result.Partial(seqNode, newPos, maxFailPos, seqCtx);
         return Result.Success(seqNode, newPos, maxFailPos);
-    }
-
-    Terminal[] GetExpectedTerminals(Rule rule)
-    {
-        return rule switch
-        {
-            Terminal t => [t],
-            Seq s when s.Elements.Length > 0 => GetExpectedTerminals(s.Elements[0]),
-            Optional o => GetExpectedTerminals(o.Element),
-            OftenMissed om => GetExpectedTerminals(om.Element),
-            OneOrMany o => GetExpectedTerminals(o.Element),
-            ZeroOrMany z => GetExpectedTerminals(z.Element),
-            SeparatedList sl => GetExpectedTerminals(sl.Element),
-            _ => []
-        };
     }
 
     private Result WithFrame(FrameLocation location, Terminal[]? expected, string fallbackRuleName, Func<Result> parse)
@@ -966,16 +951,6 @@ public class Parser(Terminal trivia, Log? log = null)
     }
 
     private void PopFrame() => _stackFrames.RemoveAt(_stackFrames.Count - 1);
-
-    private static Terminal[]? ComputeExpected(Rule rule) => rule switch
-    {
-        Terminal t => [t],
-        Seq s => s.Elements.Length > 0 ? ComputeExpected(s.Elements[0]) : [],
-        OneOrMany o => ComputeExpected(o.Element),
-        SeparatedList sl => sl.CanBeEmpty ? [] : ComputeExpected(sl.Element),
-        Optional or ZeroOrMany or OftenMissed or AndPredicate or NotPredicate => [],
-        _ => null
-    };
 
     private Result ParseSeparatedList(SeparatedList listRule, int startPos, string input)
     {
@@ -1033,7 +1008,7 @@ public class Parser(Terminal trivia, Log? log = null)
                         Log($"Missing separator at {currentPos}.");
                         if (isPartial)
                         {
-                            var sepRequiredCtx = new ParseContext(listRule.Kind, new SeqLocation(elements.Count), GetExpectedTerminals(listRule.Separator), null);
+                            var sepRequiredCtx = new ParseContext(listRule.Kind, new SeqFrameLocation(elements.Count), FirstSets.Get(listRule.Separator, _followCalculator), null);
                             return Result.Partial(new ListNode(listRule.Kind, elements, delimiters, startPos, currentPos), currentPos, maxFailPos, sepRequiredCtx);
                         }
                         return Result.Failure(maxFailPos);
@@ -1065,7 +1040,7 @@ public class Parser(Terminal trivia, Log? log = null)
                     Log($"End sepearator should not be present {currentPos}.");
                     if (isPartial)
                     {
-                        var sepForbiddenCtx1 = new ParseContext(listRule.Kind, new SeqLocation(elements.Count), [], null);
+                        var sepForbiddenCtx1 = new ParseContext(listRule.Kind, new SeqFrameLocation(elements.Count), [], null);
                         return Result.Partial(new ListNode(listRule.Kind, elements, delimiters, startPos, currentPos), currentPos, maxFailPos, sepForbiddenCtx1);
                     }
                     return Result.Failure(maxFailPos);
@@ -1091,7 +1066,7 @@ public class Parser(Terminal trivia, Log? log = null)
                 Log($"End sepearator should not be present {currentPos}.");
                 if (isPartial)
                 {
-                    var sepForbiddenCtx2 = new ParseContext(listRule.Kind, new SeqLocation(elements.Count), [], null);
+                    var sepForbiddenCtx2 = new ParseContext(listRule.Kind, new SeqFrameLocation(elements.Count), [], null);
                     return Result.Partial(new ListNode(listRule.Kind, elements, delimiters, startPos, currentPos), currentPos, maxFailPos, sepForbiddenCtx2);
                 }
                 return Result.Failure(maxFailPos);
@@ -1099,7 +1074,7 @@ public class Parser(Terminal trivia, Log? log = null)
         }
 
         var listNode = new ListNode(listRule.Kind, elements, delimiters, startPos, currentPos);
-        var listCtxFinal = isPartial ? new ParseContext(listRule.Kind, new SeqLocation(elements.Count), [], null) : null;
+        var listCtxFinal = isPartial ? new ParseContext(listRule.Kind, new SeqFrameLocation(elements.Count), [], null) : null;
         if (isPartial)
             return Result.Partial(listNode, currentPos, maxFailPos, listCtxFinal!);
         return Result.Success(listNode, currentPos, maxFailPos);

@@ -12,7 +12,7 @@ public static class RecoveryStackReconstructor
             .Select(kvp => kvp.Value)
             .Where(p => p.NewPos <= errorPos)
             .OrderBy(p => p.NewPos)
-            .ThenByDescending(p => p.Context?.Location.GetDepth() ?? 0)
+            .ThenByDescending(p => 0)
             .ToList();
 
         var stack = new List<ParseContext>();
@@ -26,7 +26,7 @@ public static class RecoveryStackReconstructor
             .Where(kvp => kvp.Value.ResultKind == Result.Kind.Failure && kvp.Value.MaxFailPos == errorPos)
             .Select(kvp => new ParseContext(
                 RuleName: kvp.Key.rule,
-                Location: new SeqLocation(0),
+                Location: new SeqFrameLocation(0),
                 Expected: [],
                 Options: null))
             .ToList();

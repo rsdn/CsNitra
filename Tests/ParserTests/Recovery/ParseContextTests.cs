@@ -79,7 +79,7 @@ public class ParseContextTests
         var node = new TerminalNode("Test", 0, 1, 1);
         var context = new ParseContext(
             "TestRule",
-            new SeqLocation(2),
+            new SeqFrameLocation(2),
             new Terminal[] { new Literal("expected") },
             null);
 
@@ -89,7 +89,7 @@ public class ParseContextTests
         Assert.IsTrue(partial.TryGetPartial(out _, out _, out var ctx));
         Assert.IsNotNull(ctx);
         Assert.AreEqual("TestRule", ctx.RuleName);
-        Assert.AreEqual(new SeqLocation(2), ctx.Location);
+        Assert.AreEqual(new SeqFrameLocation(2), ctx.Location);
     }
 
     [TestMethod]
@@ -109,7 +109,7 @@ public class ParseContextTests
         var node = new TerminalNode("Test", 0, 1, 1);
         var context = new ParseContext(
             "TestRule",
-            new LoopLocation("OneOrMany", 3),
+            new LoopFrameLocation("OneOrMany", 3),
             Array.Empty<Terminal>(),
             null);
 
@@ -120,7 +120,7 @@ public class ParseContextTests
         Assert.AreEqual(1, newPos);
         Assert.IsNotNull(outContext);
         Assert.AreEqual("TestRule", outContext.RuleName);
-        Assert.AreEqual(new LoopLocation("OneOrMany", 3), outContext.Location);
+        Assert.AreEqual(new LoopFrameLocation("OneOrMany", 3), outContext.Location);
     }
 
     [TestMethod]
@@ -152,17 +152,17 @@ public class ParseContextTests
     }
 
     [TestMethod]
-    public void Test_ParseLocation_Types()
+    public void Test_FrameLocation_Types()
     {
-        var seqLoc = new SeqLocation(42);
+        var seqLoc = new SeqFrameLocation(42);
         Assert.AreEqual(42, seqLoc.ElementIndex);
 
-        var loopLoc = new LoopLocation("ZeroOrMany", 7);
+        var loopLoc = new LoopFrameLocation("ZeroOrMany", 7);
         Assert.AreEqual("ZeroOrMany", loopLoc.LoopKind);
         Assert.AreEqual(7, loopLoc.Iteration);
 
-        var prefixLoc = new PrefixLocation(3);
-        Assert.AreEqual(3, prefixLoc.PrefixIndex);
+        var ruleLoc = new RuleFrameLocation(3);
+        Assert.AreEqual(3, ruleLoc.AltIndex);
     }
 
     [TestMethod]
@@ -184,13 +184,13 @@ public class ParseContextTests
 
         var ctx1 = new ParseContext(
             "Rule1",
-            new SeqLocation(1),
+            new SeqFrameLocation(1),
             new Terminal[] { new Literal("a") },
             null);
 
         var ctx2 = new ParseContext(
             "Rule2",
-            new LoopLocation("OneOrMany", 0),
+            new LoopFrameLocation("OneOrMany", 0),
             new Terminal[] { new Literal("b") },
             null);
 
@@ -228,13 +228,13 @@ public class ParseContextTests
 
         var ctx1 = new ParseContext(
             "Outer",
-            new SeqLocation(0),
+            new SeqFrameLocation(0),
             Array.Empty<Terminal>(),
             null);
 
         var ctx2 = new ParseContext(
             "Inner",
-            new LoopLocation("ZeroOrMany", 2),
+            new LoopFrameLocation("ZeroOrMany", 2),
             Array.Empty<Terminal>(),
             null);
 
@@ -257,7 +257,7 @@ public class ParseContextTests
     public void Test_Expected_Terminals()
     {
         var expected = new Terminal[] { new Literal(";"), new Literal("}") };
-        var ctx = new ParseContext("TestRule", new SeqLocation(1), expected, null);
+        var ctx = new ParseContext("TestRule", new SeqFrameLocation(1), expected, null);
 
         Assert.AreEqual(2, ctx.Expected.Length);
         Assert.AreEqual(";", ctx.Expected[0].Kind);
@@ -270,19 +270,19 @@ public class ParseContextTests
         // Simulating: Seq -> Loop -> Prefix
         var outerCtx = new ParseContext(
             "Seq",
-            new SeqLocation(2),
+            new SeqFrameLocation(2),
             Array.Empty<Terminal>(),
             null);
 
         var innerCtx = new ParseContext(
             "Loop",
-            new LoopLocation("OneOrMany", 5),
+            new LoopFrameLocation("OneOrMany", 5),
             Array.Empty<Terminal>(),
             null);
 
         var innermostCtx = new ParseContext(
             "Prefix",
-            new PrefixLocation(0),
+            new RuleFrameLocation(0),
             Array.Empty<Terminal>(),
             null);
 
@@ -304,7 +304,7 @@ public class ParseContextTests
 
         var ctx = new ParseContext(
             "TestRule",
-            new SeqLocation(0),
+            new SeqFrameLocation(0),
             Array.Empty<Terminal>(),
             options);
 
@@ -407,7 +407,7 @@ public class ParseContextTests
         var node = new TerminalNode("Test", 0, 1, 1);
         var context = new ParseContext(
             "TestRule",
-            new SeqLocation(0),
+            new SeqFrameLocation(0),
             Array.Empty<Terminal>(),
             null);
 
@@ -425,7 +425,7 @@ public class ParseContextTests
         var node = new TerminalNode("Test", 0, 1, 1);
         var context = new ParseContext(
             "TestRule",
-            new SeqLocation(0),
+            new SeqFrameLocation(0),
             Array.Empty<Terminal>(),
             null);
 
