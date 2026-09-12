@@ -41,6 +41,9 @@ public class Parser(Terminal trivia, Log? log = null)
     private readonly List<RecoveryDiagnostic> _recoveryDiagnostics = [];
     public IReadOnlyList<RecoveryDiagnostic> RecoveryDiagnostics => _recoveryDiagnostics;
 
+    // Хук для тестов (паттерн LastSnapshot/LastPartial): число ленивых вызовов RecoveryEngine.Generate в последнем Parse.
+    public int EngineGenerateCalls { get; private set; }
+
     // Лимиты цикла восстановления: предельное число итераций и число попыток кандидатов на одной точке восстановления.
     public int MaxRecoveryIterations { get; set; } = 64;
     public int MaxRecoveryAttemptsPerPosition { get; set; } = 3;
@@ -337,6 +340,7 @@ public class Parser(Terminal trivia, Log? log = null)
         _injections.Clear();
         _recoveryDiagnostics.Clear();
         _attempts.Clear();
+        EngineGenerateCalls = 0;
 
         if (input.Length > 0)
         {
@@ -377,18 +381,17 @@ public class Parser(Terminal trivia, Log? log = null)
                 _attempts[e] = attempts;
             }
 
-            // S0 (ре-парсинг как есть: Hygiene без патчей) — всегда первый; затем детерминированно отсортированные S1..S5.
-            var candidates = new List<Recovery.RecoveryCandidate> { CandidateS0(e, snapshot, startRule) };
-            candidates.AddRange(Recovery.RecoveryEngine.Generate(e, snapshot, input, this, result.ResultKind));
+            // S0 (ре-парсинг как есть: Hygiene без патчей) — всегда первый; S1..S5 генерируются лениво (Generate — дорого:
+            // спекулятивные parse'ы) и только если S0 не дал прогресса. Порядок проб/акцепта не меняется (S0 и так первый).
             var recoveredThisIteration = false;
 
-            foreach (var candidate in candidates)
+            bool TryCandidate(Recovery.RecoveryCandidate candidate)
             {
                 if (attempts.Contains(candidate.Id))
-                    continue;
+                    return false; // уже пробовали на этой точке — следующий кандидат
                 attempts.Add(candidate.Id);
                 if (attempts.Count > MaxRecoveryAttemptsPerPosition)
-                    break;
+                    return true; // лимит попыток на точке исчерпан — стоп (не акцепт: recoveredThisIteration не тронут)
 
                 var log = ApplyPatches(candidate, e, snapshot, startRule, currentStartPos); // патчи + Hygiene атомарно, всё в лог
                 var savedErrorPos = ErrorPos;
@@ -400,19 +403,33 @@ public class Parser(Terminal trivia, Log? log = null)
                 if (next.TryGetSuccess(out _, out var end2) && end2 == input.Length)
                 {
                     _recoveryDiagnostics.AddRange(candidate.Diagnostics);
-                    return next; // полностью восстановлено
+                    result = next;
+                    recoveredThisIteration = true;
+                    return true; // полностью восстановлено
                 }
                 if (e2 > e)
                 {
                     _recoveryDiagnostics.AddRange(candidate.Diagnostics);
                     result = next;
                     recoveredThisIteration = true;
-                    break; // I1: прогресс — к следующему итеративному проходу
+                    return true; // I1: прогресс — к следующему итеративному проходу
                 }
                 RollbackPatches(log); // нет прогресса — откат (включая Hygiene), следующий кандидат
                 ErrorPos = savedErrorPos;
                 _expected = new HashSet<Terminal>(savedExpected);
+                return false;
             }
+
+            if (!TryCandidate(CandidateS0(e, snapshot, startRule)))
+            {
+                EngineGenerateCalls++;
+                foreach (var candidate in Recovery.RecoveryEngine.Generate(e, snapshot, input, this, result.ResultKind))
+                    if (TryCandidate(candidate))
+                        break;
+            }
+
+            if (result.TryGetSuccess(out _, out var endAfter) && endAfter == input.Length)
+                return result; // полностью восстановлено
 
             if (!recoveredThisIteration)
                 break; // кандидаты исчерпаны — ошибка неотвратима

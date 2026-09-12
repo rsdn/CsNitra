@@ -142,4 +142,24 @@ public sealed class IterativeRecoveryTests
         Assert.AreEqual(input.Length, end);
         Assert.IsNull(_parser.ErrorInfo);
     }
+
+    // ============ 6. Ленивый Generate: S0 восстанавливает без Generate, при нехватке S0 — Generate вызывается ============
+
+    [TestMethod]
+    public void Test_LazyGenerate_Counter()
+    {
+        // Пропущенная ; восстанавливается S0 (Hygiene re-parse) за одну итерацию — Generate не вызывается.
+        var missingSemicolon = "int f() { int x int y; }";
+        var r1 = _parser.Parse(missingSemicolon, "Module", out _);
+        Assert.IsTrue(r1.TryGetSuccess(out _, out var end1));
+        Assert.AreEqual(missingSemicolon.Length, end1);
+        Assert.AreEqual(0, _parser.EngineGenerateCalls);
+
+        // Пропущенная ( (нет OftenMissed для неё): S0 не восстанавливает — Generate вызывается (>= 1, вставка S1).
+        var missingParen = "int f ) { int x; }";
+        var r2 = _parser.Parse(missingParen, "Module", out _);
+        Assert.IsTrue(r2.TryGetSuccess(out _, out var end2));
+        Assert.AreEqual(missingParen.Length, end2);
+        Assert.IsTrue(_parser.EngineGenerateCalls >= 1, $"Expected EngineGenerateCalls >= 1, got {_parser.EngineGenerateCalls}");
+    }
 }
