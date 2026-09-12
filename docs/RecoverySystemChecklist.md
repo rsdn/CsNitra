@@ -10,7 +10,7 @@
 - `[x]` — выполнен и проверен
 - `[!]` — есть проблемы / отложено
 
-**Текущий пункт:** 0.7
+**Текущий пункт:** 1.1
 
 ---
 
@@ -110,7 +110,7 @@
   - **Результаты:** сборка `Nitra.sln` — 0 ошибок; `RecoveryDiagnosticTests` — 2/2; регрессия `Tests/ParserTests` — **220 passed / 0 failed / 2 skipped** (218 базовых + 2 новых; 2 — предсуществующие `[Ignore("WIP")]`).
 
 ### 0.7 Удаление мёртвого кода
-- [~] Статус — в работе (сборка 0 ошибок; ParserTests 216 passed / 0 failed / 2 skipped)
+- [x] Статус — выполнен, проверен (ParserTests 216/216; Фаза 0 завершена)
 - **Что:** удалить `ContinueFromPartial`, `TryRecoverFromPartial`, `MergeWithPartialTree`, `ContinueFromPartialPostfixFallback`, `_partialAccumulated`, `_partialMemo`, `RecoveryStackReconstructor.cs` (+ его тесты), ветки `_partialMemo` в `ParseRule`/`Parse`; переименование `_recoverySkipPos` → `_recoveryPoint` (поведение RecoveryPrefix/Postfix сохраняется).
 - **Файлы:** `Parser.cs`, `Recovery/`, `Tests/`
 - **Тесты:** Регрессия: все существующие тесты ParserTests без изменений.
@@ -129,11 +129,20 @@
 ## Фаза 1. Recovery engine (итеративный цикл)
 
 ### 1.1 Главный цикл §3.1
-- [ ] Статус
+- [~] Статус — в работе (сборка 0 ошибок; IterativeRecoveryTests 6/6; ParserTests 222 passed / 0 failed / 2 skipped)
 - **Что:** `RecoveryPointOf`, `FailureSnapshotAt`, `_recoveryPoint`, неявный S0-кандидат (ре-парсинг как есть: Hygiene без патчей), счётчики, fail-safe `ePrev`.
-- **Файлы:** `Parser.cs`
+- **Файлы:** `Parser.cs`, `Tests/ParserTests/Recovery/IterativeRecoveryTests.cs`
 - **Тесты:** `IterativeRecoveryTests`: один проход на одну ошибку; предельные случаи; существующие recovery-тесты MiniC (Error-правила) зелёны без изменений.
 - **Заметки:**
+  - **Цикл:** переписан по §3.1: `ePrev = -1`, `iter`-счётчик, `RecoveryPointOf` → fail-safe `e <= ePrev`, `iter >= MaxRecoveryIterations`, `_recoveryPoint = e`, S0-кандидат (`_attempts[e]` + `MaxRecoveryAttemptsPerPosition`), legacy-чистка memo как тело Apply S0, ре-парсинг, акцепт при `e2 > e` (I1) или Success@EOF, иначе break. Финал: лог "RULE STACK TRACE" + `MemoizationVisualazer` + `ErrorInfo = FatalError` (семантика §3.6 — в 1.4).
+  - **`RecoveryPointOf` — отклонение от формулы §2 (решение):** для Success < EOF взято `max(NewPos, ErrorPos)`, а не `NewPos`. Проверено на практике (TRACE-лог MiniC `Err_MissingClosingBraceWithFunctionInside`): верхний результат — дегенеративный `Success@0` (пустой `ZeroOrMany`), тогда как реальная точка ошибки `ErrorPos` (mismatch `}` в 60). Формула `NewPos` даёт `e = 0` → S0-ре-парсинг с `_recoveryPoint = 0` не восстанавливает → тест MiniC падает. `max()` совпадает с `NewPos` для чистого хвостового мусора (там `ErrorPos <= NewPos`) и сохраняет legacy-поведление (ErrorPos) для дегенеративных Success'ов. Failure/Partial — как в §2.
+  - **Ключевой механизм legacy-recovery (установлен экспериментально):** `NotPredicate(Ref(Function))` в Block спекулятивно парсит следующую функцию в pass 0 и кэширует её полный Success в `_memo`; S0-ре-парсинг с `_recoveryPoint` на точке разрыва вставляет `}`/`;` (OftenMissed), а следующая функция берётся из memo. Multi-pass-прогресс (I1) работает через вложенные recovery-успехи (RecoveryOperator-постфикс), чьи memo-записи (`pos != currentStartPos`, `NewPos != e`) переживают чистку.
+  - **Legacy-чистка memo — оставлена как есть (в теле Apply S0):** удаляет `!IsSuccess` везде, `pos == currentStartPos`, `NewPos == e` (в старом коде — `NewPos == ErrorPos`; для Failure `e == ErrorPos`, идентично). Новая Hygiene (только Failure на e) — в 1.3.
+  - **`FailureSnapshotAt(e)`:** возвращает `_lastSnapshot` iff `Pos == e`, иначе null (синтетический снимок для хвостового мусора — 1.2/S5). В 1.1 снимок не используется циклом (заготовка для engine'а).
+  - **Счётчики:** `public int MaxRecoveryIterations { get; set; } = 64`, `public int MaxRecoveryAttemptsPerPosition { get; set; } = 3`, `private readonly Dictionary<int, HashSet<string>> _attempts` (очищается в начале `Parse`; в 1.1 e строго растёт, повторное посещение e недостижимо — проверка `_attempts[e].Contains("S0")` — защита). `GetOrAdd` недоступен в netstandard2.0 → `TryGetValue` + запись.
+  - **Семантика ErrorInfo сохранена:** `FatalError(input, ErrorPos, PositionToLineCol, _expected)` в финале для невосстановленного результата; `PositionToLineCol`/`FatalError` не тронуты. Изменение семантики (Partial@EOF и т.д.) — 1.4.
+  - **Тесты (6):** (1) пропущенная `;` → Success@EOF за один S0-проход; (2) пропущенная `}` → Success@EOF (восстановление через memo-кэш спекулятивного parse следующей функции); (3) 5 ошибок оператора + `MaxRecoveryIterations = 4` → завершается, не Success@EOF, `ErrorInfo != null` (каждая итерация двигает E: 17→29→41→53→65); (4) `MaxRecoveryIterations = 0` → один проход, немедленный выход; (5) корректный вход → Success@EOF, `RecoveryDiagnostics` пуст; (6) 5 ошибок оператора без лимита → Success@EOF (multi-pass, I1).
+  - **Регрессия:** `Tests/ParserTests` — **222 passed / 0 failed / 2 skipped** (216 базовых + 6 новых; 2 — предсуществующие `[Ignore("WIP")]`); MiniC 36/36 без изменений; `RegexTests` 9/9, `WiWorkflowTests` 1/1.
 
 ### 1.2 `RecoveryEngine.Generate`
 - [ ] Статус

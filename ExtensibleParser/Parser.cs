@@ -41,6 +41,11 @@ public class Parser(Terminal trivia, Log? log = null)
     private readonly List<RecoveryDiagnostic> _recoveryDiagnostics = [];
     public IReadOnlyList<RecoveryDiagnostic> RecoveryDiagnostics => _recoveryDiagnostics;
 
+    // Лимиты цикла восстановления: предельное число итераций и число попыток кандидатов на одной точке восстановления.
+    public int MaxRecoveryIterations { get; set; } = 64;
+    public int MaxRecoveryAttemptsPerPosition { get; set; } = 3;
+    private readonly Dictionary<int, HashSet<string>> _attempts = new();
+
     // Хук для тестов/engine: инжекции в Фазе 0 никто не порождает, слой активен с Фазы 1.
     public void AddInjection(Terminal terminal, int pos, Injection injection) => _injections[(pos, terminal)] = injection;
 
@@ -177,6 +182,7 @@ public class Parser(Terminal trivia, Log? log = null)
         _terminalCache.Clear();
         _injections.Clear();
         _recoveryDiagnostics.Clear();
+        _attempts.Clear();
 
         if (input.Length > 0)
         {
@@ -189,37 +195,40 @@ public class Parser(Terminal trivia, Log? log = null)
 
         Log($"Starting at {currentStartPos} parse for rule '{startRule}'");
 
-        for (int i = 0; ; i++)
+        var ePrev = -1;
+        var result = default(Result);
+
+        for (var iter = 0; ; iter++)
         {
-            var oldErrorPos = ErrorPos;
+            Log($"Starting at {currentStartPos} iter={iter} parse for rule '{startRule}' _recoveryPoint={_recoveryPoint}");
+            result = ParseRule(startRule, minPrecedence: 0, startPos: currentStartPos, input);
 
-            Log($"Starting at {currentStartPos} i={i} parse for rule '{startRule}' _recoveryPoint={_recoveryPoint}");
-            var normalResult = ParseRule(startRule, minPrecedence: 0, startPos: currentStartPos, input);
+            if (result.TryGetSuccess(out _, out var end) && end == input.Length)
+                return result; // чистый успех
 
-            if (normalResult.TryGetSuccess(out _, out var newPos) && newPos == input.Length)
-                return normalResult;
+            var e = RecoveryPointOf(result, input);
+            if (e <= ePrev)
+                break; // глобальный предохранитель (fail-safe)
+            ePrev = e;
+            if (iter >= MaxRecoveryIterations)
+                break;
 
-            ErrorInfo = new FatalError(input, ErrorPos, Location: input.PositionToLineCol(ErrorPos), _expected.ToArray());
+            var snapshot = FailureSnapshotAt(e);
+            Log($"S0 reparse at recovery point {e}, snapshot: {(snapshot?.Pos.ToString() ?? "n/a")}", LogImportance.High);
+            _recoveryPoint = e;
 
-            if (ErrorPos <= oldErrorPos)
+            // S0 — неявный кандидат «ре-парсинг как есть» (единственный до появления engine'а в 1.2):
+            // Apply = legacy-чистка memo, без патчей — RecoveryPrefix/Postfix/OftenMissed срабатывают сами через _recoveryPoint.
+            if (!_attempts.TryGetValue(e, out var attempts))
             {
-                // Recovery in recovery rules mode failed.
-                // Выводим стек правил с метаинформацией
-                Log($"--- RULE STACK TRACE ---", LogImportance.High);
-                foreach (var frame in _stackFrames)
-                    Log($"  Rule: {frame.RuleName}, Prec: {frame.Precedence}, Loc: {frame.Location}, Expected: [{string.Join(", ", (frame.Expected ?? Array.Empty<Terminal>()).Select(t => t.Kind))}]", LogImportance.High);
-                Log($"------------------------", LogImportance.High);
-
-                var debugInfos = MemoizationVisualazer(input);
-
-                Log($"Parse failed. Memoization table:");
-                foreach (var info in debugInfos)
-                    Log($"    {info.Info}");
-                Log($"and of memoization table.");
-                return normalResult;
+                attempts = new HashSet<string>();
+                _attempts[e] = attempts;
             }
-
-            _recoveryPoint = ErrorPos;
+            if (attempts.Contains("S0"))
+                break;
+            attempts.Add("S0");
+            if (attempts.Count > MaxRecoveryAttemptsPerPosition)
+                break;
 
             foreach (var x in _memo.ToArray())
             {
@@ -231,10 +240,59 @@ public class Parser(Terminal trivia, Log? log = null)
                 if (pos == currentStartPos)
                     _memo.Remove(x.Key);
 
-                if (x.Value.NewPos == ErrorPos)
+                if (x.Value.NewPos == e)
                     _memo.Remove(x.Key);
             }
+
+            var next = ParseRule(startRule, minPrecedence: 0, startPos: currentStartPos, input);
+            var e2 = RecoveryPointOf(next, input);
+
+            if (next.TryGetSuccess(out _, out var end2) && end2 == input.Length)
+                return next; // полностью восстановлено
+            if (e2 > e)
+            {
+                result = next;
+                continue; // I1: прогресс — следующая итерация
+            }
+            break; // S0 не дал прогресса — кандидаты исчерпаны
         }
+
+        // Recovery in recovery rules mode failed.
+        // Выводим стек правил с метаинформацией
+        Log($"--- RULE STACK TRACE ---", LogImportance.High);
+        foreach (var frame in _stackFrames)
+            Log($"  Rule: {frame.RuleName}, Prec: {frame.Precedence}, Loc: {frame.Location}, Expected: [{string.Join(", ", (frame.Expected ?? Array.Empty<Terminal>()).Select(t => t.Kind))}]", LogImportance.High);
+        Log($"------------------------", LogImportance.High);
+
+        var debugInfos = MemoizationVisualazer(input);
+
+        Log($"Parse failed. Memoization table:");
+        foreach (var info in debugInfos)
+            Log($"    {info.Info}");
+        Log($"and of memoization table.");
+
+        ErrorInfo = new FatalError(input, ErrorPos, Location: input.PositionToLineCol(ErrorPos), _expected.ToArray());
+        return result;
+    }
+
+    // Точка восстановления E (§2): Failure → ErrorPos; Partial → max(NewPos, ErrorPos);
+    // Success до EOF → max(NewPos, ErrorPos): NewPos — хвостовой мусор, ErrorPos — самая дальняя точка падения
+    // (для дегенеративных Success'ов, где разбор «сдался» раньше реальной ошибки).
+    private int RecoveryPointOf(Result result, string input)
+    {
+        if (result.TryGetSuccess(out _, out var end))
+            return end < input.Length ? Math.Max(end, ErrorPos) : input.Length;
+        if (result.TryGetPartial(out _, out var partialEnd))
+            return Math.Max(partialEnd, ErrorPos);
+        return ErrorPos;
+    }
+
+    // В 1.1 снимок — заготовка для engine'а (1.2): возвращаем _lastSnapshot, если он снят в точке e,
+    // иначе null (синтетический снимок для хвостового мусора появится в 1.2/S5).
+    private FailureSnapshot? FailureSnapshotAt(int e)
+    {
+        var snapshot = _lastSnapshot;
+        return snapshot is not null && snapshot.Pos == e ? snapshot : null;
     }
 
     private Result ParseRule(
