@@ -81,7 +81,7 @@ public static class RecoveryEngine
                 Id: $"S1:{ruleName}:{t.Kind}",
                 Rank: rank,
                 Pos: e,
-                Cost: 1,
+                Cost: CostCalculator.InsertCost,
                 RuleName: ruleName,
                 TerminalKind: t.Kind,
                 Apply: apply,
@@ -151,8 +151,9 @@ public static class RecoveryEngine
             return false;
         }
 
-        void AddResyncCandidate(int resyncPos, string tier, int penalty, string anchorName)
+        void AddResyncCandidate(int resyncPos, string tier, string anchorName)
         {
+            var penalty = CostCalculator.TierPenalty(tier);
             var insertions = new List<(int Pos, Terminal T, Injection Injection)>();
             var diagnostics = new List<RecoveryDiagnostic>();
             var failedElement = top.Location is SeqFrameLocation { ElementIndex: var topIdx }
@@ -231,7 +232,7 @@ public static class RecoveryEngine
                 })
                 : (Action<Parser>)(p => RollbackInjections(p, injOlds));
 
-            var cost = (resyncPos > e ? SkipCost(input, e, resyncPos) : 0) + insertions.Count + penalty;
+            var cost = (resyncPos > e ? CostCalculator.SkipCost(input, e, resyncPos) : 0) + insertions.Count + penalty;
             candidates.Add(new RecoveryCandidate(
                 Id: $"S2:{top.RuleName}:{tier}:{resyncPos}",
                 Rank: 2,
@@ -254,7 +255,7 @@ public static class RecoveryEngine
                 var (ok, endPos) = Speculative(anchor.RuleName, s);
                 if (ok && endPos > s)
                 {
-                    AddResyncCandidate(s, "T1", 0, anchor.RuleName);
+                    AddResyncCandidate(s, "T1", anchor.RuleName);
                     foundT1 = true;
                     break;
                 }
@@ -269,7 +270,7 @@ public static class RecoveryEngine
                     continue;
                 var (ok, _) = Speculative(p.RuleName, s);
                 if (ok)
-                    AddResyncCandidate(s, "T2", 1, p.RuleName);
+                    AddResyncCandidate(s, "T2", p.RuleName);
             }
         }
     }
@@ -399,7 +400,7 @@ public static class RecoveryEngine
         var failedElement = top.Location is SeqFrameLocation { ElementIndex: var idx }
             ? FindSeq(parser, top.RuleName, idx)?.Elements[idx]
             : null;
-        var cost = SkipCost(input, e, foundS);
+        var cost = CostCalculator.SkipCost(input, e, foundS);
         var diagnostic = new RecoveryDiagnostic(e, foundS, RecoveryKind.Skipped, $"skip to terminator {foundT.Kind}", foundT, top.RuleName);
 
         if (failedElement is Ref r)
@@ -546,7 +547,7 @@ public static class RecoveryEngine
             Id: $"S5:{ruleName}:Trailing",
             Rank: 5,
             Pos: e,
-            Cost: SkipCost(input, e, input.Length) + 1,
+            Cost: CostCalculator.SkipCost(input, e, input.Length) + 1,
             RuleName: ruleName,
             TerminalKind: "Trailing",
             Apply: p => p.ApplyInjection(t, e, injection),
@@ -598,30 +599,6 @@ public static class RecoveryEngine
                     return null;
             }
         }
-    }
-
-    // Cost skip-региона: число небелых «слов» + число переводов строк (§3.4).
-    private static int SkipCost(string input, int from, int to)
-    {
-        var words = 0;
-        var newlines = 0;
-        var inWord = false;
-        for (var i = from; i < to; i++)
-        {
-            var c = input[i];
-            if (char.IsWhiteSpace(c))
-            {
-                if (c is '\n' or '\r')
-                    newlines++;
-                inWord = false;
-            }
-            else if (!inWord)
-            {
-                words++;
-                inWord = true;
-            }
-        }
-        return words + newlines;
     }
 
     // Первый Seq в альтернативах правила, у которого больше elementIndex элементов (упрощение 1.2).

@@ -304,11 +304,29 @@
   - **Результаты:** сборка `Nitra.sln --no-incremental` — 0 ошибок / 0 предупреждений (изменённые файлы чисты по диагностике); `Tests/ParserTests` — **263 passed / 0 failed / 2 skipped** (2 — предсуществующие `[Ignore("WIP")]`).
 
 ### 2.2 Единый cost model
-- [ ] Статус
+- [~] Статус — в работе (сборка `Nitra.sln` 0 ошибок / 0 предупреждений; CostModelTests 11/11; ParserTests 274 passed / 0 failed / 2 skipped)
 - **Что:** вставка 1; skip = слова+переносы; tier-penalty T1:0, T2:1; S4 = число вставок; `CountRecoveryNodes`.
-- **Файлы:** `Recovery/CostCalculator.cs`
-- **Тесты:** `CostModelTests`
+- **Файлы:** `Recovery/CostCalculator.cs` (новый), `Recovery/RecoveryEngine.cs`
+- **Тесты:** `CostModelTests` (11 методов)
 - **Заметки:**
+  - **Сверка cost S1–S5 со спекой (§0 п.7, §3.4) — расхождений НЕТ, поправок не потребовалось (все формулы уже соответствовали):**
+    - S1 (`GenerateS1`): `Cost: 1` = вставка (спека «вставка = 1»). ✓
+    - S2 (`AddResyncCandidate`): `Cost = (S > e ? SkipCost(e..S) : 0) + insertions.Count + penalty` (penalty T1=0/T2=1) = skip-cost + число вставок + tier-penalty (спека §3.4 S2). ✓
+    - S3 (`GenerateS3`): `Cost = SkipCost(e..S)` = слова+переносы в [e..S) (спека §3.4 S3). ✓
+    - S4 (`GenerateS4`): `Cost = insertions.Count` = число вставок (спека §3.4 S4). ✓
+    - S5 (`GenerateS5`): `Cost = SkipCost(e..EOF) + 1` = слова+переносы+1 (спека §3.4 S5). ✓
+    - `SkipCost`: число небелых «слов» (максимальных небелых прогонов) + число переводов строк (`\n`/`\r`) — совпадает со спекой.
+    - Детерминизм сортировки §3.4.3 (`OrderBy(Rank, Cost, Pos, RuleName, TerminalKind)`) не тронут; т.к. значения cost не изменились, порядок кандидатов и поведение recovery **НЕ** изменились (регрессия зелёная, все recovery-тесты без изменений).
+  - **`CostCalculator` (создан, `Recovery/CostCalculator.cs`) — чистый статический класс без зависимостей от Parser:**
+    - `public const int InsertCost = 1` — стоимость вставки.
+    - `public static int SkipCost(string input, int from, int to)` — вынесен из `RecoveryEngine` (логика побайтово та же: слова + переносы в [from..to)).
+    - `public static int TierPenalty(string tier)` — T1=0, T2=1 (неизвестный tier → 1, защитно; engine генерирует только T1/T2).
+    - `public static int CountRecoveryNodes(Node root)` — см. ниже.
+  - **`RecoveryEngine` переключён на `CostCalculator`:** удалён локальный `private static int SkipCost`; S1 → `CostCalculator.InsertCost`; S2 → `CostCalculator.SkipCost` + `CostCalculator.TierPenalty(tier)` (параметр `penalty` из `AddResyncCandidate` убран — вычисляется из `tier`); S3/S5 → `CostCalculator.SkipCost`. Чистый рефакторинг — значения cost и поведение не изменились.
+  - **`CountRecoveryNodes` (в `CostCalculator`):** рекурсивный обход дерева (`SeqNode.Elements`, `ListNode.Elements`+`Delimiters`, `SomeNode.Value`; `TerminalNode`/`NoneNode`/`PredicateNode` — без детей) и подсчёт всех узлов с `IsRecovery == true` (вставленные токены + абсорберы). Дешёвый (по полю узла, без Parser) — для отладки/метрик.
+  - **Тесты (`CostModelTests`, 11):** `SkipCost` — пустой регион=0; без переносов=число слов; с переносами=слова+переносы; белое пространство не слово (вкл. ` \t `=0 и только `\n`=1). `InsertCost`=1. `TierPenalty` — T1=0, T2=1. `CountRecoveryNodes` — без recovery=0; N recovery-узлов=N (Seq); вложенные SomeNode+ListNode (3 recovery). Интеграция `Test_S5_Cost_Matches_Formula` — cost реального S5-кандидата = `CostCalculator.SkipCost(input, e, EOF) + 1` = 2.
+  - **Проблема (вне пункта, фикс):** MCP-тулинг при сборке/тесте автоматически добавил явные `<Compile Include="Recovery\CostCalculator.cs" />` (ExtensibleParser.csproj) и `<Compile Include="Recovery\CostModelTests.cs" />` (ParserTests.csproj) — дубли SDK-глоба → `NETSDK1022` при прямой сборке `.csproj`. Оба явных include удалены (файлы подхватываются SDK-глобом); csproj возвращены в коммитное состояние (git: без изменений).
+  - **Регрессия:** `Tests/ParserTests` — **274 passed / 0 failed / 2 skipped** (Total 276; 263 базовых + 11 новых; 2 — предсуществующие `[Ignore("WIP")]`). Полное решение `Nitra.sln` — 284 passed / 0 failed / 2 skipped (ParserTests 274 + RegexTests 9 + WiWorkflowTests 1). Поведение/порядок кандидатов не изменились (чистый рефакторинг cost, значения идентичны).
 
 ### 2.3 `OftenMissed` → сахар над `TryInsert`
 - [ ] Статус
