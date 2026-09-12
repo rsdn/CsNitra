@@ -25,7 +25,7 @@ public class Parser(Terminal trivia, Log? log = null)
     public int ErrorPos { get; private set; }
     public FatalError? ErrorInfo { get; private set; }
 
-    private int _recoverySkipPos = -1;
+    private int _recoveryPoint = -1;
     private FollowSetCalculator? _followCalculator;
 
 
@@ -55,8 +55,6 @@ public class Parser(Terminal trivia, Log? log = null)
     public Dictionary<string, TdoppRule> TdoppRules { get; } = new();
 
     private readonly Dictionary<(int pos, string rule, int precedence), Result> _memo = new();
-    private readonly Dictionary<(int pos, string rule, int precedence), Result> _partialMemo = new();
-    private Result? _partialAccumulated;
 
     // Чистый кэш результата TryMatch (length >= 0 или -1); mismatch кэшируется и никогда не чистится в ходе прохода.
     private readonly Dictionary<(int Pos, Terminal Terminal), int> _terminalCache = new(TerminalComparer.KeyComparer);
@@ -170,13 +168,12 @@ public class Parser(Terminal trivia, Log? log = null)
         ErrorInfo = null;
         triviaLength = 0;
         ErrorPos = startPos;
-        _recoverySkipPos = -1;
+        _recoveryPoint = -1;
         _lastSnapshot = null;
         _lastPartial = null;
         _suppressSideEffects = false;
         var currentStartPos = startPos;
         _memo.Clear();
-        _partialMemo.Clear();
         _terminalCache.Clear();
         _injections.Clear();
         _recoveryDiagnostics.Clear();
@@ -196,7 +193,7 @@ public class Parser(Terminal trivia, Log? log = null)
         {
             var oldErrorPos = ErrorPos;
 
-            Log($"Starting at {currentStartPos} i={i} parse for rule '{startRule}' _recoverySkipPos={_recoverySkipPos}");
+            Log($"Starting at {currentStartPos} i={i} parse for rule '{startRule}' _recoveryPoint={_recoveryPoint}");
             var normalResult = ParseRule(startRule, minPrecedence: 0, startPos: currentStartPos, input);
 
             if (normalResult.TryGetSuccess(out _, out var newPos) && newPos == input.Length)
@@ -222,24 +219,7 @@ public class Parser(Terminal trivia, Log? log = null)
                 return normalResult;
             }
 
-            _recoverySkipPos = ErrorPos;
-
-            // First recovery iteration: try to continue from partial results
-            if (i == 0 && _partialMemo.Count > 0)
-            {
-                foreach (var kvp in _partialMemo)
-                {
-                    if (kvp.Value.TryGetPartial(out var partialTree, out var partialPos) && partialPos == ErrorPos)
-                    {
-                        Log($"Found partial at ErrorPos: {partialTree.Kind}", LogImportance.High);
-                        _partialMemo.Clear();
-                        var recoveryResult = ContinueFromPartial(kvp.Key.rule, kvp.Value, minPrecedence: 0, startPos: currentStartPos, input);
-                        if (recoveryResult.IsSuccess)
-                            return recoveryResult;
-                        break;
-                    }
-                }
-            }
+            _recoveryPoint = ErrorPos;
 
             foreach (var x in _memo.ToArray())
             {
@@ -254,8 +234,6 @@ public class Parser(Terminal trivia, Log? log = null)
                 if (x.Value.NewPos == ErrorPos)
                     _memo.Remove(x.Key);
             }
-
-            _partialMemo.Clear();
         }
     }
 
@@ -265,14 +243,14 @@ public class Parser(Terminal trivia, Log? log = null)
         int startPos,
         string input)
     {
-        var isRecoveryPos = startPos == _recoverySkipPos;
+        var isRecoveryPos = startPos == _recoveryPoint;
         var memoKey = (startPos, ruleName, minPrecedence);
 
         if (_memo.TryGetValue(memoKey, out var cached))
         {
-            if (cached.ResultKind == Result.Kind.Partial && _recoverySkipPos == cached.MaxFailPos)
+            if (cached.ResultKind == Result.Kind.Partial && _recoveryPoint == cached.MaxFailPos)
                 Log($"Ignoring possible partial memo in recovery mode: {memoKey} => {cached}");
-            else if (_recoverySkipPos == cached.MaxFailPos)
+            else if (_recoveryPoint == cached.MaxFailPos)
                 Log($"Ignoring posible failed memo in recovery mode: {memoKey} => {cached}");
             else
             {
@@ -284,15 +262,6 @@ public class Parser(Terminal trivia, Log? log = null)
         if (!TdoppRules.TryGetValue(ruleName, out var tdoppRule))
             throw new InvalidDataException($"The rule '{ruleName}' does not exist. Existing rules: [{TdoppRules.Keys.OrderBy(x => x)}].");
 
-        // During recovery, try to continue from partial result
-        if (isRecoveryPos && _partialMemo.TryGetValue(memoKey, out var partialCached))
-        {
-            Log($"Found partial memo in recovery mode: {memoKey}", LogImportance.High);
-            var recoveryResult = ContinueFromPartial(ruleName, partialCached, minPrecedence, startPos, input);
-            if (recoveryResult.IsSuccess)
-                return _memo[memoKey] = recoveryResult;
-        }
-
         if (isRecoveryPos)
             Log($"Recover at {startPos} rule: {ruleName} Prefixs: [{string.Join<Rule>(", ", tdoppRule.Prefix)}]", LogImportance.High);
         else
@@ -302,7 +271,6 @@ public class Parser(Terminal trivia, Log? log = null)
         var maxPos = startPos;
         var prefixRules = isRecoveryPos ? tdoppRule.RecoveryPrefix : tdoppRule.Prefix;
         var maxFailPos = startPos;
-        _partialAccumulated = null;
 
         for (var altIdx = 0; altIdx < prefixRules.Length; altIdx++)
         {
@@ -316,8 +284,7 @@ public class Parser(Terminal trivia, Log? log = null)
                 if (prefixResult.MaxFailPos > maxFailPos)
                     maxFailPos = prefixResult.MaxFailPos;
 
-                // Базовый случай Partial (ParseSeq): не паркуем в _partialMemo — старый recovery-путь
-                // (ContinueFromPartial) удаляется в 0.7; Partial доступен через LastPartial
+                // Базовый случай Partial (ParseSeq): Partial доступен через LastPartial
                 if (prefixResult.ResultKind == Result.Kind.Partial)
                 {
                     Log($"  Partial result at {startPos}: {prefixResult.Node?.Kind}", LogImportance.High);
@@ -374,138 +341,7 @@ public class Parser(Terminal trivia, Log? log = null)
         if (bestResult is { } result)
             return _memo[memoKey] = result;
 
-        if (_partialAccumulated is { } p)
-        {
-            _partialMemo[memoKey] = p;
-            return _memo[memoKey] = Result.Failure(p.MaxFailPos);
-        }
-
         return _memo[memoKey] = Result.Failure(maxFailPos);
-    }
-
-    /// <summary>
-    /// Continues parsing from a partial result using recovery rules.
-    /// When we have a partial tree (e.g., parsed left operand but failed on operator),
-    /// we try to recover by parsing from the error position using recovery rules,
-    /// then merge the recovered content with the partial tree.
-    /// </summary>
-    private Result ContinueFromPartial(string ruleName, Result partialResult, int minPrecedence, int startPos, string input)
-    {
-        if (!partialResult.TryGetPartial(out var partialTree, out var partialPos))
-            return Result.Failure(partialResult.MaxFailPos);
-
-        if (!TdoppRules.TryGetValue(ruleName, out var tdoppRule))
-            return Result.Failure(partialResult.MaxFailPos);
-
-        Log($"ContinueFromPartial: rule={ruleName} partialPos={partialPos} treeKind={partialTree.Kind}", LogImportance.High);
-        
-        _partialMemo.Clear();
-        
-        // Try to recover by parsing from the error position using recovery rules.
-        // The partial tree contains what was successfully parsed so far.
-        // Recovery rules can fill in the missing parts (e.g., missing operators).
-        var recoveryResult = TryRecoverFromPartial(ruleName, partialTree, minPrecedence, startPos, input);
-        
-        if (recoveryResult.TryGetSuccess(out var recoveredNode, out var recoveredPos))
-        {
-            // Merge the recovered content with the partial tree.
-            // We need to combine: partialTree (already parsed) + recovered content (newly recovered).
-            var merged = MergeWithPartialTree(partialTree, recoveredNode);
-            return Result.Success(merged, recoveredPos, recoveryResult.MaxFailPos);
-        }
-
-        // If recovery failed, fall back to continuing with postfix processing
-        return ContinueFromPartialPostfixFallback(tdoppRule, partialTree, minPrecedence, partialPos, input);
-    }
-
-    /// <summary>
-    /// Try to recover by parsing from the error position using recovery rules.
-    /// </summary>
-    private Result TryRecoverFromPartial(string ruleName, ISyntaxNode partialTree, int minPrecedence, int startPos, string input)
-    {
-        if (!TdoppRules.TryGetValue(ruleName, out var tdoppRule))
-            return Result.Failure(startPos);
-
-        // Save the current recovery skip position
-        var savedRecoverySkipPos = _recoverySkipPos;
-
-        // Temporarily set recovery position to partial tree's end position
-        // so recovery rules can trigger at the correct position
-        _recoverySkipPos = partialTree.EndPos;
-
-        // Try recovery prefixes at the partial position
-        foreach (var prefix in tdoppRule.RecoveryPrefix)
-        {
-            var prefixResult = ParseAlternative(prefix, partialTree.EndPos, input);
-
-            if (prefixResult.TryGetSuccess(out var node, out var newPos))
-            {
-                Log($"Recovery prefix matched: {node.Kind} at {newPos}", LogImportance.High);
-                var recoveryPostfix = ContinueFromPartialPostfix(tdoppRule, node, minPrecedence, newPos, input);
-                _recoverySkipPos = savedRecoverySkipPos;
-                if (recoveryPostfix.TryGetSuccess(out var postNode, out var postNewPos))
-                {
-                    return Result.Success(postNode, postNewPos, recoveryPostfix.MaxFailPos);
-                }
-                continue;
-            }
-
-            if (prefixResult.TryGetPartial(out node, out newPos))
-            {
-                Log($"Recovery partial matched: {node.Kind} at {newPos}", LogImportance.High);
-                var recoveryPostfix = ContinueFromPartialPostfix(tdoppRule, node, minPrecedence, newPos, input);
-                _recoverySkipPos = savedRecoverySkipPos;
-                if (recoveryPostfix.TryGetSuccess(out var postNode, out var postNewPos) ||
-                    recoveryPostfix.TryGetPartial(out postNode, out postNewPos))
-                {
-                    return Result.Success(postNode, postNewPos, recoveryPostfix.MaxFailPos);
-                }
-            }
-        }
-
-        // No recovery prefix matched - restore and return failure
-        _recoverySkipPos = savedRecoverySkipPos;
-        return Result.Failure(startPos);
-    }
-
-    /// <summary>
-    /// Fallback: continue from partial tree using only postfix processing (original behavior).
-    /// </summary>
-    private Result ContinueFromPartialPostfixFallback(TdoppRule rule, ISyntaxNode partialTree, int minPrecedence, int startPos, string input)
-    {
-        Log($"Continuing from partial tree (fallback) at {startPos}: {partialTree.Kind}", LogImportance.High);
-        return ContinueFromPartialPostfix(rule, partialTree, minPrecedence, startPos, input);
-    }
-
-    /// <summary>
-    /// Merge a partial tree with a recovered node by creating a SeqNode.
-    /// The partial tree represents what was already parsed; the recovered node
-    /// represents what was recovered via recovery rules.
-    /// </summary>
-    private ISyntaxNode MergeWithPartialTree(ISyntaxNode partial, ISyntaxNode recovered)
-    {
-        // If partial is already a SeqNode, append recovered elements
-        if (partial is SeqNode existingSeq)
-        {
-            var newElements = new List<ISyntaxNode>(existingSeq.Elements.Count + 1);
-            foreach (var elem in existingSeq.Elements)
-                newElements.Add(elem);
-            newElements.Add(recovered);
-            return new SeqNode(existingSeq.Kind, newElements, existingSeq.StartPos, recovered.EndPos);
-        }
-        
-        // If recovered is a SeqNode, merge its elements with the partial tree
-        if (recovered is SeqNode recoveredSeq)
-        {
-            var newElements = new List<ISyntaxNode>(1 + recoveredSeq.Elements.Count);
-            newElements.Add(partial);
-            foreach (var elem in recoveredSeq.Elements)
-                newElements.Add(elem);
-            return new SeqNode("Recovery", newElements, partial.StartPos, recovered.EndPos);
-        }
-        
-        // Otherwise create a new SeqNode with both
-        return new SeqNode("Recovery", new List<ISyntaxNode> { partial, recovered }, partial.StartPos, recovered.EndPos);
     }
 
     private Result ContinueFromPartialPostfix(
@@ -525,7 +361,7 @@ public class Parser(Terminal trivia, Log? log = null)
             var bestPostfix = (RuleWithPrecedence?)null;
             var bestNode = (ISyntaxNode?)null;
             var bestPos = newPos;
-            var isRecoveryPos = newPos == _recoverySkipPos;
+            var isRecoveryPos = newPos == _recoveryPoint;
             var postfixRules = isRecoveryPos ? rule.RecoveryPostfix : rule.Postfix;
 
             foreach (var postfix in postfixRules)
@@ -568,9 +404,9 @@ public class Parser(Terminal trivia, Log? log = null)
             if (bestPostfix == null)
                 break;
 
-            if (bestPos == _recoverySkipPos)
+            if (bestPos == _recoveryPoint)
             {
-                _recoverySkipPos = -1;
+                _recoveryPoint = -1;
                 Log($"Rule recovery finished {currentResult}. New pos: {bestPos}");
                 break;
             }
@@ -702,7 +538,7 @@ public class Parser(Terminal trivia, Log? log = null)
     {
         var result = ParseAlternative(oftenMissed.Element, startPos, input);
 
-        if (!result.IsSuccess && startPos == _recoverySkipPos)
+        if (!result.IsSuccess && startPos == _recoveryPoint)
             return Result.Success(new TerminalNode(oftenMissed.Kind, startPos, startPos, ContentLength: 0, IsRecovery: true), startPos, result.MaxFailPos);
         return result;
     }

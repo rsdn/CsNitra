@@ -10,7 +10,7 @@
 - `[x]` — выполнен и проверен
 - `[!]` — есть проблемы / отложено
 
-**Текущий пункт:** 0.6
+**Текущий пункт:** 0.7
 
 ---
 
@@ -110,11 +110,17 @@
   - **Результаты:** сборка `Nitra.sln` — 0 ошибок; `RecoveryDiagnosticTests` — 2/2; регрессия `Tests/ParserTests` — **220 passed / 0 failed / 2 skipped** (218 базовых + 2 новых; 2 — предсуществующие `[Ignore("WIP")]`).
 
 ### 0.7 Удаление мёртвого кода
-- [ ] Статус
+- [~] Статус — в работе (сборка 0 ошибок; ParserTests 216 passed / 0 failed / 2 skipped)
 - **Что:** удалить `ContinueFromPartial`, `TryRecoverFromPartial`, `MergeWithPartialTree`, `ContinueFromPartialPostfixFallback`, `_partialAccumulated`, `_partialMemo`, `RecoveryStackReconstructor.cs` (+ его тесты), ветки `_partialMemo` в `ParseRule`/`Parse`; переименование `_recoverySkipPos` → `_recoveryPoint` (поведение RecoveryPrefix/Postfix сохраняется).
 - **Файлы:** `Parser.cs`, `Recovery/`, `Tests/`
 - **Тесты:** Регрессия: все существующие тесты ParserTests без изменений.
 - **Заметки:**
+  - **Удалено из `Parser.cs` (~230 строк):** методы `ContinueFromPartial`, `TryRecoverFromPartial`, `MergeWithPartialTree`, `ContinueFromPartialPostfixFallback` (целиком, с doc-комментами); поля `_partialMemo` и `_partialAccumulated`; `_partialMemo.Clear()` ×2 и `_partialAccumulated = null` в `Parse`/`ParseRule`; ветка `if (i == 0 && _partialMemo.Count > 0)` в `Parse`; ветка `if (isRecoveryPos && _partialMemo.TryGetValue(...))` в `ParseRule`; мёртвый хвост `if (_partialAccumulated is { } p)` в `ParseRule`. Комментарий «не паркуем в _partialMemo — … удаляется в 0.7» обновлён (теперь актуален).
+  - **Удалён файл** `ExtensibleParser/Recovery/RecoveryStackReconstructor.cs` (в csproj явного include не было — глоб).
+  - **Удалены тесты:** 4 `Test_StackReconstruction_*` из `Tests/ParserTests/Recovery/ParseContextTests.cs` (остальные тесты ParseContext сохранены).
+  - **Переименование `_recoverySkipPos` → `_recoveryPoint`:** 16 строк в исходном `Parser.cs` (поле, `Parse` ×4, `ParseRule` ×4, `TryRecoverFromPartial` ×5 — метод удалён, `ContinueFromPartialPostfix` ×3, `ParseOftenMissed` ×1); после удаления живых ссылок — 11 строк. Чистое переименование, поведение RecoveryPrefix/Postfix и OftenMissed не изменилось.
+  - **Сохранено намеренно (живой код):** memo-игнор в recovery-режиме (ветки `else if (_recoveryPoint == cached.MaxFailPos)` в `ParseRule` — станет основой Hygiene), RecoveryPrefix/RecoveryPostfix, OftenMissed, хак `bestResult == null && isRecoveryPos`, `ContinueFromPartialPostfix` (основной postfix-драйвер, не мёртвый — имя вводит в заблуждение, но из списка удаления не входит).
+  - **Результаты:** сборка `Nitra.sln` — 0 ошибок (42 предупреждения — все предсуществующие); регрессия `Tests/ParserTests` — **216 passed / 0 failed / 2 skipped** (220 базовых − 4 удалённых теста реконструктора; 2 — предсуществующие `[Ignore("WIP")]`). Дерево на корректных входах не изменилось.
 
 **Регрессия Фазы 0 (I6):** дерево на корректных входах не меняется (JSON, CppSimplified, DOT, CsNitra) — все существующие тесты зелёны.
 
