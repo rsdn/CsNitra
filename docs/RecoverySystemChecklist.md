@@ -10,7 +10,7 @@
 - `[x]` — выполнен и проверен
 - `[!]` — есть проблемы / отложено
 
-**Текущий пункт:** 0.5
+**Текущий пункт:** 0.6
 
 ---
 
@@ -91,7 +91,7 @@
   - **Результаты:** сборка `Nitra.sln` — 0 ошибок (45 предупреждений — все предсуществующие); `TerminalCacheTests` — 4/4; регрессия `Tests/ParserTests` — **211 passed / 0 failed / 2 skipped** (207 базовых + 4 новых; 2 — предсуществующие `[Ignore("WIP")]`).
 
 ### 0.5 `FollowSetCalculator`: вложенные циклы, `GetTerminators(stack)`
-- [~] Статус — выполнен, проверен (FollowSetTests 30/30; ParserTests 218/218)
+- [x] Статус — выполнен, проверен (FollowSetTests 30/30; ParserTests 218/218)
 - **Что:** единый обход дерева правила с накоплением «что следует после» (first/nullable suffix); `GetTerminators(stack)` (EOF — общий синглтон); компаратор.
 - **Файлы:** `FollowSetCalculator.cs`, `Tests/ParserTests/Recovery/FollowSetTests.cs`
 - **Тесты:** `FollowSetTests` (расширить: цикл в теле цикла; follow стартового правила содержит EOF-синглтон).
