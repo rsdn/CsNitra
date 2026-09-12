@@ -8,9 +8,11 @@ namespace Recovery;
 [TestClass]
 public sealed class RecoveryDiagnosticTests
 {
+    // Recovery отключён: тест проверяет диагностику на НЕвосстановленном parse, а не цикл восстановления.
     private static Parser NewParser()
     {
         var parser = new Parser(new EmptyTerminal("Trivia"));
+        parser.MaxRecoveryIterations = 0;
         parser.Rules["Start"] = [new Seq([new Literal("a"), new Literal("b")], "Start")];
         parser.BuildTdoppRules();
         return parser;

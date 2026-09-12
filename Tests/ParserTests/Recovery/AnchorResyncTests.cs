@@ -40,6 +40,7 @@ public sealed class AnchorResyncTests
         [
             new Seq([new Literal("int"), AnchorTerminals.Ident()], "MemberStart"),
         ];
+        parser.MaxRecoveryIterations = 0;
         parser.BuildTdoppRules();
         return parser;
     }

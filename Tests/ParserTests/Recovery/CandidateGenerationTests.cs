@@ -19,9 +19,11 @@ public sealed class CandidateGenerationTests
         }
     }
 
+    // Recovery отключён: тесты генерируют кандидаты на НЕвосстановленном parse (setup), а не проверяют цикл восстановления.
     private static Parser NewParser()
     {
         var parser = new Parser(new SpaceTrivia("Trivia"));
+        parser.MaxRecoveryIterations = 0;
         parser.Rules["Start"] = [new Seq([new Literal("a"), new Literal("b")], "Start")];
         parser.BuildTdoppRules();
         return parser;
@@ -59,6 +61,7 @@ public sealed class CandidateGenerationTests
     public void Test_S4_Inserts_Suffix_At_EOF()
     {
         var parser = new Parser(new SpaceTrivia("Trivia"));
+        parser.MaxRecoveryIterations = 0;
         parser.Rules["Start"] = [new Seq([new Literal("a"), new Ref("X"), new Literal("b")], "Start")];
         parser.Rules["X"] = [new Seq([new Literal("x"), new Literal("y")], "X")];
         parser.BuildTdoppRules();
@@ -197,6 +200,7 @@ public sealed class CandidateGenerationTests
     private static Parser NewBracedParser()
     {
         var parser = new Parser(new SpaceTrivia("Trivia"));
+        parser.MaxRecoveryIterations = 0;
         parser.Rules["Start"] = [new Seq([new Literal("a"), new Ref("Body"), new Literal("b")], "Start")];
         parser.Rules["Body"] = [new Seq([new Literal("{"), new ZeroOrMany(new Ref("Item")), new Literal("}")], "Body")];
         parser.Rules["Item"] = [new Seq([new Literal("i"), new Literal("c")], "Item")];

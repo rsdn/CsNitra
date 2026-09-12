@@ -19,7 +19,13 @@ public sealed class SnapshotTests
         }
     }
 
-    private static Parser NewParser() => new(new SpaceTrivia("Trivia"));
+    // Recovery отключён: тесты снимают снимок на НЕвосстановленном parse (setup), а не проверяют цикл восстановления.
+    private static Parser NewParser()
+    {
+        var parser = new Parser(new SpaceTrivia("Trivia"));
+        parser.MaxRecoveryIterations = 0;
+        return parser;
+    }
 
     [TestMethod]
     public void Test_Snapshot_At_Farthest_Mismatch()
@@ -79,6 +85,7 @@ public sealed class SnapshotTests
                 "Branch1"),
             new Seq([new Literal("a"), new Literal("z")], "Branch2"),
         ];
+        parser.MaxRecoveryIterations = 0;
         parser.BuildTdoppRules();
         return parser;
     }

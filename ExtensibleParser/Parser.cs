@@ -46,12 +46,20 @@ public class Parser(Terminal trivia, Log? log = null)
     public int MaxRecoveryAttemptsPerPosition { get; set; } = 3;
     private readonly Dictionary<int, HashSet<string>> _attempts = new();
 
+    // Лог патчей текущего кандидата (MemoPatch): заполняется хуками, пока активен, — основа отката.
+    private List<Recovery.MemoPatch>? _patchLog;
+
     // Хук для тестов/engine: инжекции в Фазе 0 никто не порождает, слой активен с Фазы 1.
     public void AddInjection(Terminal terminal, int pos, Injection injection) => _injections[(pos, terminal)] = injection;
 
     // Хуки engine (1.2): применение/откат инъекций с сохранением старого значения.
     public IReadOnlyDictionary<(int Pos, Terminal Terminal), Injection> Injections => _injections;
-    public void ApplyInjection(Terminal terminal, int pos, Injection injection) => _injections[(pos, terminal)] = injection;
+    public void ApplyInjection(Terminal terminal, int pos, Injection injection)
+    {
+        var key = (pos, terminal);
+        RecordInjection(key, injection);
+        _injections[key] = injection;
+    }
 
     // oldValue == null — ключа не было (удалить), иначе — вернуть старое значение.
     public void RollbackInjection(Terminal terminal, int pos, Injection? oldValue)
@@ -64,14 +72,31 @@ public class Parser(Terminal trivia, Log? log = null)
 
     // Хуки engine (1.2): доступ к memo для патчей/инспекции.
     public IReadOnlyDictionary<(int pos, string rule, int precedence), Result> Memo => _memo;
-    public void SetMemo(string rule, int pos, int precedence, Result value) => _memo[(pos, rule, precedence)] = value;
-    public void RemoveMemo(string rule, int pos, int precedence) => _memo.Remove((pos, rule, precedence));
+    public void SetMemo(string rule, int pos, int precedence, Result value)
+    {
+        var key = (pos, rule, precedence);
+        RecordMemo(key, value);
+        _memo[key] = value;
+        IndexMemo(key);
+    }
+
+    public void RemoveMemo(string rule, int pos, int precedence)
+    {
+        var key = (pos, rule, precedence);
+        RecordMemoRemove(key);
+        _memo.Remove(key);
+        UnindexMemo(key);
+    }
 
     // Патч для всех прецедентов (e, rule, prec'), присутствующих в memo (TDOPP, §3.4 S3).
     public void PatchMemo(string rule, int pos, Result value)
     {
         foreach (var key in _memo.Keys.Where(k => k.pos == pos && k.rule == rule).ToList())
+        {
+            RecordMemo(key, value);
             _memo[key] = value;
+            IndexMemo(key);
+        }
     }
 
     public FollowSetCalculator? FollowCalculator => _followCalculator;
@@ -81,6 +106,141 @@ public class Parser(Terminal trivia, Log? log = null)
     // Одноразовый parse правила без recovery-цикла (спекулятивная валидация engine'а, §3.4 S2).
     public Result ParseRuleOnce(string ruleName, int minPrecedence, int startPos, string input) =>
         ParseRule(ruleName, minPrecedence, startPos, input);
+
+    // ============ MemoPatch-лог (1.3): применение патчей кандидата + Hygiene атомарно, откат по логy ============
+
+    private void BeginPatchLog() => _patchLog = new List<Recovery.MemoPatch>();
+
+    private List<Recovery.MemoPatch> EndPatchLog()
+    {
+        var log = _patchLog!;
+        _patchLog = null;
+        return log;
+    }
+
+    private void RecordMemo((int pos, string rule, int precedence) key, Result value)
+    {
+        if (_patchLog is not { } log)
+            return;
+        _memo.TryGetValue(key, out var old);
+        log.Add(new Recovery.MemoPatch(_memo, key, old, value));
+    }
+
+    private void RecordMemoRemove((int pos, string rule, int precedence) key)
+    {
+        if (_patchLog is not { } log)
+            return;
+        _memo.TryGetValue(key, out var old);
+        log.Add(new Recovery.MemoPatch(_memo, key, old, null));
+    }
+
+    private void RecordInjection((int pos, Terminal Terminal) key, Recovery.Injection value)
+    {
+        if (_patchLog is not { } log)
+            return;
+        var had = _injections.TryGetValue(key, out var old);
+        log.Add(new Recovery.MemoPatch(_injections, key, had ? (object)old : null, value));
+    }
+
+    // Патчи кандидата + Hygiene в одном атомарном логy (всё для отката). Интеграция цикла (1.3).
+    public List<Recovery.MemoPatch> ApplyPatches(Recovery.RecoveryCandidate candidate, int e, Recovery.FailureSnapshot? snapshot, string startRule, int currentStartPos)
+    {
+        BeginPatchLog();
+        candidate.Apply(this);
+        HygieneCore(e, snapshot, startRule, currentStartPos);
+        return EndPatchLog();
+    }
+
+    // Hygiene в отдельном логy (для тестов): см. HygieneCore.
+    public List<Recovery.MemoPatch> Hygiene(int e, Recovery.FailureSnapshot? snapshot, string startRule, int currentStartPos)
+    {
+        BeginPatchLog();
+        HygieneCore(e, snapshot, startRule, currentStartPos);
+        return EndPatchLog();
+    }
+
+    // Гигиена memo. Узкий вариант спеки §3.5 (только Failure на e для правил снимка + Failure start-правила
+    // на currentStartPos) не проходит recovery-тесты (см. чек-лист 1.3): Error-правила/OftenMissed переиспытывают
+    // правила, упавшие в первом проходе на РАЗНЫХ позициях, а не только на e. Минимальное обоснованное расширение:
+    //  (c) ВСЕ stale Failure (любая позиция) — только Failure, не Success/Partial (I2: Success/Partial — валидные
+    //      факты префикса; применённые патчи — Success, заканчивающиеся в e — не трогаем).
+    //  (b) start-правило на currentStartPos ЛЮБОГО типа (Partial/Success < EOF): устаревший верхнеуровневый результат
+    //      первого прохода — иначе re-парсинг читает его и не переиспытывает start-правило (тесты SeparatedList/ErrorEmpty).
+    // (a) Failure на e для правил снимка — подмножество (c).
+    // I2 нарушается только для Failure в префиксе [currentStartPos, e) и для записи start-правила — не удаётся избежать. Требует активный _patchLog.
+    private void HygieneCore(int e, Recovery.FailureSnapshot? snapshot, string startRule, int currentStartPos)
+    {
+        foreach (var key in _memo.Keys.ToList())
+            if (key.pos == currentStartPos && key.rule == startRule || _memo[key].ResultKind == Result.Kind.Failure)
+                RemoveMemo(key.rule, key.pos, key.precedence);
+    }
+
+    // Откат логa (обратный порядок): возвращает OldValue (или удаляет ключ, если OldValue == null). Индекс восстанавливается.
+    public void RollbackPatches(List<Recovery.MemoPatch> log)
+    {
+        for (var i = log.Count - 1; i >= 0; i--)
+        {
+            var patch = log[i];
+            if (patch.Table == _memo)
+            {
+                var key = (ValueTuple<int, string, int>)patch.Key;
+                if (patch.OldValue is { } old)
+                {
+                    _memo[key] = (Result)old;
+                    IndexMemo(key);
+                }
+                else
+                {
+                    _memo.Remove(key);
+                    UnindexMemo(key);
+                }
+            }
+            else
+            {
+                var key = (ValueTuple<int, Terminal>)patch.Key;
+                if (patch.OldValue is { } old)
+                    _injections[key] = (Recovery.Injection)old;
+                else
+                    _injections.Remove(key);
+            }
+        }
+    }
+
+    // С0 — неявный кандидат «ре-парсинг как есть»: без патчей (Hygiene применяется в ApplyPatches). Всегда первый.
+    private Recovery.RecoveryCandidate CandidateS0(int e, Recovery.FailureSnapshot? snapshot, string startRule) =>
+        new("S0", 0, e, 0, startRule, null, _ => { }, _ => { }, []);
+
+    // ============ Обратный индекс memo (позиция → ключи) ============
+
+    private void IndexMemo((int pos, string rule, int precedence) key)
+    {
+        if (!_index.TryGetValue(key.pos, out var set))
+        {
+            set = new HashSet<(string, int)>();
+            _index[key.pos] = set;
+        }
+        set.Add((key.rule, key.precedence));
+    }
+
+    private void UnindexMemo((int pos, string rule, int precedence) key)
+    {
+        if (_index.TryGetValue(key.pos, out var set))
+        {
+            set.Remove((key.rule, key.precedence));
+            if (set.Count == 0)
+                _index.Remove(key.pos);
+        }
+    }
+
+    // Прецеденты правила в позиции по обратному индексу (Hygiene за O(числа правил), а не O(таблицы)).
+    private IEnumerable<int> GetPrecedences(int pos, string rule)
+    {
+        if (!_index.TryGetValue(pos, out var set))
+            yield break;
+        foreach (var (r, prec) in set)
+            if (r == rule)
+                yield return prec;
+    }
 
     public Terminal Trivia { get; private set; } = trivia;
     public Log? Logger { get; set; } = log;
@@ -93,6 +253,10 @@ public class Parser(Terminal trivia, Log? log = null)
     public Dictionary<string, TdoppRule> TdoppRules { get; } = new();
 
     private readonly Dictionary<(int pos, string rule, int precedence), Result> _memo = new();
+
+    // Обратный индекс memo: позиция → ключи (rule, prec). Ведётся при каждой записи/удалении в _memo,
+    // чтобы Hygiene за O(числа правил в снимке), а не O(таблицы).
+    private readonly Dictionary<int, HashSet<(string Rule, int Prec)>> _index = new();
 
     // Чистый кэш результата TryMatch (length >= 0 или -1); mismatch кэшируется и никогда не чистится в ходе прохода.
     private readonly Dictionary<(int Pos, Terminal Terminal), int> _terminalCache = new(TerminalComparer.KeyComparer);
@@ -212,6 +376,7 @@ public class Parser(Terminal trivia, Log? log = null)
         _suppressSideEffects = false;
         var currentStartPos = startPos;
         _memo.Clear();
+        _index.Clear();
         _terminalCache.Clear();
         _injections.Clear();
         _recoveryDiagnostics.Clear();
@@ -250,44 +415,51 @@ public class Parser(Terminal trivia, Log? log = null)
             Log($"S0 reparse at recovery point {e}, snapshot: {(snapshot?.Pos.ToString() ?? "n/a")}", LogImportance.High);
             _recoveryPoint = e;
 
-            // S0 — неявный кандидат «ре-парсинг как есть» (единственный до появления engine'а в 1.2):
-            // Apply = legacy-чистка memo, без патчей — RecoveryPrefix/Postfix/OftenMissed срабатывают сами через _recoveryPoint.
             if (!_attempts.TryGetValue(e, out var attempts))
             {
                 attempts = new HashSet<string>();
                 _attempts[e] = attempts;
             }
-            if (attempts.Contains("S0"))
-                break;
-            attempts.Add("S0");
-            if (attempts.Count > MaxRecoveryAttemptsPerPosition)
-                break;
 
-            foreach (var x in _memo.ToArray())
+            // S0 (ре-парсинг как есть: Hygiene без патчей) — всегда первый; затем детерминированно отсортированные S1..S5.
+            var candidates = new List<Recovery.RecoveryCandidate> { CandidateS0(e, snapshot, startRule) };
+            candidates.AddRange(Recovery.RecoveryEngine.Generate(e, snapshot, input, this, result.ResultKind));
+            var recoveredThisIteration = false;
+
+            foreach (var candidate in candidates)
             {
-                var pos = x.Key.pos;
+                if (attempts.Contains(candidate.Id))
+                    continue;
+                attempts.Add(candidate.Id);
+                if (attempts.Count > MaxRecoveryAttemptsPerPosition)
+                    break;
 
-                if (!x.Value.IsSuccess)
-                    _memo.Remove(x.Key);
+                var log = ApplyPatches(candidate, e, snapshot, startRule, currentStartPos); // патчи + Hygiene атомарно, всё в лог
+                var savedErrorPos = ErrorPos;
+                var savedExpected = _expected.ToArray();
+                _recoveryPoint = e;
+                var next = ParseRule(startRule, minPrecedence: 0, startPos: currentStartPos, input);
+                var e2 = RecoveryPointOf(next, input);
 
-                if (pos == currentStartPos)
-                    _memo.Remove(x.Key);
-
-                if (x.Value.NewPos == e)
-                    _memo.Remove(x.Key);
+                if (next.TryGetSuccess(out _, out var end2) && end2 == input.Length)
+                {
+                    _recoveryDiagnostics.AddRange(candidate.Diagnostics);
+                    return next; // полностью восстановлено
+                }
+                if (e2 > e)
+                {
+                    _recoveryDiagnostics.AddRange(candidate.Diagnostics);
+                    result = next;
+                    recoveredThisIteration = true;
+                    break; // I1: прогресс — к следующему итеративному проходу
+                }
+                RollbackPatches(log); // нет прогресса — откат (включая Hygiene), следующий кандидат
+                ErrorPos = savedErrorPos;
+                _expected = new HashSet<Terminal>(savedExpected);
             }
 
-            var next = ParseRule(startRule, minPrecedence: 0, startPos: currentStartPos, input);
-            var e2 = RecoveryPointOf(next, input);
-
-            if (next.TryGetSuccess(out _, out var end2) && end2 == input.Length)
-                return next; // полностью восстановлено
-            if (e2 > e)
-            {
-                result = next;
-                continue; // I1: прогресс — следующая итерация
-            }
-            break; // S0 не дал прогресса — кандидаты исчерпаны
+            if (!recoveredThisIteration)
+                break; // кандидаты исчерпаны — ошибка неотвратима
         }
 
         // Recovery in recovery rules mode failed.
@@ -430,9 +602,18 @@ public class Parser(Terminal trivia, Log? log = null)
         }
 
         if (bestResult is { } result)
-            return _memo[memoKey] = result;
+        {
+            RecordMemo(memoKey, result);
+            _memo[memoKey] = result;
+            IndexMemo(memoKey);
+            return result;
+        }
 
-        return _memo[memoKey] = Result.Failure(maxFailPos);
+        var failure = Result.Failure(maxFailPos);
+        RecordMemo(memoKey, failure);
+        _memo[memoKey] = failure;
+        IndexMemo(memoKey);
+        return failure;
     }
 
     private Result ContinueFromPartialPostfix(
@@ -476,7 +657,7 @@ public class Parser(Terminal trivia, Log? log = null)
                 // Try success first, then partial
                 bool gotSuccess = result.TryGetSuccess(out var node, out var parsedPos);
                 bool gotPartial = !gotSuccess && result.TryGetPartial(out node, out parsedPos);
-                
+
                 if (!gotSuccess && !gotPartial)
                     continue;
 
@@ -508,10 +689,10 @@ public class Parser(Terminal trivia, Log? log = null)
         }
 
         if (isPartial)
-            {
-                var postfixCtx = new ParseContext(rule.Kind, new SeqFrameLocation(0), [], null);
-                return Result.Partial(currentResult, newPos, maxFailPos, postfixCtx);
-            }
+        {
+            var postfixCtx = new ParseContext(rule.Kind, new SeqFrameLocation(0), [], null);
+            return Result.Partial(currentResult, newPos, maxFailPos, postfixCtx);
+        }
         return Result.Success(currentResult, newPos, maxFailPos);
     }
 
@@ -539,7 +720,7 @@ public class Parser(Terminal trivia, Log? log = null)
             // Try success first, then partial
             bool gotSuccess = result.TryGetSuccess(out var node, out var parsedPos);
             bool gotPartial = !gotSuccess && result.TryGetPartial(out node, out parsedPos);
-            
+
             if (!gotSuccess && !gotPartial)
                 return result;
 
@@ -959,7 +1140,7 @@ public class Parser(Terminal trivia, Log? log = null)
         // Try success first, then partial
         bool gotSuccess = firstResult.TryGetSuccess(out var firstNode, out var newPos);
         bool gotPartial = !gotSuccess && firstResult.TryGetPartial(out firstNode, out newPos);
-        
+
         if (!gotSuccess && !gotPartial)
         {
             if (listRule.CanBeEmpty)
@@ -984,6 +1165,7 @@ public class Parser(Terminal trivia, Log? log = null)
         // Последующие элементы
         while (true)
         {
+            var iterStartPos = currentPos;
             // Парсинг разделителя
             var sepResult = ParseAlternative(listRule.Separator, currentPos, input);
             if (sepResult.MaxFailPos > maxFailPos)
@@ -992,19 +1174,19 @@ public class Parser(Terminal trivia, Log? log = null)
             // Try success first, then partial
             gotSuccess = sepResult.TryGetSuccess(out var sepNode, out newPos);
             gotPartial = !gotSuccess && sepResult.TryGetPartial(out sepNode, out newPos);
-            
+
             if (!gotSuccess && !gotPartial)
             {
-               if (listRule.EndBehavior == SeparatorEndBehavior.Required)
+                if (listRule.EndBehavior == SeparatorEndBehavior.Required)
+                {
+                    Log($"Missing separator at {currentPos}.");
+                    if (isPartial)
                     {
-                        Log($"Missing separator at {currentPos}.");
-                        if (isPartial)
-                        {
-                            var sepRequiredCtx = new ParseContext(listRule.Kind, new SeqFrameLocation(elements.Count), FirstSets.Get(listRule.Separator, _followCalculator), null);
-                            return Result.Partial(new ListNode(listRule.Kind, elements, delimiters, startPos, currentPos), currentPos, maxFailPos, sepRequiredCtx);
-                        }
-                        return Result.Failure(maxFailPos);
+                        var sepRequiredCtx = new ParseContext(listRule.Kind, new SeqFrameLocation(elements.Count), FirstSets.Get(listRule.Separator, _followCalculator), null);
+                        return Result.Partial(new ListNode(listRule.Kind, elements, delimiters, startPos, currentPos), currentPos, maxFailPos, sepRequiredCtx);
                     }
+                    return Result.Failure(maxFailPos);
+                }
 
                 break;
             }
@@ -1024,7 +1206,7 @@ public class Parser(Terminal trivia, Log? log = null)
             // Try success first, then partial
             gotSuccess = elemResult.TryGetSuccess(out var elemNode, out newPos);
             gotPartial = !gotSuccess && elemResult.TryGetPartial(out elemNode, out newPos);
-            
+
             if (!gotSuccess && !gotPartial)
             {
                 if (listRule.EndBehavior == SeparatorEndBehavior.Forbidden)
@@ -1043,6 +1225,13 @@ public class Parser(Terminal trivia, Log? log = null)
 
             if (gotPartial)
                 isPartial = true;
+
+            // Guard: нулевой прогресс (ε-элемент/инъекция не сдвинули позицию) — список вырожден, иначе бесконечный цикл
+            if (newPos == iterStartPos)
+            {
+                Log($"SeparatedList: цикл остановлен: нулевой прогресс at {newPos}", LogImportance.High);
+                return Result.Failure(maxFailPos);
+            }
 
             elements.Add(elemNode);
             currentPos = newPos;

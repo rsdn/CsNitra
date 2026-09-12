@@ -19,6 +19,7 @@ public class ParseContextTests
         {
             new Seq(new Rule[] { new Literal("a"), new Literal("b"), new Literal("c") }, "Statement"),
         };
+        parser.MaxRecoveryIterations = 0;
         parser.BuildTdoppRules();
         return parser;
     }
@@ -39,6 +40,7 @@ public class ParseContextTests
     public void Test_PartialResult_HasContext()
     {
         var parser = new Parser(new EmptyTerminal("Trivia"));
+        parser.MaxRecoveryIterations = 0;
         parser.Rules["Expr"] = new Rule[]
         {
             new Seq(new Rule[] { new Literal("x"), new Literal("y") }, "Expr"),
@@ -230,6 +232,7 @@ public class ParseContextTests
         var parser = new Parser(new EmptyTerminal("Trivia"));
 
         // Grammar: Expr = "x" "y" "z"
+        parser.MaxRecoveryIterations = 0;
         parser.Rules["Expr"] = new Rule[]
         {
             new Seq(new Rule[] { new Literal("x"), new Literal("y"), new Literal("z") }, "Expr"),
@@ -250,6 +253,7 @@ public class ParseContextTests
     {
         var parser = new Parser(new EmptyTerminal("Trivia"));
 
+        parser.MaxRecoveryIterations = 0;
         parser.Rules["Expr"] = new Rule[]
         {
             new Seq(new Rule[] {
