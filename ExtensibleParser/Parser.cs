@@ -354,6 +354,7 @@ public class Parser(Terminal trivia, Log? log = null)
         Log($"Starting at {currentStartPos} parse for rule '{startRule}'");
 
         var ePrev = -1;
+        var e = -1;
         var result = default(Result);
 
         for (var iter = 0; ; iter++)
@@ -364,7 +365,7 @@ public class Parser(Terminal trivia, Log? log = null)
             if (result.TryGetSuccess(out _, out var end) && end == input.Length)
                 return result; // чистый успех
 
-            var e = RecoveryPointOf(result, input);
+            e = RecoveryPointOf(result, input);
             if (e <= ePrev)
                 break; // глобальный предохранитель (fail-safe)
             ePrev = e;
@@ -449,7 +450,12 @@ public class Parser(Terminal trivia, Log? log = null)
             Log($"    {info.Info}");
         Log($"and of memoization table.");
 
-        ErrorInfo = new FatalError(input, ErrorPos, Location: input.PositionToLineCol(ErrorPos), _expected.ToArray());
+        // Финальные состояния §3.6: Success@EOF / Partial@EOF — восстановлено (ErrorInfo = null,
+        // дыры описаны накопленными RecoveryDiagnostics); иначе — невосстановлено: FatalError
+        // в последней неотвратимой точке (последняя точка восстановления e).
+        var recovered = (result.TryGetSuccess(out _, out var successEnd) && successEnd == input.Length)
+            || (result.TryGetPartial(out _, out var partialEnd) && partialEnd == input.Length);
+        ErrorInfo = recovered ? null : new FatalError(input, e, Location: input.PositionToLineCol(e), _expected.ToArray());
         return result;
     }
 

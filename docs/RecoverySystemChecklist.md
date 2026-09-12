@@ -250,11 +250,15 @@
   - **Результаты:** `dotnet build ExtensibleParser.csproj --no-incremental` → **0 предупреждений, 0 ошибок**; `dotnet build Nitra.sln --no-incremental` → **0 предупреждений, 0 ошибок**; `dotnet test ParserTests` → **243 passed / 0 failed / 2 skipped** (Total 245; 2 — предсуществующие `[Ignore("WIP")]`). Поведение не изменилось (регрессия зелёная). Подавление не использовано: без `#pragma warning disable`, без `!`, без `[SuppressMessage]`, без слепых nullable-аннотаций.
 
 ### 1.4 Семантика финала §3.6
-- [ ] Статус
-- **Что:** `ErrorInfo`/`RecoveryDiagnostics`, Partial-при-EOF как восстановленное.
+- [x] Статус — завершено (сборка `Nitra.sln` 0 ошибок; регрессия `Tests/ParserTests` — **251 passed / 0 failed / 2 skipped**, Total 253 = 249 базовых + 4 новых; 2 — предсуществующие `[Ignore("WIP")]`)
+- **Что:** хвост `Parser.Parse` выставляет финальные состояния §3.6: `Success@EOF` / `Partial@EOF` → «восстановлено» (`ErrorInfo = null`, дыры — накопленные `RecoveryDiagnostics`); `Success<EOF` / `Failure` / `Partial<EOF` после исчерпания кандидатов → «невосстановлено» (`ErrorInfo = FatalError` в последней неотвратимой точке `e` = последняя точка восстановления, `RecoveryDiagnostics` = принятые восстановления).
 - **Файлы:** `Parser.cs`
-- **Тесты:** `FinalStateTests`
+- **Тесты:** `FinalStateTests` (4 метода)
 - **Заметки:**
+  - **Правка хвоста `Parse` (Parser.cs):** (a) `var e = -1;` вынесен до цикла, в цикле `var e = …` → `e = …` (точка `e` нужна в хвосте); (b) хвост заменён на гейт `recovered = (Success && end==EOF) || (Partial && end==EOF)`; `ErrorInfo = recovered ? null : new FatalError(input, e, …)`. Позиция `FatalError` — `e` (последняя точка восстановления), а не `ErrorPos`: для дегенеративных `Success<EOF` (хвостовой мусор) `e = max(NewPos, ErrorPos)` даёт корректную неотвратимую точку.
+  - **`FinalStateTests` (4):** (1) `CleanSuccess` — MiniC `int f() { int x; }` → Success@EOF, `ErrorInfo == null`, diag 0; (2) `PartialAtEof` — `ErrorInfo == null` + Partial@EOF; (3) `Unrecovered` — MiniC с `###` (кандидаты исчерпаны, результат < EOF) → `ErrorInfo != null` + принятые Skipped-diag; (4) `SuccessBelowEof` — хвостовой мусор → `ErrorInfo != null` в точке конца чистого разбора (19), diag 0.
+  - **Partial@EOF (тест 2) — конструкция и ограничение по диагностике:** Partial до EOF достижим только через postfix-путь (`ParseRule` скипает Partial-префиксы, см. Parser.cs:530). Минимальная грамматика (паттерн `PartialBaseCaseTests`): `Expr = "a" | "a+" | "b" | Seq(Ref(Expr), "+", ReqRef(Expr,100), Inner Seq("b","c"))`, вход `a+bb` → `Partial@4=EOF` (в `Inner` не хватает `c` в EOF — базовый случай Partial в `ParseSeq`). Третья альтернатива `"b"` критична: её провал на позиции 0 перезаписывает `_lastSnapshot.Pos = 0`, поэтому снимок в точке `e=4` (EOF) не снимается (`FailureSnapshotAt(4) == null`) → recovery кандидатов не генерирует. **Отклонение от ТЗ по `RecoveryDiagnostics непуст`:** финальный Partial@EOF с непустыми diag недостижим в текущей реализации — `Injection.Insert` нулевой длины, поэтому любой принятый кандидат достраивает дыру в EOF до `Success@EOF` (полное восстановление), а не оставляет Partial@EOF; Partial@EOF как финальное состояние возникает только когда recovery не принял ни одного кандидата → diag пуст, дыры описаны деревом (Partial-узлы, I4). Ассерты: `TryGetPartial end == input.Length`, `ErrorInfo == null`, `diag == 0` (с комментарием-обоснованием в тесте).
+  - **Регрессия:** все recovery-тесты (MiniC Error-правила, IterativeRecovery, AnchorResync, PatchRollback, PartialBaseCase) без изменений в поведении — 0 failed.
 
 ### 1.5 `RecoveryRule`-развёртка в `ParseAlternative`
 - [ ] Статус
