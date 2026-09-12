@@ -10,7 +10,7 @@
 - `[x]` — выполнен и проверен
 - `[!]` — есть проблемы / отложено
 
-**Текущий пункт:** 2.1
+**Текущий пункт:** 2.2
 
 ---
 
@@ -283,11 +283,25 @@
 ## Фаза 2. Аннотации автора + качество
 
 ### 2.1 `RecoveryRule`/`RecoveryOptions`
-- [ ] Статус
-- **Что:** `RecoveryRule`/`RecoveryOptions` (§3.9) в `Rules.cs`; развёртка в `ParseAlternative`; engine читает опции из кадров (ближайший wins); вывод якорей из циклов.
-- **Файлы:** `Rules.cs`, `Parser.cs`, `RecoveryEngine.cs`
+- [x] Статус — завершено (сборка 0 ошибок / 0 предупреждений; RecoveryRuleTests 8/8; ParserTests 263 passed / 0 failed / 2 skipped)
+- **Что:** `RecoveryRule`/`RecoveryOptions` (§3.9) в `Rules.cs`; развёртка в `ParseAlternative`; engine читает опции из кадров (ближайший wins); вывод якорей из циклов; `Recoverable=false` (opt-out).
+- **Файлы:** `Rules.cs`, `Recovery/ParseContext.cs`, `Recovery/RecoveryEngine.cs`, `FollowSetCalculator.cs`, `Tests/ParserTests/Recovery/RecoveryRuleTests.cs`
 - **Тесты:** `RecoveryRuleTests`: `Terminators` переопределяет follow; `Anchors` (авторские + выводимые, T1); `CanStart` (T2); `TryInsert`; `MaxSkip`; `Recoverable=false`.
 - **Заметки:**
+  - **Перенос `RecoveryOptions` в `Rules.cs`:** record целиком перенесён из `Recovery/ParseContext.cs` в `Rules.cs` (namespace `ExtensibleParser`, рядом с `RecoveryRule`, с doc-комментариями по §3.9). `ParseContext.cs` теперь содержит только `ParseContext`. Обновлённые ссылки: `RecoveryRule` — `Recovery.RecoveryOptions` → `RecoveryOptions` (тот же namespace) + `cref` в doc-комментарии. Без изменений (резолвятся через родительский namespace `ExtensibleParser` / `using ExtensibleParser`): `ParseContext`/`StackFrame` (namespace `ExtensibleParser.Recovery`) и все тесты. Поведение не изменилось.
+  - **Проверка §3.9 (факт из кода):**
+    - (2) Развёртка в `ParseAlternative` — есть (Parser.cs: `RecoveryRule r => ParseAlternative(r.Inner, …)`, рядом с `OftenMissed`). Подтверждено.
+    - (3) «ближайший wins» по каждому полю — подтверждено: `TryInsert` (GenerateS1: обход от топа снимка наружу, первый кадр с полем, ранг 0, `break`), `Anchors`/`CanStart` (`NearestOptions`), `MaxSkip` (`GetMaxSkip`) — все от топа снимка наружу. `Terminators` — см. отклонение (per-кадр + агрегация, дизайн S3).
+    - (4) «автоматика vs автор» в пользу автора — подтверждено: авторские `Terminators` ПОЛНОСТЬЮ заменяют follow кадра (не объединяются, `GetTerminators`: `Options.Terminators ?? follow`); авторские `Anchors` расширяют выведенные (объединение, `GenerateS2`: авторские добавляются первыми, затем выведенные из циклов с `seen`-дедупом); `CanStart` никогда не выводится (только авторские).
+    - (5) Вывод якоря из циклов — подтверждено: `GenerateS2` обходит `LoopFrameLocation`-кадры → `DeriveLoopAnchors` (ZeroOrMany/OneOrMany/SeparatedList с Ref-телом → Ref; `ZeroOrMany(Ref("Statement"))` → якорь `Statement`).
+    - (6) `Recoverable=false` (opt-out) — РЕАЛИЗОВАНО (минимально, по ТЗ): в engine при обходе кадров пропускать опции кадров с `Recoverable=false` — `NearestOptions` (Anchors/CanStart), `GetMaxSkip`, цикл `TryInsert` (GenerateS1) в `RecoveryEngine.cs` + `GetTerminators` в `FollowSetCalculator.cs` (авторские Terminators кадра → follow fallback). Задокументировано комментариями «§3.9: кадр с Recoverable=false …». ε-принятие (Parser.cs:570) уже учитывало `Recoverable` (1.5) — не тронуто.
+  - **Тесты (RecoveryRuleTests, +4 новых):**
+    - Подтверждены существующие: `Terminators` переопределяет follow — `FollowSetTests.Test_GetTerminators_OptionsOverride`; `Anchors` (T1, выведенные) + `CanStart` (T2) — `AnchorResyncTests` (3); `TryInsert` (ранг 0, совпадающий в e пропускается) — `CandidateGenerationTests.Test_S1_Matching_Terminal_At_E_No_Candidate`.
+    - Дописаны: (1) `Test_MaxSkip_Limits_Resync_Scan` — авторский `MaxSkip=5` (кадр Module): выведенный якорь `Function` (bar) дальше лимита → S2-кандидата нет; без лимита (дефолт 1000) — есть. (2) `Test_Anchor_Author_Extends_Derived` — авторский якорь `Foo` (=MARK) расширяет выведенный `Function`: resync к MARK (ближе) вместо bar() — TerminalKind `Foo`, позиция < базовой. (3) `Test_Recoverable_False_Disables_Epsilon_Acceptance` — вход `int f() { z = x + ; }`: `Recoverable=true` → Success@EOF (ε-принятие), `Recoverable=false` → Failure (ε-путь отключён; нужен recovery-цикл, т.к. ε-принятие требует `isRecoveryPos`). (4) `Test_Recoverable_False_Options_Ignored_By_Engine` — кадр с `Recoverable=false` + `TryInsert=[c]`: baseline (Recoverable по умолчанию) даёт rank-0 кандидата на `c`, с `Recoverable=false` — кандидата на `c` нет (опции кадра игнорируются).
+  - **Отклонения:**
+    - `Terminators` — не «nearest wins» в чистом виде, а per-кадр `Options.Terminators ?? follow(правила кадра)` + упорядоченная агрегация от внутреннего кадра к внешнему (дизайн S3 §3.4/§3.10, не «ближайший wins»). Соответствует §3.9: авторские `Terminators` кадра полностью заменяют его follow (не объединяются). Тесты 1.2/1.5 не ломаются.
+    - Числа: база на практике = **259 passed** (совпадает с 1.5), +4 новых = **263 passed / 0 failed / 2 skipped** (Total 265). Промежуточные прогоны `noBuild=true` показывали 244 — stale-бинарь; форс-сборка (`noBuild=false`) подтвердила 263.
+  - **Результаты:** сборка `Nitra.sln --no-incremental` — 0 ошибок / 0 предупреждений (изменённые файлы чисты по диагностике); `Tests/ParserTests` — **263 passed / 0 failed / 2 skipped** (2 — предсуществующие `[Ignore("WIP")]`).
 
 ### 2.2 Единый cost model
 - [ ] Статус

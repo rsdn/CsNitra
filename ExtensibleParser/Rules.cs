@@ -196,13 +196,13 @@ public record OftenMissed(Rule Element, string Kind = "Error") : Rule(Kind)
 }
 
 /// <summary>
-/// A rule wrapper that carries error-recovery annotations (<see cref="Recovery.RecoveryOptions"/>) for the
+/// A rule wrapper that carries error-recovery annotations (<see cref="RecoveryOptions"/>) for the
 /// recovery engine. Parsing behavior is exactly equal to <see cref="Inner"/>; the wrapper only exposes its
 /// <see cref="Options"/> to the engine (read from the stack frame of the wrapped alternative, §3.9).
 /// </summary>
 /// <param name="Inner">The wrapped rule — the wrapper parses exactly like it</param>
 /// <param name="Options">Recovery annotations (Terminators/Anchors/CanStart/TryInsert/MaxSkip/Recoverable); null = no annotations</param>
-public sealed record RecoveryRule(Rule Inner, Recovery.RecoveryOptions? Options = null) : Rule(Inner.Kind)
+public sealed record RecoveryRule(Rule Inner, RecoveryOptions? Options = null) : Rule(Inner.Kind)
 {
     public override string ToString() => Inner.ToString();
 
@@ -216,6 +216,38 @@ public sealed record RecoveryRule(Rule Inner, Recovery.RecoveryOptions? Options 
         foreach (var subRule in Inner.GetSubRules<T>())
             yield return subRule;
     }
+}
+
+/// <summary>
+/// Error-recovery annotations carried by <see cref="RecoveryRule"/> and read by the recovery engine
+/// from the stack frame of the wrapped alternative (§3.9). Pure <see cref="Rule"/>/<see cref="Terminal"/>
+/// data — no delegates — so the grammar stays serializable, diff-able, and compatible with dynamic
+/// grammar extension.
+/// </summary>
+public sealed record RecoveryOptions
+{
+    /// Explicit terminators (override the computed follow-set): targets for skip (S3) and completion (S4).
+    public Terminal[]? Terminators { get; init; }
+
+    /// Anchor rules for structural resync (S2, T1): a position where such a rule passes full speculative
+    /// validation — a known-good continuation point. Usually the main grammar rules (Statement, Member).
+    /// If not set — the engine derives anchors from loop elements in the snapshot frames.
+    public Rule[]? Anchors { get; init; }
+
+    /// Soft "can start" predicates (S2, T2) — declarative analog of Roslyn IsPossibleStatement/CanStartMember.
+    /// Allowed to be coarser than the full rule: answers "can a construct start here" without requiring a full
+    /// parse. Critical when the code after the break also contains errors and the full rule (T1) fails.
+    /// Never derived automatically — author-only.
+    public Rule[]? CanStart { get; init; }
+
+    /// Terminals the engine may insert on failure of this rule.
+    public Terminal[]? TryInsert { get; init; }
+
+    /// Resync-scan limit in characters (default 1000).
+    public int? MaxSkip { get; init; }
+
+    /// Opt-out: the rule is not recovered (strict contexts).
+    public bool Recoverable { get; init; } = true;
 }
 
 /// <summary>

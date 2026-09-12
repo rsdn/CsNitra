@@ -50,7 +50,11 @@ public static class RecoveryEngine
 
         for (var i = snapshot.Stack.Length - 1; i >= 0; i--)
         {
-            var tryInsert = snapshot.Stack[i].Options?.TryInsert;
+            var options = snapshot.Stack[i].Options;
+            // §3.9: кадр с Recoverable=false — опции не используются (строгий контекст, opt-out).
+            if (options is { Recoverable: false })
+                continue;
+            var tryInsert = options?.TryInsert;
             if (tryInsert is null)
                 continue;
             foreach (var t in tryInsert)
@@ -295,7 +299,11 @@ public static class RecoveryEngine
     {
         for (var i = snapshot.Stack.Length - 1; i >= 0; i--)
         {
-            var value = selector(snapshot.Stack[i]);
+            var frame = snapshot.Stack[i];
+            // §3.9: кадр с Recoverable=false — опции не используются (строгий контекст, opt-out).
+            if (frame.Options is { Recoverable: false })
+                continue;
+            var value = selector(frame);
             if (value is not null)
                 return value;
         }
@@ -432,8 +440,11 @@ public static class RecoveryEngine
     {
         for (var i = snapshot.Stack.Length - 1; i >= 0; i--)
         {
-            var maxSkip = snapshot.Stack[i].Options?.MaxSkip;
-            if (maxSkip is not null)
+            var options = snapshot.Stack[i].Options;
+            // §3.9: кадр с Recoverable=false — опции не используются (строгий контекст, opt-out).
+            if (options is { Recoverable: false })
+                continue;
+            if (options?.MaxSkip is { } maxSkip)
                 return maxSkip;
         }
         return null;

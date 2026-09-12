@@ -233,7 +233,10 @@ public class FollowSetCalculator
         for (int i = stack.Count - 1; i >= 0; i--)
         {
             var frame = stack[i];
-            var terminals = frame.Options?.Terminators ?? GetFollowSet(frame.RuleName).ToArray();
+            // §3.9: кадр с Recoverable=false — авторские Terminators не используются (follow — fallback).
+            var terminals = frame.Options is { Recoverable: false }
+                ? GetFollowSet(frame.RuleName).ToArray()
+                : frame.Options?.Terminators ?? GetFollowSet(frame.RuleName).ToArray();
             foreach (var t in terminals)
                 if (t is not EofTerminal && !result.Contains(t, TerminalComparer.Instance))
                     result.Add(t);
