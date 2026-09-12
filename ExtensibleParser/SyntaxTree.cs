@@ -107,10 +107,9 @@ public abstract record Node(string Kind, int StartPos, int EndPos, bool IsRecove
     /// <param name="visitor">The visitor to accept.</param>
     public abstract void Accept(ISyntaxVisitor visitor);
 
-#pragma warning disable CS0618 // Type or member is obsolete
     public string? Debug()
     {
-        var input = Parser.Input;
+        var input = Parser.DebugInput;
 
         if (input == null)
             return null;
@@ -123,7 +122,7 @@ public abstract record Node(string Kind, int StartPos, int EndPos, bool IsRecove
 
     public string? DebugContent()
     {
-        var input = Parser.Input;
+        var input = Parser.DebugInput;
 
         if (input == null)
             return null;
@@ -134,9 +133,8 @@ public abstract record Node(string Kind, int StartPos, int EndPos, bool IsRecove
     private sealed class DebugView(Node node)
     {
         [DebuggerBrowsable(DebuggerBrowsableState.RootHidden)]
-        public object Elements => Parser.Input == null ? new Tree[0] : new Tree(Parser.Input, node).Elements;
+        public object Elements => Parser.DebugInput == null ? new Tree[0] : new Tree(Parser.DebugInput, node).Elements;
     }
-#pragma warning restore CS0618 // Type or member is obsolete
 }
 
 /// <summary>

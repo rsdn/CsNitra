@@ -11,16 +11,16 @@ using ExtensibleParser.Recovery;
 
 public class Parser(Terminal trivia, Log? log = null)
 {
-#pragma warning disable IDE0079 // Remove unnecessary suppression
-#pragma warning disable CA2211 // Non-constant fields should not be visible
+    [ThreadStatic]
+    private static string? _debugInput;
+
     /// <summary>
     /// Используется только для отладки. Позволяет отображать разобранный код в наследниках Node не храня в нем входной строки.
     /// </summary>
-    [ThreadStatic]
     [Obsolete("This field should be used for debugging purposes only. Do not use it in the visitor parser itself.")]
-    public static string? Input;
-#pragma warning restore CA2211 // Non-constant fields should not be visible
-#pragma warning restore IDE0079 // Remove unnecessary suppression
+    public static string? Input => _debugInput;
+
+    internal static string? DebugInput => _debugInput;
 
     public int ErrorPos { get; private set; }
     public FatalError? ErrorInfo { get; private set; }
@@ -323,9 +323,7 @@ public class Parser(Terminal trivia, Log? log = null)
 
     public Result Parse(string input, string startRule, out int triviaLength, int startPos = 0)
     {
-#pragma warning disable CS0618 // Type or member is obsolete
-        Input = input;
-#pragma warning restore CS0618 // Type or member is obsolete
+        _debugInput = input;
         ErrorInfo = null;
         triviaLength = 0;
         ErrorPos = startPos;
@@ -519,6 +517,7 @@ public class Parser(Terminal trivia, Log? log = null)
                 if (!gotSuccess && !gotPartial)
                     continue;
 
+                node = node.AssertIsNonNull();
                 Log($"  Prefix at {newPos} success: {node.Kind} prefixResult: {prefixResult}");
                 var postfixResult = ContinueFromPartialPostfix(tdoppRule, node, minPrecedence, newPos, input);
 
@@ -683,6 +682,7 @@ public class Parser(Terminal trivia, Log? log = null)
             if (gotPartial)
                 isPartial = true;
 
+            node = node.AssertIsNonNull();
             // Skip predicate nodes as they are not part of the AST
             if (node is not PredicateNode)
             {
@@ -788,6 +788,7 @@ public class Parser(Terminal trivia, Log? log = null)
         if (!gotSuccess && !gotPartial)
             return Result.Failure(firstResult.MaxFailPos);
 
+        firstNode = firstNode.AssertIsNonNull();
         var maxFailPos = firstResult.MaxFailPos;
         var isPartial = gotPartial;
 
@@ -811,6 +812,7 @@ public class Parser(Terminal trivia, Log? log = null)
             if (!gotSuccess && !gotPartial)
                 break;
 
+            node = node.AssertIsNonNull();
             // Guard: zero-width (epsilon) match makes no progress — stop to avoid an infinite loop
             if (newPos == currentPos)
                 break;
@@ -859,6 +861,7 @@ public class Parser(Terminal trivia, Log? log = null)
             if (!gotSuccess && !gotPartial)
                 break;
 
+            node = node.AssertIsNonNull();
             // Guard: zero-width (epsilon) match makes no progress — stop to avoid an infinite loop
             if (newPos == currentPos)
                 break;
@@ -1026,6 +1029,7 @@ public class Parser(Terminal trivia, Log? log = null)
             if (gotPartial)
                 isPartial = true;
 
+            node = node.AssertIsNonNull();
             // Skip predicate nodes as they are not part of the AST
             if (node is not PredicateNode)
                 elements.Add(node);
@@ -1112,6 +1116,7 @@ public class Parser(Terminal trivia, Log? log = null)
             return Result.Failure(firstResult.MaxFailPos);
         }
 
+        firstNode = firstNode.AssertIsNonNull();
         var maxFailPos = firstResult.MaxFailPos;
         var isPartial = gotPartial;
 
@@ -1150,6 +1155,7 @@ public class Parser(Terminal trivia, Log? log = null)
             if (gotPartial)
                 isPartial = true;
 
+            sepNode = sepNode.AssertIsNonNull();
             // Добавляем разделитель
             delimiters.Add(sepNode);
             currentPos = newPos;
@@ -1182,6 +1188,7 @@ public class Parser(Terminal trivia, Log? log = null)
             if (gotPartial)
                 isPartial = true;
 
+            elemNode = elemNode.AssertIsNonNull();
             // Guard: нулевой прогресс (ε-элемент/инъекция не сдвинули позицию) — список вырожден, иначе бесконечный цикл
             if (newPos == iterStartPos)
             {

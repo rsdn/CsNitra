@@ -104,10 +104,9 @@ public readonly record struct Result
         Context = context;
     }
 
-#pragma warning disable CS0618 // Type or member is obsolete
     public override string ToString()
     {
-        if (Parser.Input == null)
+        if (Parser.DebugInput == null)
         {
             if (ResultKind == Kind.Failure)
                 return "Failure(" + ~NewPos + ")";
@@ -119,13 +118,12 @@ public readonly record struct Result
             return "Failure(" + ~NewPos + ")";
         return "Success([" + node.StartPos + "-" + node.EndPos + "), " + node.Debug() + ")";
     }
-#pragma warning restore CS0618 // Type or member is obsolete
 
     private sealed class DebugView(Result result)
     {
         [DebuggerBrowsable(DebuggerBrowsableState.RootHidden)]
-        public object Elements => Parser.Input == null || result.ResultKind != Kind.Success
+        public object Elements => Parser.DebugInput == null || result.ResultKind != Kind.Success
             ? new Tree[0]
-            : new Tree(Parser.Input, result.Node!).Elements;
+            : new Tree(Parser.DebugInput, result.Node!).Elements;
     }
 }

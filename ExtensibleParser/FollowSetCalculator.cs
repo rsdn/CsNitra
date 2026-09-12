@@ -350,7 +350,7 @@ public class FollowSetCalculator
     {
         Terminal? separator = loop is SeparatedList sl ? sl.Separator as Terminal : null;
 
-        Rule loopBody = loop switch
+        Rule? loopBody = loop switch
         {
             ZeroOrMany zom => zom.Element,
             OneOrMany oom => oom.Element,
@@ -371,8 +371,8 @@ public class FollowSetCalculator
 
         foreach (var refName in refs)
         {
-            var followSet = _followSets.GetValueOrDefault(refName, null)
-                ?? new HashSet<Terminal>(TerminalEqualityComparer.Instance);
+            if (!_followSets.TryGetValue(refName, out var followSet))
+                followSet = new HashSet<Terminal>(TerminalEqualityComparer.Instance);
             var beforeCount = followSet.Count;
 
             // Loop body first: another iteration of the same loop
