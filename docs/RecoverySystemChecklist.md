@@ -10,7 +10,7 @@
 - `[x]` — выполнен и проверен
 - `[!]` — есть проблемы / отложено
 
-**Текущий пункт:** 0.4
+**Текущий пункт:** 0.5
 
 ---
 
@@ -77,11 +77,18 @@
     - **Результаты:** сборка `Nitra.sln` — 0 ошибок; `PartialBaseCaseTests` — 5/5; регрессия `Tests/ParserTests` — **207 passed / 0 failed / 2 skipped**.
 
 ### 0.4 Терминальный кэш + слой инъекций + единый `TerminalComparer`
-- [ ] Статус
+- [x] Статус — выполнен, проверен (TerminalCacheTests 4/4; ParserTests 211/211)
 - **Что:** чистый `_terminalCache`, слой `_injections`, `ReportMismatch`; единый `TerminalComparer`; общий стабильный `EofTerminal`/`EmptyTerminal`-синглтон вместо приватных non-singleton'ов `FollowSetCalculator.cs:9-18`.
 - **Файлы:** `Parser.cs`, `Recovery/TerminalComparer.cs`, `Recovery/Injection.cs`, `FollowSetCalculator.cs`
 - **Тесты:** `TerminalCacheTests`: кэш mismatch'а стабилен; инъекция поверх кэша; идентичность `Literal` vs instance; EOF-синглтон идентичен между калькулятором и engine.
 - **Заметки:**
+  - **Синглтоны:** приватные `record EmptyTerminal()`/`record EofTerminal()` из `FollowSetCalculator` вынесены в `Recovery/TerminalComparer.cs` как `public sealed record EpsilonTerminal` (Kind `"ε"`) и `public sealed record EofTerminal` (Kind `"EOF"`), каждый с приватным конструктором и `static readonly Instance`. **Имена:** `EpsilonTerminal` (а не `EmptyTerminal`) — чтобы не конфликтовать с публичным `EmptyTerminal(string Kind) : RecoveryTerminal` из `Rules.cs`; `EofTerminal` — переиспользованное имя (приватный дубль удалён). `record` обязателен (CS8865: от record наследуется только record). `FollowSetCalculator` теперь использует `EpsilonTerminal.Instance`/`EofTerminal.Instance` (поведение не меняется; его приватный `TerminalEqualityComparer` оставлен — он сравнивает не-Literal по ссылке, что корректно для синглтонов).
+  - **`TerminalComparer`:** `Instance` (`IEqualityComparer<Terminal>`) — Literal по `Value`, остальное (вкл. EOF/ε-синглтоны) по `ReferenceEquals`; `KeyComparer` (`IEqualityComparer<(int Pos, Terminal Terminal)>`) — `Pos` + `Instance`. Хэш ключа комбинируется вручную (`(Pos * 397) ^ h`), т.к. `System.HashCode.Combine` недоступен в netstandard2.0.
+  - **`Injection`:** `public readonly record struct Injection(int Length, string NodeKind, bool IsSkip)` + `Insert(kind)` (Length 0) / `Absorb(kind, length)`.
+  - **`Parser`:** добавлены `_terminalCache` и `_injections` (оба с `KeyComparer`); `ParseTerminal` — инъекция → `CreateInjectedResult`, затем кэш (miss → `TryMatch` → запись; mismatch `-1` кэшируется и не чистится в ходе прохода), `ReportMismatch(terminal, pos)` факторизован и вызывается ВСЕГДА при mismatch (и на cache hit); `CreateInjectedResult` — Length 0 → пустой `TerminalNode(IsRecovery: true)`, Length > 0 → абсорбер `[pos..pos+Length)`; убран комментарий `// ???` у `maxFailPos`.
+  - **Решение (очистка инъекций):** `_terminalCache.Clear()` + `_injections.Clear()` в начале `Parse` (согласно плану §3.1: «инициализация: очистка _memo, _index, _injections, _lastSnapshot, _recoveryDiagnostics»). **Отклонение снято:** ранее `_injections` НЕ очищался, т.к. тест 2 делал `AddInjection` между двумя вызовами `Parse` (инъекция должна была пережить ре-парсинг). Тест 2 переделан на реальную модель engine Фазы 1 — **один вызов `Parse`**, где инъекция появляется в ходе парсинга (side-effect в `TryMatch` триггерного терминала → `AddInjection` для более поздней позиции; инъекция проверяется ПЕРЕД кэшем). Очистка в начале `Parse` не мешает: в Фазе 1 engine добавляет инъекции ВНУТРИ одного `Parse` (между итерациями ре-парсинга).
+  - **Хук для тестов:** `public void AddInjection(Terminal, int pos, Injection)` (паттерн `LastSnapshot`/`LastPartial`; в проекте нет InternalsVisibleTo → public).
+  - **Результаты:** сборка `Nitra.sln` — 0 ошибок (45 предупреждений — все предсуществующие); `TerminalCacheTests` — 4/4; регрессия `Tests/ParserTests` — **211 passed / 0 failed / 2 skipped** (207 базовых + 4 новых; 2 — предсуществующие `[Ignore("WIP")]`).
 
 ### 0.5 `FollowSetCalculator`: вложенные циклы, `GetTerminators(stack)`
 - [ ] Статус

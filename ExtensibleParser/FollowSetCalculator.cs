@@ -3,20 +3,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using ExtensibleParser.Recovery;
 
 public class FollowSetCalculator
 {
-    private record EmptyTerminal() : Terminal("ε")
-    {
-        public override int TryMatch(string input, int position) => 0;
-    }
-
-    private record EofTerminal() : Terminal("EOF")
-    {
-        public override int TryMatch(string input, int position) =>
-            position >= input.Length ? 0 : -1;
-    }
-
     // Terminal identity: Literal по Value, остальные по инстансу
     private sealed class TerminalEqualityComparer : IEqualityComparer<Terminal>
     {
@@ -99,7 +89,7 @@ public class FollowSetCalculator
             foreach (var t in terminals)
                 yield return t;
             if (nullable)
-                yield return new EmptyTerminal();
+                yield return EpsilonTerminal.Instance;
         }
     }
 
@@ -238,7 +228,7 @@ public class FollowSetCalculator
     private void ComputeFollowSets()
     {
         // Инициализация follow-set для стартовых символов
-        var eof = new EofTerminal();
+        var eof = EofTerminal.Instance;
         foreach (var startSymbol in _startSymbols)
         {
             _followSets[startSymbol] = new HashSet<Terminal>(new[] { eof }, TerminalEqualityComparer.Instance);
@@ -264,7 +254,7 @@ public class FollowSetCalculator
                             var beforeCount = followA.Count;
                             foreach (var t in firstBeta)
                             {
-                                if (t is not EmptyTerminal)
+                                if (t is not EpsilonTerminal)
                                     followA.Add(t);
                             }
 
@@ -422,7 +412,7 @@ public class FollowSetCalculator
             // Loop body first: another iteration of the same loop
             foreach (var t in loopBodyFirst)
             {
-                if (t is not EmptyTerminal)
+                if (t is not EpsilonTerminal)
                     followSet.Add(t);
             }
 
@@ -433,7 +423,7 @@ public class FollowSetCalculator
             // What comes after the loop
             foreach (var t in afterLoopFirst)
             {
-                if (t is not EmptyTerminal)
+                if (t is not EpsilonTerminal)
                     followSet.Add(t);
             }
 
@@ -457,7 +447,7 @@ public class FollowSetCalculator
             var (ruleFirst, ruleNullable) = ComputeFirst(sequence[i]);
             foreach (var t in ruleFirst)
             {
-                if (t is not EmptyTerminal)
+                if (t is not EpsilonTerminal)
                     result.Add(t);
             }
             if (!ruleNullable)
@@ -468,7 +458,7 @@ public class FollowSetCalculator
         }
 
         if (allNullable)
-            result.Add(new EmptyTerminal());
+            result.Add(EpsilonTerminal.Instance);
 
         return (result, allNullable);
     }

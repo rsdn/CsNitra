@@ -38,6 +38,10 @@ public class Parser(Terminal trivia, Log? log = null)
     public FailureSnapshot? LastSnapshot => _lastSnapshot;
     private Result? _lastPartial;
     public Result? LastPartial => _lastPartial;
+
+    // Хук для тестов/engine: инжекции в Фазе 0 никто не порождает, слой активен с Фазы 1.
+    public void AddInjection(Terminal terminal, int pos, Injection injection) => _injections[(pos, terminal)] = injection;
+
     public Terminal Trivia { get; private set; } = trivia;
     public Log? Logger { get; set; } = log;
 
@@ -51,6 +55,11 @@ public class Parser(Terminal trivia, Log? log = null)
     private readonly Dictionary<(int pos, string rule, int precedence), Result> _memo = new();
     private readonly Dictionary<(int pos, string rule, int precedence), Result> _partialMemo = new();
     private Result? _partialAccumulated;
+
+    // Чистый кэш результата TryMatch (length >= 0 или -1); mismatch кэшируется и никогда не чистится в ходе прохода.
+    private readonly Dictionary<(int Pos, Terminal Terminal), int> _terminalCache = new(TerminalComparer.KeyComparer);
+    // Слой инъекций engine'а: проверяется ПЕРЕД _terminalCache.
+    private readonly Dictionary<(int Pos, Terminal Terminal), Injection> _injections = new(TerminalComparer.KeyComparer);
 
     public void BuildTdoppRules()
     {
@@ -166,6 +175,8 @@ public class Parser(Terminal trivia, Log? log = null)
         var currentStartPos = startPos;
         _memo.Clear();
         _partialMemo.Clear();
+        _terminalCache.Clear();
+        _injections.Clear();
 
         if (input.Length > 0)
         {
@@ -845,25 +856,23 @@ public class Parser(Terminal trivia, Log? log = null)
 
     private Result ParseTerminal(Terminal terminal, int startPos, string input)
     {
-        var currentPos = startPos;
-        var contentLength = terminal.TryMatch(input, startPos);
+        if (_injections.TryGetValue((startPos, terminal), out var injection))
+            return CreateInjectedResult(injection, startPos);
+
+        if (!_terminalCache.TryGetValue((startPos, terminal), out var contentLength))
+        {
+            contentLength = terminal.TryMatch(input, startPos);
+            _terminalCache[(startPos, terminal)] = contentLength;
+        }
+
         if (contentLength < 0)
         {
-            if (!_suppressSideEffects && startPos >= ErrorPos)
-            {
-                if (startPos > ErrorPos)
-                {
-                    _expected.Clear();
-                    ErrorPos = startPos;
-                    CaptureSnapshot(startPos, terminal);
-                }
-                _expected.Add(terminal);
-            }
+            ReportMismatch(terminal, startPos);
             Log($"Terminal mismatch: {terminal.Kind} at {startPos}: {Preview(input, startPos)}");
             return Result.Failure(startPos);
         }
 
-        currentPos += contentLength;
+        var currentPos = startPos + contentLength;
 
         // Skip trailing trivia
         var triviaLength = Trivia.TryMatch(input, currentPos);
@@ -880,8 +889,33 @@ public class Parser(Terminal trivia, Log? log = null)
                 IsRecovery: terminal is RecoveryTerminal
             ),
             currentPos,
-            maxFailPos: currentPos // ???
+            maxFailPos: currentPos
         );
+    }
+
+    // Протокол «самой дальней точки падения»: вызывается ВСЕГДА при mismatch (и на cache hit, и на miss).
+    private void ReportMismatch(Terminal terminal, int pos)
+    {
+        if (_suppressSideEffects)
+            return;
+        if (pos >= ErrorPos)
+        {
+            if (pos > ErrorPos)
+            {
+                _expected.Clear();
+                ErrorPos = pos;
+                CaptureSnapshot(pos, terminal);
+            }
+            _expected.Add(terminal);
+        }
+    }
+
+    // Инъекция: Length == 0 — пустой узел-вставка, Length > 0 — абсорбер [pos..pos+Length).
+    private Result CreateInjectedResult(Injection injection, int pos)
+    {
+        var endPos = pos + injection.Length;
+        var node = new TerminalNode(injection.NodeKind, pos, endPos, injection.Length, IsRecovery: true);
+        return Result.Success(node, endPos, endPos);
     }
 
     private Result ParseSeq(
