@@ -234,4 +234,31 @@ public sealed class PatchRollbackTests
         Assert.IsTrue(parser.Injections.Count <= acceptedCount + 1,
             $"Injections ({parser.Injections.Count}) exceed accepted diagnostics ({acceptedCount}) — rejected candidates left traces");
     }
+
+    // 6. Фантомный баг RecordMemo: SetMemo на НОВЫЙ ключ → Apply → Rollback → ключ должен быть УДАЛЁН,
+    //    а не восстановлен как фантомный default(Result) (Success, Node=null).
+    [TestMethod]
+    public void Test_Rollback_Memo_NewKey_NoPhantom()
+    {
+        var parser = NewParser();
+        const string rule = "PhantomRule";
+        const int pos = 5;
+        const int prec = 0;
+        var value = Result.Success(new TerminalNode("Phantom", pos, pos, 0), pos, pos);
+
+        // Кандидат (S2/S3-подобный), чей Apply делает SetMemo на НОВЫЙ ключ (нет в memo).
+        var candidate = new RecoveryCandidate("S2", 1, pos, 0, rule, null,
+            p => p.SetMemo(rule, pos, prec, value), _ => { }, []);
+
+        var log = parser.ApplyPatches(candidate, pos, null, "Module", 0);
+
+        // Sanity: после Apply ключ в memo.
+        Assert.IsTrue(parser.Memo.ContainsKey((pos, rule, prec)), "Key should be present in Memo after Apply");
+
+        parser.RollbackPatches(log);
+
+        // Ключ должен быть УДАЛЁН, а не фантомный default(Result).
+        Assert.IsFalse(parser.Memo.ContainsKey((pos, rule, prec)),
+            "Phantom default(Result) left in Memo after rollback of SetMemo on a new key");
+    }
 }

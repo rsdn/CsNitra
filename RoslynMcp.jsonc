@@ -8,7 +8,8 @@
 
   // Optional MSBuild global properties (inherited by run_dotnet_build / run_dotnet_test).
   "configuration": "Debug",
-  "platform": "AnyCPU",
+  // x64: Nitra.sln defines "Debug|x64" (both solution platforms map to project platform Any CPU).
+  "platform": "x64",
 
   // Empty on purpose: overrides "target-framework": "net10.0" from the exe-directory config
   // (RoslynMcpServer's dogfood config). Forcing a global TargetFramework breaks this solution's

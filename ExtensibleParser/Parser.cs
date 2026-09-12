@@ -122,8 +122,8 @@ public class Parser(Terminal trivia, Log? log = null)
     {
         if (_patchLog is not { } log)
             return;
-        _memo.TryGetValue(key, out var old);
-        log.Add(new Recovery.MemoPatch(_memo, key, old, value));
+        var had = _memo.TryGetValue(key, out var old);
+        log.Add(new Recovery.MemoPatch(_memo, key, had ? (object)old : null, value));
     }
 
     private void RecordMemoRemove((int pos, string rule, int precedence) key)

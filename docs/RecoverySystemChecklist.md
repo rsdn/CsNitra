@@ -10,7 +10,7 @@
 - `[x]` — выполнен и проверен
 - `[!]` — есть проблемы / отложено
 
-**Текущий пункт:** 1.2
+**Текущий пункт:** 1.3.2
 
 ---
 
@@ -183,6 +183,35 @@
   - **Корень:** engine (1.3) применяет `Injection.Insert(",")` (нулевой матч) на разделителе `SeparatedList` в точке `e`; элемент списка матчит ε (`EmptyTerminal`/`ErrorEmpty`) в той же точке → итерация цикла `ParseSeparatedList` даёт нулевой прогресс (`currentPos` не сдвигается) → бесконечный цикл → тысячи ε-элементов → OOM в StringBuilder при рендере дерева. В `ParseOneOrMany`/`ParseZeroOrMany` guard нуля был (0.3), в `ParseSeparatedList` — нет.
   - **Фикс (Parser.cs):** (1) guard нуля в цикле `ParseSeparatedList`: после успешной итерации, если `newPos == iterStartPos` (ε-элемент/инъекция не сдвинули позицию) → `Log(High)` + `return Result.Failure(maxFailPos)` (не `break`: Failure делает `CallRequired` Partial, и longest-match/Success-beats-Partial выбирает префикс `Ident`=`func` — как в HEAD до engine); ε-элемент в список не добавляется. (2) В recovery-цикле: сохранение/откат `ErrorPos`+`_expected` вокруг re-parse кандидата (нет прогресса → откат) — иначе speculative-кандидаты S1..S5 загрязняли `_expected` (было `[`, Number, Ident, (]`, стало `[`,]`).
   - **Результат:** `ParserTests` — **236 passed / 0 failed / 2 skipped** (Total 238); прогон ~0.1 с (до: ~4 мин, 3 OOM). Логи: `t131_test1.log`, `t131_head_test1.log`, `t131_full.log` в temp.
+
+### 1.3.2 Устранение багов и мелочей (по анализу качества 1.3)
+- [ ] Статус
+- **Что:** по результатам анализа качества 1.3: латентный баг `RecordMemo`, мёртвый обратный индекс, дыры в тестах, ленивый `Generate`.
+- **Файлы:** `Parser.cs`, `Tests/ParserTests/Recovery/PatchRollbackTests.cs`
+
+#### 1.3.2.1 Фантомный баг `RecordMemo`
+- [~] Статус — в работе (failing→pass подтверждён; ParserTests 243 passed / 0 failed / 2 skipped)
+- **Что:** `RecordMemo` (Parser.cs ~125-126): при отсутствии ключа `TryGetValue` → `default(Result)` боксуется в не-null `OldValue` → `RollbackPatches` восстанавливает фантомный нулевой `Result` вместо удаления ключа. Фикс: тот же паттерн, что в `RecordInjection` (`had ? (object)old : null`).
+- **Тесты:** сначала failing-тест (кандидат с `SetMemo` на НОВЫЙ ключ → Apply → Rollback → в `Memo` нет фантома/ключа), затем фикс, затем полный прогон.
+- **Заметки:**
+  - **Failing-тест:** `PatchRollbackTests.Test_Rollback_Memo_NewKey_NoPhantom` — свежий `Parser`, кандидат (S2-подобный), чей Apply делает `SetMemo("PhantomRule", 5, 0, Result.Success(...))` на НОВЫЙ ключ → `ApplyPatches` → `RollbackPatches` → ассерт `Assert.IsFalse(Memo.ContainsKey(key))`. До фикса **УПАЛ** на этом ассерте: `Assert.IsFalse failed. Phantom default(Result) left in Memo after rollback of SetMemo on a new key` (ключ остался как фантомный `default(Result)`, Success/Node=null).
+  - **Фикс:** `Parser.cs:125-126` — `var had = _memo.TryGetValue(key, out var old); log.Add(new MemoPatch(_memo, key, had ? (object)old : null, value));` (по образцу `RecordInjection`). После фикса откат нового ключа удаляет его из `_memo` (и `_index`), а не пишет фантом.
+  - **Результаты:** failing→pass подтверждён; регрессия `Tests/ParserTests` — **243 passed / 0 failed / 2 skipped** (Total 245; 242 базовых + 1 новый; 2 — предсуществующие `[Ignore("WIP")]`). Фикс регрессии не дал (все ранее зелёные тесты остались зелёными).
+
+#### 1.3.2.2 Обратный индекс `_index` (мёртвый код)
+- [ ] Статус
+- **Что:** `_index` ведётся во всех точках мутации `_memo`, но `HygieneCore` идёт по всей таблице (`_memo.Keys.ToList()`), `GetPrecedences` нигде не вызывается. Подключить `GetPrecedences` в `HygieneCore` (план §3.5: O(правил снимка), а не O(таблицы)). Если поведение тестов ломается — вернуть обход таблицы и УДАЛИТЬ `_index`/`IndexMemo`/`UnindexMemo`/`GetPrecedences` (документировать).
+- **Тесты:** существующие `PatchRollbackTests` (поведение Hygiene) + регрессия.
+
+#### 1.3.2.3 Дыры в тестах (`PatchRollbackTests`)
+- [ ] Статус
+- **Что:** добавить тесты: (b) start-правило на currentStartPos любого типа удаляется Hygiene; (c) stale Failure в pos ≠ e удаляется; e2e: отклонённый S2/S3-кандидат с новым memo-ключом не оставляет следов в `Memo` (нет фантомов).
+- **Тесты:** расширение `PatchRollbackTests`.
+
+#### 1.3.2.4 Ленивый `Generate` после S0
+- [ ] Статус
+- **Что:** `Generate` вызывается каждую итерацию (Parser.cs ~426) — дорогие спекулятивные parse'ы, даже когда S0 сам восстанавливает. Порядок: сначала S0; `Generate` — только если S0 не дал прогресса (не Success@EOF и e2 <= e). Поведение (порядок акцепта) не меняется: S0 и так первый.
+- **Тесты:** регрессия (все зелёные, поведение то же); по возможности — счётчик вызовов Generate (тест: вход, восстанавливаемый S0 за 1 итерацию → Generate 0 раз).
 
 ### 1.4 Семантика финала §3.6
 - [ ] Статус
