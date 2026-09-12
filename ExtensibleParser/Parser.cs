@@ -36,6 +36,8 @@ public class Parser(Terminal trivia, Log? log = null)
     private FailureSnapshot? _lastSnapshot;
     private bool _suppressSideEffects;
     public FailureSnapshot? LastSnapshot => _lastSnapshot;
+    private Result? _lastPartial;
+    public Result? LastPartial => _lastPartial;
     public Terminal Trivia { get; private set; } = trivia;
     public Log? Logger { get; set; } = log;
 
@@ -159,6 +161,7 @@ public class Parser(Terminal trivia, Log? log = null)
         ErrorPos = startPos;
         _recoverySkipPos = -1;
         _lastSnapshot = null;
+        _lastPartial = null;
         _suppressSideEffects = false;
         var currentStartPos = startPos;
         _memo.Clear();
@@ -285,6 +288,7 @@ public class Parser(Terminal trivia, Log? log = null)
         var maxPos = startPos;
         var prefixRules = isRecoveryPos ? tdoppRule.RecoveryPrefix : tdoppRule.Prefix;
         var maxFailPos = startPos;
+        _partialAccumulated = null;
 
         for (var altIdx = 0; altIdx < prefixRules.Length; altIdx++)
         {
@@ -298,13 +302,11 @@ public class Parser(Terminal trivia, Log? log = null)
                 if (prefixResult.MaxFailPos > maxFailPos)
                     maxFailPos = prefixResult.MaxFailPos;
 
-                // Check for partial result - store it and treat as failure
+                // Базовый случай Partial (ParseSeq): не паркуем в _partialMemo — старый recovery-путь
+                // (ContinueFromPartial) удаляется в 0.7; Partial доступен через LastPartial
                 if (prefixResult.ResultKind == Result.Kind.Partial)
                 {
                     Log($"  Partial result at {startPos}: {prefixResult.Node?.Kind}", LogImportance.High);
-                    var prefixCtx = new ParseContext(ruleName, new RuleFrameLocation(altIdx), FirstSets.Get(prefix, _followCalculator), null);
-                    _partialAccumulated = Result.Partial(prefixResult.Node!, prefixResult.NewPos, prefixResult.MaxFailPos, prefixCtx);
-                    _partialMemo[memoKey] = _partialAccumulated.Value;
                     continue;
                 }
 
@@ -333,6 +335,12 @@ public class Parser(Terminal trivia, Log? log = null)
                         maxPos = postNewPos;
                         bestResult = postfixResult;
                     }
+                    else if (postNewPos == maxPos && bestResult is { ResultKind: Result.Kind.Partial } && postfixResult.ResultKind == Result.Kind.Success)
+                    {
+                        // Тай-брейк longest-match: при равной длине Success выигрывает у Partial
+                        maxPos = postNewPos;
+                        bestResult = postfixResult;
+                    }
                     else if (postNewPos == maxPos && bestResult == null && isRecoveryPos)
                     {
                         // Это if нужен для обработки Error-правил восстанавливающих парсинг в случае недописанных конструкаций
@@ -349,14 +357,14 @@ public class Parser(Terminal trivia, Log? log = null)
             }
         }
 
+        if (bestResult is { } result)
+            return _memo[memoKey] = result;
+
         if (_partialAccumulated is { } p)
         {
             _partialMemo[memoKey] = p;
             return _memo[memoKey] = Result.Failure(p.MaxFailPos);
         }
-
-        if (bestResult is { } result)
-            return _memo[memoKey] = result;
 
         return _memo[memoKey] = Result.Failure(maxFailPos);
     }
@@ -725,6 +733,10 @@ public class Parser(Terminal trivia, Log? log = null)
             if (!gotSuccess && !gotPartial)
                 break;
 
+            // Guard: zero-width (epsilon) match makes no progress — stop to avoid an infinite loop
+            if (newPos == currentPos)
+                break;
+
             if (gotPartial)
                 isPartial = true;
 
@@ -767,6 +779,10 @@ public class Parser(Terminal trivia, Log? log = null)
             bool gotPartial = !gotSuccess && result.TryGetPartial(out node, out newPos);
 
             if (!gotSuccess && !gotPartial)
+                break;
+
+            // Guard: zero-width (epsilon) match makes no progress — stop to avoid an infinite loop
+            if (newPos == currentPos)
                 break;
 
             if (gotPartial)
@@ -896,6 +912,13 @@ public class Parser(Terminal trivia, Log? log = null)
             if (!gotSuccess && !gotPartial)
             {
                 Log($"Seq element failed: {element} at {newPos}");
+                if (elemIdx > 0 && newPos > startPos)
+                {
+                    var partialResult = Result.Partial(BuildPartialSeqNode(seq, elements, startPos, newPos), newPos, result.MaxFailPos,
+                        new ParseContext(seq.Kind ?? "Seq", new SeqFrameLocation(elemIdx), FirstSets.Get(element, _followCalculator), null));
+                    _lastPartial = partialResult;
+                    return partialResult;
+                }
                 return result;
             }
 
@@ -929,6 +952,11 @@ public class Parser(Terminal trivia, Log? log = null)
             return Result.Partial(seqNode, newPos, maxFailPos, seqCtx);
         return Result.Success(seqNode, newPos, maxFailPos);
     }
+
+    private ISyntaxNode BuildPartialSeqNode(Seq seq, List<ISyntaxNode> elements, int startPos, int endPos)
+        => elements.Count == 1
+            ? elements[0]
+            : new SeqNode(seq.Kind ?? "Seq", elements, startPos, endPos);
 
     private Result WithFrame(FrameLocation location, Terminal[]? expected, string fallbackRuleName, Func<Result> parse)
     {

@@ -10,7 +10,7 @@
 - `[x]` — выполнен и проверен
 - `[!]` — есть проблемы / отложено
 
-**Текущий пункт:** 0.3
+**Текущий пункт:** 0.4
 
 ---
 
@@ -51,7 +51,7 @@
   - **Результаты:** `dotnet build Nitra.sln` — 0 ошибок (57 предупреждений — все предсуществующие); `SnapshotTests` — 6/6 зелёные; регрессия `Tests/ParserTests` — 182 passed / 0 failed / 2 skipped (2 — предсуществующие `[Ignore("WIP")]`; 182 = 176 старых + 6 новых).
 
 ### 0.3 Базовый случай `Partial` в `ParseSeq`
-- [~] Статус — часть А (FirstSets + ParseContext миграция) выполнена; часть Б (базовый случай Partial) не начата
+- [x] Статус — выполнен, проверен (ParserTests 207/207). Часть А: FirstSets + миграция ParseContext. Часть Б: базовый случай Partial + тай-брейк + guard нуля; хак 336-343 оставлен, удаление переносится в 1.5.
 - **Что:** базовый случай Partial + `FirstSets.Get` + тай-брейк (Success бьёт Partial при равной длине) + guard нуля в `OneOrMany`/`ZeroOrMany` (break при `newPos == currentPos`) + удаление хака `Parser.cs:336-343`.
 - **Файлы:** `Parser.cs`, `Recovery/FirstSets.cs`
 - **Тесты:** `PartialBaseCaseTests`: `int x int y;` даёт Partial с `SeqFrameLocation(2)`; ε-цикл не виснет; тай-брейки.
@@ -65,7 +65,16 @@
     - **Следствие (metadata):** `Expected` в кадре Seq-элемента-`Ref` теперь = First(правила) (а не null, как у старого `ComputeExpected`). Обновлён `StackFrameTests.Test_Stack_Depth_And_Locations` (элемент `Ref("Block")`: `Expected` = `{"{","["}`). Поведение парсинга (дерево/позиции/результат) НЕ изменилось.
     - **Тесты:** новый `FirstSetsTests` (20 тестов: Terminal/EmptyTerminal, Seq-цепочки (вкл. глубокую nullable и dedup), OneOrMany/ZeroOrMany/Optional/OftenMissed, предикаты, SeparatedList (±CanBeEmpty), Ref с/без calculator, ε-фильтр, TdoppRule, IsNullable-варианты). `ParseContextTests` обновлён на FrameLocation-аналоги (`Test_ParseLocation_Types`→`Test_FrameLocation_Types`, `PrefixIndex`→`AltIndex`).
     - **Результаты:** сборка `Nitra.sln` — 0 ошибок; `FirstSetsTests` — 20/20; регрессия `Tests/ParserTests` — **202 passed / 0 failed / 2 skipped** (182 базовых + 20 новых; 2 — предсуществующие `[Ignore("WIP")]`).
-  - **Часть Б (базовый случай Partial в ParseSeq + тай-брейк + guard нуля + удаление хака)** — не начата.
+  - **Часть Б (базовый случай Partial в ParseSeq + тай-брейк + guard нуля) — выполнено:**
+    - **Partial base case в `ParseSeq`:** при сбое элемента Seq с прогрессом (`elemIdx > 0 && newPos > startPos`) возвращается `Result.Partial` вместо `Failure`; `ParseContext` строится с `SeqFrameLocation(elemIdx)` и `FirstSets.Get(element, …)`.
+    - **`BuildPartialSeqNode(seq, elements, startPos, endPos)`:** helper — 1 элемент → сам элемент, иначе `SeqNode`.
+    - **Тай-брейк в `ParseRule`:** при равной длине `Success` выигрывает у `Partial`; `bestResult` теперь проверяется **до** `_partialAccumulated` в конце `ParseRule`.
+    - **Guard нуля в `OneOrMany`/`ZeroOrMany`:** `break` при `newPos == currentPos` (ε-элемент) — устраняет бесконечный цикл (тест `Test_EpsilonLoop_DoesNotHang`).
+    - **`ParseContext?` nullable:** контекст цикла/Seq — `ParseContext?` (null при отсутствии Partial).
+    - **`_lastPartial` / `LastPartial`:** хук наблюдаемости для тестов (аналог `LastSnapshot`); сбрасывается в `Parse()`; пишется в Partial base case `ParseSeq`.
+    - **Ветка Partial в `ParseRule`:** больше не пишет в `_partialMemo` и не ставит `_partialAccumulated` (v1-путь `ContinueFromPartial` был мёртвым: Partial раньше нигде не порождался, только пропагация); `_partialAccumulated = null` сбрасывается в начале `ParseRule`. Полное удаление мёртвого кода — в 0.7.
+    - **Судьба хака `Parser.cs:336-343`:** ОСТАВЛЕН. Удаление ветки `else if (postNewPos == maxPos && bestResult == null && isRecoveryPos)` сломало 7 тестов recovery (SeparatedList/MiniC: `func(1, )`, `func(1,2,3, )`, `func(1,)`, `func(1, ,)`, `func(1, , , 2)`, `Err_MissingSecondExpression` и др.) — хак покрывает Error-правила, восстанавливающие недописанные конструкции. Удаление переносится в 1.5 (S0-приоритет).
+    - **Результаты:** сборка `Nitra.sln` — 0 ошибок; `PartialBaseCaseTests` — 5/5; регрессия `Tests/ParserTests` — **207 passed / 0 failed / 2 skipped**.
 
 ### 0.4 Терминальный кэш + слой инъекций + единый `TerminalComparer`
 - [ ] Статус

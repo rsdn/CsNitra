@@ -93,7 +93,7 @@ public readonly record struct Result
     public static Result Success(ISyntaxNode result, int newPos, int maxFailPos) => new(Kind.Success, result, newPos, maxFailPos, context: null);
     public static Result Failure(int failPos) => new(Kind.Failure, null, newPos: -1, maxFailPos: failPos, context: null);
     public static Result Partial(ISyntaxNode partialTree, int parsedUpTo, int maxFailPos) => new(Kind.Partial, partialTree, parsedUpTo, maxFailPos, context: null);
-    public static Result Partial(ISyntaxNode partialTree, int parsedUpTo, int maxFailPos, Recovery.ParseContext context) => new(Kind.Partial, partialTree, parsedUpTo, maxFailPos, context);
+    public static Result Partial(ISyntaxNode partialTree, int parsedUpTo, int maxFailPos, Recovery.ParseContext? context) => new(Kind.Partial, partialTree, parsedUpTo, maxFailPos, context);
 
     private Result(Kind kind, ISyntaxNode? node, int newPos, int maxFailPos, Recovery.ParseContext? context)
     {
