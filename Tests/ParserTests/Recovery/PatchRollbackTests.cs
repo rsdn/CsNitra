@@ -261,4 +261,94 @@ public sealed class PatchRollbackTests
         Assert.IsFalse(parser.Memo.ContainsKey((pos, rule, prec)),
             "Phantom default(Result) left in Memo after rollback of SetMemo on a new key");
     }
+
+    // 7. Hygiene scope (b): запись start-правила на currentStartPos удаляется ЛЮБОГО типа
+    //    (Partial / Success < EOF) — устаревший верхнеуровневый результат первого прохода;
+    //    запись НЕ-start-правила (не Failure) на той же позиции остаётся.
+    [TestMethod]
+    public void Test_Hygiene_Removes_StartRule_AnyKind_At_CurrentStartPos()
+    {
+        var parser = NewParser();
+        const int currentStartPos = 0;
+        const string startRule = "Module";
+
+        // Записи start-правила на currentStartPos: Partial и Success < EOF (любой тип) → удаляются (scope b).
+        parser.SetMemo(startRule, currentStartPos, 0, Result.Partial(new TerminalNode(startRule, 0, 5, 5), 5, 5));
+        parser.SetMemo(startRule, currentStartPos, 1, Result.Success(new TerminalNode(startRule, 0, 3, 3), 3, 3));
+        // Запись НЕ-start-правила (не Failure) на той же позиции → остаётся.
+        parser.SetMemo("Expr", currentStartPos, 0, Result.Success(new TerminalNode("Expr", 0, 2, 2), 2, 2));
+
+        var log = parser.Hygiene(10, null, startRule, currentStartPos);
+
+        Assert.IsFalse(parser.Memo.ContainsKey((currentStartPos, startRule, 0)),
+            "Partial start-rule entry at currentStartPos should be removed (scope b)");
+        Assert.IsFalse(parser.Memo.ContainsKey((currentStartPos, startRule, 1)),
+            "Success<EOF start-rule entry at currentStartPos should be removed (scope b)");
+        Assert.IsTrue(parser.Memo.ContainsKey((currentStartPos, "Expr", 0)),
+            "Non-start-rule non-Failure entry at currentStartPos should remain");
+
+        parser.RollbackPatches(log);
+    }
+
+    // 8. Hygiene scope (c): ВСЕ stale Failure удаляются в любой позиции (не только на e);
+    //    Success в позиции ≠ e и ≠ currentStartPos остаётся.
+    [TestMethod]
+    public void Test_Hygiene_Removes_Stale_Failure_At_Other_Positions()
+    {
+        var parser = NewParser();
+        const int currentStartPos = 0;
+        const string startRule = "Module";
+        const int e = 10;
+
+        // Stale Failure в позиции ≠ e и ≠ currentStartPos → удаляется (scope c).
+        parser.SetMemo("Expr", 5, 0, Result.Failure(5));
+        // Success в позиции ≠ e и ≠ currentStartPos → остаётся.
+        parser.SetMemo("Statement", 7, 0, Result.Success(new TerminalNode("Statement", 7, 9, 2), 9, 9));
+
+        var log = parser.Hygiene(e, null, startRule, currentStartPos);
+
+        Assert.IsFalse(parser.Memo.ContainsKey((5, "Expr", 0)),
+            "Stale Failure at pos != e should be removed (scope c)");
+        Assert.IsTrue(parser.Memo.ContainsKey((7, "Statement", 0)),
+            "Success at pos != e should remain");
+
+        parser.RollbackPatches(log);
+    }
+
+    // 9. E2E: реальный recovery-путь применяет S2/S3-кандидатов (часть принята с прогрессом,
+    //    часть отклонена без прогресса). Инвариант: в Memo НЕТ фантомных Success (Node == null,
+    //    т.е. default(Result)) и все инъекции осмысленны (не Length==0 && NodeKind=="").
+    //    Вход: мусор ### между закрытым блоком и валидной функцией → S2 resync (принят, e 19→27),
+    //    S3 panic (принят, e 27→28), S1 вставка (принята, e 28→31); на e=31 S3/S4/S5 отклонены
+    //    без прогресса → recovery останавливается (ErrorInfo != null).
+    [TestMethod]
+    public void Test_Rejected_S2_S3_Candidates_Leave_No_Memo_Phantoms()
+    {
+        var parser = NewParser();
+        // Бюджет: чтобы цикл реально дошёл до S2/S3 (rank 2/3) — по умолчанию
+        // MaxRecoveryAttemptsPerPosition=3 → пробуются только S0 + 2×S1.
+        parser.MaxRecoveryAttemptsPerPosition = 10;
+        var input = "int f() { int x; } ### int g() { int y; }";
+        var result = parser.Parse(input, "Module", out _);
+
+        // Сценарий: recovery остановился, не достигнув EOF (финальные S2/S3-кандидаты отклонены без прогресса).
+        Assert.IsNotNull(parser.ErrorInfo, "Expected recovery to stop without reaching EOF");
+        // S2/S3-кандидаты применялись и принимались (Skipped-диагностика resync/panic).
+        Assert.IsTrue(parser.RecoveryDiagnostics.Any(d => d.Kind == RecoveryKind.Skipped),
+            "Expected S2/S3 Skipped diagnostics (resync/panic candidates were applied)");
+
+        // Инвариант: в Memo нет фантомного Success (Node == null, т.е. default(Result)).
+        foreach (var kv in parser.Memo)
+        {
+            if (kv.Value.ResultKind != Result.Kind.Success)
+                continue;
+            Assert.IsTrue(kv.Value.TryGetSuccess(out var node, out _));
+            Assert.IsNotNull(node, $"Phantom Success (Node == null) in Memo at {kv.Key.pos}|{kv.Key.rule}|{kv.Key.precedence}");
+        }
+
+        // Инвариант: каждая инъекция осмысленна (не фантом Length==0 && NodeKind=="").
+        foreach (var kv in parser.Injections)
+            Assert.IsFalse(kv.Value.Length == 0 && kv.Value.NodeKind == "",
+                $"Phantom injection at {kv.Key.Pos}|{kv.Key.Terminal.Kind}");
+    }
 }
