@@ -1,6 +1,7 @@
 #nullable enable
 
 using ExtensibleParser;
+using ExtensibleParser.Recovery;
 
 namespace Recovery;
 
@@ -609,5 +610,178 @@ public class FollowSetTests
         Assert.IsTrue(first.Contains(new Literal("42"), _terminalEq));
         // EmptyTerminal is a Terminal, so it appears in First-set (not as ε)
         Assert.IsTrue(first.Contains(emptyTerm, _terminalEq), "first(Expr) should contain EmptyTerminal itself");
+    }
+
+    // ============ Nested loops (0.5) ============
+
+    [TestMethod]
+    public void Test_FollowSet_NestedRules()
+    {
+        // (a) цикл в теле цикла: Outer = ZeroOrMany(Seq([a, ZeroOrMany(Ref(Inner))]))
+        // Inner = b → follow(Inner) ⊇ { b (итерация внутреннего цикла), a (тело внешнего), EOF (конец внешнего) }
+        var rules = new Dictionary<string, Rule[]>
+        {
+            {"Outer", new Rule[] {
+                new ZeroOrMany(new Seq(new Rule[] {
+                    new Literal("a"),
+                    new ZeroOrMany(new Ref("Inner")),
+                }, "Body"))
+            } },
+            {"Inner", new Rule[] { new Literal("b") } },
+        };
+
+        var calc = new FollowSetCalculator(rules, "Outer");
+        var follow = calc.GetFollowSet("Inner");
+
+        Assert.IsTrue(follow.Contains(new Literal("b"), _terminalEq), "follow(Inner) contains 'b' (inner loop self-iteration)");
+        Assert.IsTrue(follow.Contains(new Literal("a"), _terminalEq), "follow(Inner) contains 'a' (outer loop body first)");
+        Assert.IsTrue(follow.Any(t => t.Kind == "EOF"), "follow(Inner) contains EOF (end of outer loop)");
+    }
+
+    [TestMethod]
+    public void Test_FollowSet_NestedLoopInSeqInLoopBody()
+    {
+        // (b) цикл внутри Seq внутри тела цикла: Outer = ZeroOrMany(Seq([a, Seq([c, ZeroOrMany(Ref(Inner))])]))
+        // Inner = b → follow(Inner) ⊇ { b, a, EOF }; c не следует за Inner (он перед циклом)
+        var rules = new Dictionary<string, Rule[]>
+        {
+            {"Outer", new Rule[] {
+                new ZeroOrMany(new Seq(new Rule[] {
+                    new Literal("a"),
+                    new Seq(new Rule[] {
+                        new Literal("c"),
+                        new ZeroOrMany(new Ref("Inner")),
+                    }, "InnerSeq"),
+                }, "Body"))
+            } },
+            {"Inner", new Rule[] { new Literal("b") } },
+        };
+
+        var calc = new FollowSetCalculator(rules, "Outer");
+        var follow = calc.GetFollowSet("Inner");
+
+        Assert.IsTrue(follow.Contains(new Literal("b"), _terminalEq), "follow(Inner) contains 'b' (inner loop self-iteration)");
+        Assert.IsTrue(follow.Contains(new Literal("a"), _terminalEq), "follow(Inner) contains 'a' (outer loop body first)");
+        Assert.IsTrue(follow.Any(t => t.Kind == "EOF"), "follow(Inner) contains EOF (end of outer loop)");
+        Assert.IsFalse(follow.Contains(new Literal("c"), _terminalEq), "follow(Inner) must NOT contain 'c' (precedes the inner loop)");
+    }
+
+    // ============ GetTerminators (0.5) ============
+
+    [TestMethod]
+    public void Test_GetTerminators_EmptyStack_ReturnsEof()
+    {
+        var rules = new Dictionary<string, Rule[]>
+        {
+            {"A", new Rule[] { new Literal("x") } },
+        };
+        var calc = new FollowSetCalculator(rules, "A");
+
+        var terminators = calc.GetTerminators(new List<StackFrame>());
+
+        Assert.AreEqual(1, terminators.Length);
+        Assert.AreEqual("EOF", terminators[0].Kind);
+    }
+
+    [TestMethod]
+    public void Test_GetTerminators_InnerFirst_ThenOuter()
+    {
+        // S = A p → follow(A) = { p };  A = B q → follow(B) = { q }
+        // stack = [A, B] (A внешний, B внутренний) → B первыми, затем A, EOF в конце
+        var rules = new Dictionary<string, Rule[]>
+        {
+            {"S", new Rule[] { new Seq(new Rule[] { new Ref("A"), new Literal("p") }, "S") } },
+            {"A", new Rule[] { new Seq(new Rule[] { new Ref("B"), new Literal("q") }, "A") } },
+            {"B", new Rule[] { new Literal("r") } },
+        };
+        var calc = new FollowSetCalculator(rules, "S");
+
+        var stack = new List<StackFrame>
+        {
+            new StackFrame("A", 0, new RuleFrameLocation(0), null, null),
+            new StackFrame("B", 0, new RuleFrameLocation(0), null, null),
+        };
+
+        var terminators = calc.GetTerminators(stack);
+
+        Assert.AreEqual(3, terminators.Length);
+        Assert.AreEqual("q", ((Literal)terminators[0]).Value, "inner frame B terminator first");
+        Assert.AreEqual("p", ((Literal)terminators[1]).Value, "outer frame A terminator next");
+        Assert.AreEqual("EOF", terminators[2].Kind, "EOF at the end");
+    }
+
+    [TestMethod]
+    public void Test_GetTerminators_Dedup()
+    {
+        // S = A p → follow(A) = { p };  A = B p → follow(B) = { p }
+        // stack = [A, B] → p дедуплицируется, EOF в конце
+        var rules = new Dictionary<string, Rule[]>
+        {
+            {"S", new Rule[] { new Seq(new Rule[] { new Ref("A"), new Literal("p") }, "S") } },
+            {"A", new Rule[] { new Seq(new Rule[] { new Ref("B"), new Literal("p") }, "A") } },
+            {"B", new Rule[] { new Literal("r") } },
+        };
+        var calc = new FollowSetCalculator(rules, "S");
+
+        var stack = new List<StackFrame>
+        {
+            new StackFrame("A", 0, new RuleFrameLocation(0), null, null),
+            new StackFrame("B", 0, new RuleFrameLocation(0), null, null),
+        };
+
+        var terminators = calc.GetTerminators(stack);
+
+        Assert.AreEqual(2, terminators.Length);
+        Assert.AreEqual("p", ((Literal)terminators[0]).Value);
+        Assert.AreEqual("EOF", terminators[1].Kind);
+    }
+
+    [TestMethod]
+    public void Test_GetTerminators_EofAtEnd()
+    {
+        // B — стартовое правило, follow(B) содержит EOF; B — внутренний кадр.
+        // EOF должен оказаться в конце, а не в середине.
+        var rules = new Dictionary<string, Rule[]>
+        {
+            {"B", new Rule[] { new Seq(new Rule[] { new Ref("A"), new Literal("p") }, "B") } },
+            {"A", new Rule[] { new Literal("q") } },
+        };
+        var calc = new FollowSetCalculator(rules, "B");
+
+        var stack = new List<StackFrame>
+        {
+            new StackFrame("A", 0, new RuleFrameLocation(0), null, null),
+            new StackFrame("B", 0, new RuleFrameLocation(0), null, null),
+        };
+
+        var terminators = calc.GetTerminators(stack);
+
+        Assert.AreEqual("EOF", terminators[terminators.Length - 1].Kind, "EOF must be at the end");
+        Assert.AreEqual(1, terminators.Count(t => t.Kind == "EOF"), "EOF must appear exactly once");
+    }
+
+    [TestMethod]
+    public void Test_GetTerminators_OptionsOverride()
+    {
+        // S = A p → follow(A) = { p }; Options кадра A задают явные терминаторы [ z ]
+        var rules = new Dictionary<string, Rule[]>
+        {
+            {"S", new Rule[] { new Seq(new Rule[] { new Ref("A"), new Literal("p") }, "S") } },
+            {"A", new Rule[] { new Literal("q") } },
+        };
+        var calc = new FollowSetCalculator(rules, "S");
+
+        var options = new RecoveryOptions { Terminators = new Terminal[] { new Literal("z") } };
+        var stack = new List<StackFrame>
+        {
+            new StackFrame("A", 0, new RuleFrameLocation(0), null, options),
+        };
+
+        var terminators = calc.GetTerminators(stack);
+
+        Assert.AreEqual(2, terminators.Length);
+        Assert.AreEqual("z", ((Literal)terminators[0]).Value, "Options.Terminators override follow(A)");
+        Assert.AreEqual("EOF", terminators[1].Kind);
+        Assert.IsFalse(terminators.Any(t => t is Literal l && l.Value == "p"), "follow(A) 'p' must NOT appear when Options.Terminators set");
     }
 }

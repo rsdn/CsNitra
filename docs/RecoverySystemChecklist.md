@@ -91,11 +91,14 @@
   - **Результаты:** сборка `Nitra.sln` — 0 ошибок (45 предупреждений — все предсуществующие); `TerminalCacheTests` — 4/4; регрессия `Tests/ParserTests` — **211 passed / 0 failed / 2 skipped** (207 базовых + 4 новых; 2 — предсуществующие `[Ignore("WIP")]`).
 
 ### 0.5 `FollowSetCalculator`: вложенные циклы, `GetTerminators(stack)`
-- [ ] Статус
+- [~] Статус — выполнен, проверен (FollowSetTests 30/30; ParserTests 218/218)
 - **Что:** единый обход дерева правила с накоплением «что следует после» (first/nullable suffix); `GetTerminators(stack)` (EOF — общий синглтон); компаратор.
-- **Файлы:** `FollowSetCalculator.cs`
+- **Файлы:** `FollowSetCalculator.cs`, `Tests/ParserTests/Recovery/FollowSetTests.cs`
 - **Тесты:** `FollowSetTests` (расширить: цикл в теле цикла; follow стартового правила содержит EOF-синглтон).
 - **Заметки:**
+  - **Подход (б) — точечная поправка через единый обход:** 4 метода `ProcessFollowSetForLoops*`/`ProcessFollowSetForRefsInRule*` (два независимых прохода, не спускались в вложенные циклы) заменены на `ProcessLoopSequence`/`ProcessLoopNode` с накоплением «что следует после». Для каждого элемента последовательности `WhatFollows(after, parentFollow)` = first(after) ∪ (after nullable ? parentFollow : ∅); `ProcessLoopNode` даёт всем Ref в теле цикла first(тело) ∪ separator ∪ whatFollows и **рекурсирует в тело** (Seq → `ProcessLoopSequence`, цикл → `ProcessLoopNode`) с `bodyFollow` = first(тело) ∪ whatFollows — так вложенный цикл получает корректный follow. Не рекурсируем в Ref-цели (каждое правило обрабатывается своим ходом во внешнем цикле) — нет зацикливания на взаимно-рекурсивных правилах.
+  - **`GetTerminators(stack)`:** агрегация от ВНУТРЕННЕГО кадра (stack[last]) к внешнему (stack[0]); терминаторы кадра = `Options.Terminators ?? follow(правила кадра)`; дедупликация с сохранением порядка по `TerminalComparer.Instance`; EOF (`EofTerminal.Instance`) пропускается при агрегации и добавляется в конец — гарантия «EOF в конце», ровно один раз (даже если follow кадра уже содержит EOF).
+  - **Результаты:** сборка `Nitra.sln` — 0 ошибок; `FollowSetTests` — 30/30 (23 базовых + 7 новых: 2 вложенных цикла + 5 `GetTerminators`); `Tests/ParserTests` — **218 passed / 0 failed / 2 skipped** (211 базовых + 7 новых; 2 — предсуществующие `[Ignore("WIP")]`); `RegexTests` 9, `WiWorkflowTests` 1 — все зелёные.
 
 ### 0.6 `RecoveryDiagnostic` + `Parser.RecoveryDiagnostics`
 - [ ] Статус

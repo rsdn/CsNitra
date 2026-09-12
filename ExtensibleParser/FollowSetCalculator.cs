@@ -225,6 +225,24 @@ public class FollowSetCalculator
         return nullable;
     }
 
+    // Упорядоченная агрегация терминаторов по кадрам снимка: от внутреннего (последний) к внешнему (stack[0]).
+    // Терминаторы кадра = Options.Terminators ?? follow(правила кадра); дедупликация с сохранением порядка; EOF в конец.
+    public Terminal[] GetTerminators(IReadOnlyList<StackFrame> stack)
+    {
+        var result = new List<Terminal>();
+        for (int i = stack.Count - 1; i >= 0; i--)
+        {
+            var frame = stack[i];
+            var terminals = frame.Options?.Terminators ?? GetFollowSet(frame.RuleName).ToArray();
+            foreach (var t in terminals)
+                if (t is not EofTerminal && !result.Contains(t, TerminalComparer.Instance))
+                    result.Add(t);
+        }
+
+        result.Add(EofTerminal.Instance);
+        return result.ToArray();
+    }
+
     private void ComputeFollowSets()
     {
         // Инициализация follow-set для стартовых символов
@@ -283,31 +301,56 @@ public class FollowSetCalculator
         } while (changed);
     }
 
-    // Process ZeroOrMany/OneOrMany/SeparatedList to add loop-follow contributions
+    // Единый обход дерева правила с накоплением «что следует после» (first/nullable suffix).
+    // Обрабатывает циклы, включая вложенные (цикл в теле цикла / в Seq в теле цикла).
     private void ProcessFollowSetForLoops(Rule rule, string parentRuleName)
     {
         if (rule is Seq seq)
-        {
-            for (int i = 0; i < seq.Elements.Length; i++)
-            {
-                ProcessFollowSetForLoopsInElement(seq.Elements[i], seq.Elements, i, seq.Elements.Length, parentRuleName);
-            }
-        }
+            ProcessLoopSequence(seq.Elements, parentRuleName, ParentFollow(parentRuleName));
         else
+            ProcessLoopNode(rule, parentRuleName, ParentFollow(parentRuleName));
+    }
+
+    // follow-set правила-контекста (что следует после всего правила)
+    private List<Terminal> ParentFollow(string parentRuleName) =>
+        _followSets.GetValueOrDefault(parentRuleName, new HashSet<Terminal>(TerminalEqualityComparer.Instance)).ToList();
+
+    // Обход последовательности: для каждого элемента вычисляем «что следует после» и спускаемся в циклы/вложенные Seq.
+    // Не рекурсируем в Ref-цели — каждое правило обрабатывается своим ходом во внешнем цикле.
+    private void ProcessLoopSequence(Rule[] elements, string parentRuleName, List<Terminal> parentFollow)
+    {
+        for (int i = 0; i < elements.Length; i++)
         {
-            // Direct loop at rule level — nothing follows in production, so afterLoop = empty (nullable)
-            ProcessFollowSetForLoopsDirect(rule, parentRuleName);
+            var elem = elements[i];
+            var whatFollows = WhatFollows(elements.Skip(i + 1).ToArray(), parentFollow);
+            if (elem is ZeroOrMany or OneOrMany or SeparatedList)
+                ProcessLoopNode(elem, parentRuleName, whatFollows);
+            else if (elem is Seq s)
+                ProcessLoopSequence(s.Elements, parentRuleName, whatFollows);
         }
     }
 
-    private void ProcessFollowSetForLoopsDirect(Rule rule, string parentRuleName)
+    // «Что следует после» последовательности after: first(after) ∪ (after nullable ? parentFollow : ∅)
+    private List<Terminal> WhatFollows(Rule[] after, List<Terminal> parentFollow)
     {
-        Terminal? separator = null;
+        var (afterFirst, afterNullable) = ComputeFirstForSequence(after.ToList());
+        var result = new List<Terminal>();
+        foreach (var t in afterFirst)
+            if (t is not EpsilonTerminal)
+                result.Add(t);
+        if (afterNullable)
+            foreach (var t in parentFollow)
+                if (!result.Contains(t, TerminalEqualityComparer.Instance))
+                    result.Add(t);
+        return result;
+    }
 
-        if (rule is SeparatedList sl)
-            separator = sl.Separator as Terminal;
+    // Цикл: все Ref в теле получают first(тело) ∪ separator ∪ whatFollows; затем спуск во вложенные циклы тела.
+    private void ProcessLoopNode(Rule loop, string parentRuleName, List<Terminal> whatFollows)
+    {
+        Terminal? separator = loop is SeparatedList sl ? sl.Separator as Terminal : null;
 
-        Rule loopBody = rule switch
+        Rule loopBody = loop switch
         {
             ZeroOrMany zom => zom.Element,
             OneOrMany oom => oom.Element,
@@ -318,90 +361,13 @@ public class FollowSetCalculator
         if (loopBody is null)
             return;
 
-        var (loopBodyFirst, _) = ComputeFirst(loopBody);
-        var parentFollow = _followSets.GetValueOrDefault(parentRuleName, new HashSet<Terminal>(TerminalEqualityComparer.Instance));
+        var (bodyFirst, _) = ComputeFirst(loopBody);
+        var bodyFirstList = bodyFirst.Where(t => t is not EpsilonTerminal).ToList();
 
-        ProcessFollowSetForRefsInRule(loopBody, loopBodyFirst, separator, parentFollow);
-    }
-
-    private void ProcessFollowSetForLoopsInElement(Rule elem, Rule[] siblings, int elemIndex, int siblingCount, string parentRuleName)
-    {
-        Terminal? separator = null;
-
-        if (elem is SeparatedList sl2)
-            separator = sl2.Separator as Terminal;
-
-        Rule loopBody = elem switch
-        {
-            ZeroOrMany zom => zom.Element,
-            OneOrMany oom => oom.Element,
-            SeparatedList s2 => s2.Element,
-            _ => null
-        };
-
-        if (loopBody is null)
-        {
-            // Recurse into nested Seq elements
-            if (elem is Seq s)
-            {
-                for (int i = 0; i < s.Elements.Length; i++)
-                {
-                    ProcessFollowSetForLoopsInElement(s.Elements[i], siblings, elemIndex, siblingCount, parentRuleName);
-                }
-            }
-            // Don't recurse into Ref targets — each rule is already processed by ProcessFollowSetForLoops
-            // in the outer loop (foreach ruleName in _rules.Keys). Recursing here causes infinite
-            // loops on mutually recursive rules (Block <-> Statement).
-            return;
-        }
-
-        // What follows the loop in the parent sequence
-        var afterLoop = new List<Rule>();
-        for (int i = elemIndex + 1; i < siblingCount; i++)
-            afterLoop.Add(siblings[i]);
-
-        var (afterLoopFirst, afterLoopNullable) = ComputeFirstForSequence(afterLoop);
-
-        var (loopBodyFirst, _) = ComputeFirst(loopBody);
-        IEnumerable<Terminal> parentFollow = afterLoopNullable
-            ? _followSets.GetValueOrDefault(parentRuleName, new HashSet<Terminal>(TerminalEqualityComparer.Instance))
-            : Array.Empty<Terminal>();
-
-        ProcessFollowSetForRefsInRule(loopBody, loopBodyFirst, separator, afterLoopFirst, parentFollow);
-    }
-
-    private void ProcessFollowSetForRefsInRule(
-        Rule loopBody,
-        IEnumerable<Terminal> loopBodyFirst,
-        Terminal? separator,
-        IEnumerable<Terminal> afterLoopFirst,
-        IEnumerable<Terminal> parentFollow)
-    {
-        ProcessFollowSetForRefsInRuleInternal(loopBody, loopBodyFirst, separator, afterLoopFirst, parentFollow);
-    }
-
-    private void ProcessFollowSetForRefsInRule(
-        Rule loopBody,
-        IEnumerable<Terminal> loopBodyFirst,
-        Terminal? separator,
-        IEnumerable<Terminal> parentFollow)
-    {
-        ProcessFollowSetForRefsInRuleInternal(loopBody, loopBodyFirst, separator, Array.Empty<Terminal>(), parentFollow);
-    }
-
-    private void ProcessFollowSetForRefsInRuleInternal(
-        Rule loopBody,
-        IEnumerable<Terminal> loopBodyFirst,
-        Terminal? separator,
-        IEnumerable<Terminal> afterLoopFirst,
-        IEnumerable<Terminal> parentFollow)
-    {
         var refs = new HashSet<string>();
         foreach (var subRule in loopBody.GetSubRules<Ref>())
-        {
             if (subRule is Ref refRule && refRule.RuleName != null)
                 refs.Add(refRule.RuleName);
-        }
 
         foreach (var refName in refs)
         {
@@ -410,30 +376,31 @@ public class FollowSetCalculator
             var beforeCount = followSet.Count;
 
             // Loop body first: another iteration of the same loop
-            foreach (var t in loopBodyFirst)
-            {
-                if (t is not EpsilonTerminal)
-                    followSet.Add(t);
-            }
+            foreach (var t in bodyFirstList)
+                followSet.Add(t);
 
             // Separator (for SeparatedList)
             if (separator is { } sep)
                 followSet.Add(sep);
 
             // What comes after the loop
-            foreach (var t in afterLoopFirst)
-            {
-                if (t is not EpsilonTerminal)
-                    followSet.Add(t);
-            }
-
-            // Parent follow-set (when loop/list is nullable)
-            foreach (var t in parentFollow)
+            foreach (var t in whatFollows)
                 followSet.Add(t);
 
             if (followSet.Count > beforeCount)
                 _followSets[refName] = followSet;
         }
+
+        // Что следует после конца тела: следующая итерация (first тела) или конец цикла (whatFollows)
+        var bodyFollow = new List<Terminal>(bodyFirstList);
+        foreach (var t in whatFollows)
+            if (!bodyFollow.Contains(t, TerminalEqualityComparer.Instance))
+                bodyFollow.Add(t);
+
+        if (loopBody is Seq nestedSeq)
+            ProcessLoopSequence(nestedSeq.Elements, parentRuleName, bodyFollow);
+        else if (loopBody is ZeroOrMany or OneOrMany or SeparatedList)
+            ProcessLoopNode(loopBody, parentRuleName, bodyFollow);
     }
 
     // Returns (terminals, isNullable) for a sequence of rules
