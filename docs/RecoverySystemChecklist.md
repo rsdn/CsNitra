@@ -10,7 +10,7 @@
 - `[x]` — выполнен и проверен
 - `[!]` — есть проблемы / отложено
 
-**Текущий пункт:** 2.2
+**Текущий пункт:** 2.4
 
 ---
 
@@ -304,7 +304,7 @@
   - **Результаты:** сборка `Nitra.sln --no-incremental` — 0 ошибок / 0 предупреждений (изменённые файлы чисты по диагностике); `Tests/ParserTests` — **263 passed / 0 failed / 2 skipped** (2 — предсуществующие `[Ignore("WIP")]`).
 
 ### 2.2 Единый cost model
-- [~] Статус — в работе (сборка `Nitra.sln` 0 ошибок / 0 предупреждений; CostModelTests 11/11; ParserTests 274 passed / 0 failed / 2 skipped)
+- [x] Статус — завершено (сборка `Nitra.sln` 0 ошибок / 0 предупреждений; CostModelTests 11/11; ParserTests 274 passed / 0 failed / 2 skipped)
 - **Что:** вставка 1; skip = слова+переносы; tier-penalty T1:0, T2:1; S4 = число вставок; `CountRecoveryNodes`.
 - **Файлы:** `Recovery/CostCalculator.cs` (новый), `Recovery/RecoveryEngine.cs`
 - **Тесты:** `CostModelTests` (11 методов)
@@ -329,11 +329,19 @@
   - **Регрессия:** `Tests/ParserTests` — **274 passed / 0 failed / 2 skipped** (Total 276; 263 базовых + 11 новых; 2 — предсуществующие `[Ignore("WIP")]`). Полное решение `Nitra.sln` — 284 passed / 0 failed / 2 skipped (ParserTests 274 + RegexTests 9 + WiWorkflowTests 1). Поведение/порядок кандидатов не изменились (чистый рефакторинг cost, значения идентичны).
 
 ### 2.3 `OftenMissed` → сахар над `TryInsert`
-- [ ] Статус
+- [x] Статус — завершено (сборка `Nitra.sln` 0 ошибок / 0 предупреждений; ParserTests 277 passed / 0 failed / 2 skipped)
 - **Что:** документированный сахар; поведенческая совместимость.
 - **Файлы:** `Rules.cs`, `Parser.cs`
 - **Тесты:** `OftenMissedTests` (расширить v1)
 - **Заметки:**
+  - **Подход (А) — консервативный:** инлайновый `ParseOftenMissed` (вставка recovery-узла при `startPos == _recoveryPoint`) сохранён как есть; дополнительно кадр OftenMissed-элемента/альтернативы теперь несёт `RecoveryOptions(TryInsert: [элемент])`, чтобы engine (S1) тоже видел `TryInsert` и генерировал кандидата вставки в точке `e`.
+  - **Изменения в `Rules.cs`:** только doc-комментарий `OftenMissed` — задокументирован как эквивалент `RecoveryRule(Element, new RecoveryOptions(TryInsert: [Element]))` (кода нет).
+  - **Изменения в `Parser.cs`:** (1) новый `private static RecoveryOptions? OftenMissedOptions(Rule)` — `OftenMissed { Element: Terminal t }` → `new RecoveryOptions { TryInsert = [t] }`, иначе `null`; (2) `ParseSeq` передаёт `OftenMissedOptions(element)` в `WithFrame` для кадра элемента; (3) `ParseRule`: `altOptions = prefix is RecoveryRule rr ? rr.Options : OftenMissedOptions(prefix)` (кадр альтернативы); (4) `WithFrame`/`PushFrame` — опциональный параметр `RecoveryOptions? options = null` (ранее кадр всегда получал `null`).
+  - **Двойное вставление — проверено, отсутствует:** S0 (ре-парсинг как есть) всегда первый кандидат — инлайн-вставка `ParseOftenMissed` срабатывает в нём; если S0 дал прогресс/EOF, engine не вызывается вообще. Если S0 не дал прогресса, S1-кандидат `TryInsert` применяется инъекцией в `(e, t)`: при ре-парсинге `ParseTerminal` возвращает `CreateInjectedResult` (нулевой IsRecovery-узел) — элемент успешно парсится через инъекцию, и инлайновый путь НЕ срабатывает (он срабатывает только при сбое элемента). Пути взаимоисключающи → идемпотентно, двойной вставки нет. Guard `t.TryMatch(input, e) >= 0` дополнительно исключает кандидата, если терминал реально совпадает в `e`.
+  - **Поведенческая совместимость — подтверждена:** все 274 базовых теста (MiniC Err_*, S0Integration, IterativeRecovery, FinalState, PatchRollback, SeparatedList и др.) зелёные БЕЗ изменения ассертов. Все читатели `StackFrame.Options` полевые (`TryInsert`/`Anchors`/`CanStart`/`MaxSkip`/`Terminators`/`Recoverable`) — новые опции несут только `TryInsert`, остальное `null` → на S2/S3/S4/follow/ε-принятие не влияют.
+  - **Новые тесты (`Tests/ParserTests/Recovery/OftenMissedTests.cs`, 3):** (1) `Test_OftenMissed_Inserts_Missing_Terminal_At_RecoveryPos` — эквивалентность v1: MiniC-подобная грамматика, вход `int f() { int x int y; }` (пропущенная `;` в recovery-позиции) → Success@EOF, `ErrorInfo == null`, в дереве ≥ 1 recovery-узла (`CostCalculator.CountRecoveryNodes`). (2) `Test_OftenMissed_Frame_Carries_TryInsert` — механизм (А): при сбое в позиции OftenMissed-элемента (`MaxRecoveryIterations=0`, `LastSnapshot`) верхний кадр — `SeqFrameLocation` с `Options.TryInsert == [';']`. (3) `Test_OftenMissed_TryInsert_Candidate_Generated_At_E` — engine видит `TryInsert`: `RecoveryEngine.Generate(e, …)` порождает кандидата вставки `;` в точке `e` с диагностикой `Inserted`; `Apply` → инъекция `(e, ';')` Length 0, `Rollback` → удалена.
+  - **Проблема (повтор пункта 2.2):** тулинг при создании `OftenMissedTests.cs` автоматически добавил `<Compile Include="Recovery\OftenMissedTests.cs" />` в `ParserTests.csproj` → `NETSDK1022` (дубль SDK-глоба). Явный include удалён, csproj возвращён в чистое состояние (git: без изменений).
+  - **Цифры:** `Tests/ParserTests` — **277 passed / 0 failed / 2 skipped** (Total 279; 274 базовых без изменений + 3 новых; 2 — предсуществующие `[Ignore("WIP")]`).
 
 ### 2.4 Производительность
 - [ ] Статус

@@ -176,6 +176,12 @@ public record Optional(Rule Element, string? Kind = null) : Rule(Kind ?? nameof(
 /// When parsing fails at a recovery position, this rule succeeds without consuming input.
 /// Used to handle commonly omitted syntax elements during error recovery.
 /// Example: OftenMissed(new Literal("}")) allows parsing to continue when a closing brace is missing.
+///
+/// Documented sugar over <see cref="RecoveryOptions.TryInsert"/> (§3.9, phase 2.3): equivalent to
+/// <c>RecoveryRule(Element, new RecoveryOptions(TryInsert: [Element]))</c> when <see cref="Element"/> is a
+/// <see cref="Terminal"/>. The parser stamps that option onto the stack frame of the OftenMissed
+/// element/alternative, so the recovery engine also generates a rank-0 insertion candidate for the
+/// terminal at the recovery point — compatible (idempotent) with the inline recovery-position insertion.
 /// </summary>
 /// <param name="Element">The rule that is often missed</param>
 /// <param name="Kind">Name for this rule, typically "Error" for error recovery</param>

@@ -517,7 +517,7 @@ public class Parser(Terminal trivia, Log? log = null)
         for (var altIdx = 0; altIdx < prefixRules.Length; altIdx++)
         {
             var prefix = prefixRules[altIdx];
-            var altOptions = prefix is RecoveryRule rr ? rr.Options : null;
+            var altOptions = prefix is RecoveryRule rr ? rr.Options : OftenMissedOptions(prefix);
             _stackFrames.Add(new StackFrame(ruleName, minPrecedence, new RuleFrameLocation(altIdx), null, altOptions));
             try
             {
@@ -788,6 +788,14 @@ public class Parser(Terminal trivia, Log? log = null)
         return Result.Success(new NoneNode(optional.Kind ?? "Optional", startPos, startPos), startPos, result.MaxFailPos);
     }
 
+    // §3.9/2.3: OftenMissed — документированный сахар над TryInsert: кадр элемента/альтернативы несёт
+    // RecoveryOptions(TryInsert: [элемент]), чтобы engine (S1, ранг 0) тоже генерировал кандидата вставки
+    // терминала в точке восстановления (идемпотентно с инлайновой вставкой в recovery-позиции).
+    private static RecoveryOptions? OftenMissedOptions(Rule rule) =>
+        rule is OftenMissed { Element: Terminal terminal }
+            ? new RecoveryOptions { TryInsert = [terminal] }
+            : null;
+
     private Result ParseOftenMissed(OftenMissed oftenMissed, int startPos, string input)
     {
         var result = ParseAlternative(oftenMissed.Element, startPos, input);
@@ -1030,7 +1038,7 @@ public class Parser(Terminal trivia, Log? log = null)
         {
             var element = seq.Elements[elemIdx];
             var result = WithFrame(new SeqFrameLocation(elemIdx), FirstSets.Get(element, _followCalculator), seq.Kind ?? "Seq",
-                () => ParseAlternative(element, newPos, input));
+                () => ParseAlternative(element, newPos, input), OftenMissedOptions(element));
 
             if (result.MaxFailPos > maxFailPos)
                 maxFailPos = result.MaxFailPos;
@@ -1089,9 +1097,9 @@ public class Parser(Terminal trivia, Log? log = null)
             ? elements[0]
             : new SeqNode(seq.Kind ?? "Seq", elements, startPos, endPos);
 
-    private Result WithFrame(FrameLocation location, Terminal[]? expected, string fallbackRuleName, Func<Result> parse)
+    private Result WithFrame(FrameLocation location, Terminal[]? expected, string fallbackRuleName, Func<Result> parse, RecoveryOptions? options = null)
     {
-        PushFrame(location, expected, fallbackRuleName);
+        PushFrame(location, expected, fallbackRuleName, options);
         try
         {
             return parse();
@@ -1102,11 +1110,11 @@ public class Parser(Terminal trivia, Log? log = null)
         }
     }
 
-    private void PushFrame(FrameLocation location, Terminal[]? expected, string fallbackRuleName)
+    private void PushFrame(FrameLocation location, Terminal[]? expected, string fallbackRuleName, RecoveryOptions? options = null)
     {
         var ruleName = _stackFrames.Count > 0 ? _stackFrames[_stackFrames.Count - 1].RuleName : fallbackRuleName;
         var precedence = _stackFrames.Count > 0 ? _stackFrames[_stackFrames.Count - 1].Precedence : 0;
-        _stackFrames.Add(new StackFrame(ruleName, precedence, location, expected, null));
+        _stackFrames.Add(new StackFrame(ruleName, precedence, location, expected, options));
     }
 
     private void PopFrame() => _stackFrames.RemoveAt(_stackFrames.Count - 1);
