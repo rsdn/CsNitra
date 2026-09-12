@@ -129,7 +129,7 @@
 ## Фаза 1. Recovery engine (итеративный цикл)
 
 ### 1.1 Главный цикл §3.1
-- [~] Статус — в работе (сборка 0 ошибок; IterativeRecoveryTests 6/6; ParserTests 222 passed / 0 failed / 2 skipped)
+- [x] Статус — завершено (сборка 0 ошибок; IterativeRecoveryTests 6/6; ParserTests 222 passed / 0 failed / 2 skipped)
 - **Что:** `RecoveryPointOf`, `FailureSnapshotAt`, `_recoveryPoint`, неявный S0-кандидат (ре-парсинг как есть: Hygiene без патчей), счётчики, fail-safe `ePrev`.
 - **Файлы:** `Parser.cs`, `Tests/ParserTests/Recovery/IterativeRecoveryTests.cs`
 - **Тесты:** `IterativeRecoveryTests`: один проход на одну ошибку; предельные случаи; существующие recovery-тесты MiniC (Error-правила) зелёны без изменений.
@@ -145,7 +145,7 @@
   - **Регрессия:** `Tests/ParserTests` — **222 passed / 0 failed / 2 skipped** (216 базовых + 6 новых; 2 — предсуществующие `[Ignore("WIP")]`); MiniC 36/36 без изменений; `RegexTests` 9/9, `WiWorkflowTests` 1/1.
 
 ### 1.2 `RecoveryEngine.Generate`
-- [~] Статус — в работе (сборка 0 ошибок; CandidateGenerationTests 11/11 + AnchorResyncTests 3/3; ParserTests 236 passed / 0 failed / 2 skipped)
+- [x] Статус — завершено (сборка 0 ошибок; CandidateGenerationTests 11/11 + AnchorResyncTests 3/3; ParserTests 236 passed / 0 failed / 2 skipped)
 - **Что:** S1 (вставка), S2 (resync: T1 якоря / T2 CanStart, pre-filter по First, спекулятивная валидация с кэшем `(rule, pos)`, completion stack), S3 (токен-скан со вложенностью пар, кэшем, MaxSkip), S4 (EOF), S5 (хвост); детерминированная сортировка.
 - **Файлы:** `Recovery/RecoveryEngine.cs`, `Recovery/RecoveryCandidate.cs`, `Recovery/ParseContext.cs` (поля `RecoveryOptions`), `Parser.cs` (хуки)
 - **Тесты:** `CandidateGenerationTests` (per-стратегия + порядок + детерминизм); `AnchorResyncTests`: T1 находит следующий Member/Statement; T2 (CanStart) на двойной ошибке; completion stack вставляет `;`+`}`; мусор между e и якорем → абсорбер.
@@ -185,7 +185,7 @@
   - **Результат:** `ParserTests` — **236 passed / 0 failed / 2 skipped** (Total 238); прогон ~0.1 с (до: ~4 мин, 3 OOM). Логи: `t131_test1.log`, `t131_head_test1.log`, `t131_full.log` в temp.
 
 ### 1.3.2 Устранение багов и мелочей (по анализу качества 1.3)
-- [ ] Статус
+- [x] Статус — завершено (все 4 подпункта 1.3.2.1–1.3.2.4 выполнены и проверены)
 - **Что:** по результатам анализа качества 1.3: латентный баг `RecordMemo`, мёртвый обратный индекс, дыры в тестах, ленивый `Generate`.
 - **Файлы:** `Parser.cs`, `Tests/ParserTests/Recovery/PatchRollbackTests.cs`
 
