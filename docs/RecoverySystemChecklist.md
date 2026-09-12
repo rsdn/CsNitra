@@ -101,11 +101,13 @@
   - **Результаты:** сборка `Nitra.sln` — 0 ошибок; `FollowSetTests` — 30/30 (23 базовых + 7 новых: 2 вложенных цикла + 5 `GetTerminators`); `Tests/ParserTests` — **218 passed / 0 failed / 2 skipped** (211 базовых + 7 новых; 2 — предсуществующие `[Ignore("WIP")]`); `RegexTests` 9, `WiWorkflowTests` 1 — все зелёные.
 
 ### 0.6 `RecoveryDiagnostic` + `Parser.RecoveryDiagnostics`
-- [ ] Статус
+- [x] Статус — выполнен, проверен (ParserTests 220/220) — в работе (сборка 0 ошибок; RecoveryDiagnosticTests 2/2; ParserTests 220 passed / 0 failed / 2 skipped)
 - **Что:** тип `RecoveryDiagnostic`, свойство `Parser.RecoveryDiagnostics` (пустой список в Фазе 0).
 - **Файлы:** `Parser.cs`, `Recovery/RecoveryDiagnostic.cs`
-- **Тесты:** —
+- **Тесты:** `RecoveryDiagnosticTests`: список пуст (не null) после успешного и после неудачного парсинга.
 - **Заметки:**
+  - Создан `Recovery/RecoveryDiagnostic.cs` (`enum RecoveryKind { Inserted, Skipped, Unrecovered }` + `sealed record RecoveryDiagnostic(StartPos, EndPos, Kind, Message, Terminal?, RuleName?)`). В `Parser.cs`: `private readonly List<RecoveryDiagnostic> _recoveryDiagnostics = [];` + `public IReadOnlyList<RecoveryDiagnostic> RecoveryDiagnostics`; `_recoveryDiagnostics.Clear();` в `Parse` рядом с другими очистками. В Фазе 0 никто не добавляет — список всегда пуст.
+  - **Результаты:** сборка `Nitra.sln` — 0 ошибок; `RecoveryDiagnosticTests` — 2/2; регрессия `Tests/ParserTests` — **220 passed / 0 failed / 2 skipped** (218 базовых + 2 новых; 2 — предсуществующие `[Ignore("WIP")]`).
 
 ### 0.7 Удаление мёртвого кода
 - [ ] Статус

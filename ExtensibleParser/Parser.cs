@@ -38,6 +38,8 @@ public class Parser(Terminal trivia, Log? log = null)
     public FailureSnapshot? LastSnapshot => _lastSnapshot;
     private Result? _lastPartial;
     public Result? LastPartial => _lastPartial;
+    private readonly List<RecoveryDiagnostic> _recoveryDiagnostics = [];
+    public IReadOnlyList<RecoveryDiagnostic> RecoveryDiagnostics => _recoveryDiagnostics;
 
     // Хук для тестов/engine: инжекции в Фазе 0 никто не порождает, слой активен с Фазы 1.
     public void AddInjection(Terminal terminal, int pos, Injection injection) => _injections[(pos, terminal)] = injection;
@@ -177,6 +179,7 @@ public class Parser(Terminal trivia, Log? log = null)
         _partialMemo.Clear();
         _terminalCache.Clear();
         _injections.Clear();
+        _recoveryDiagnostics.Clear();
 
         if (input.Length > 0)
         {
