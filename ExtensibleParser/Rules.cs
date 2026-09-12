@@ -196,6 +196,29 @@ public record OftenMissed(Rule Element, string Kind = "Error") : Rule(Kind)
 }
 
 /// <summary>
+/// A rule wrapper that carries error-recovery annotations (<see cref="Recovery.RecoveryOptions"/>) for the
+/// recovery engine. Parsing behavior is exactly equal to <see cref="Inner"/>; the wrapper only exposes its
+/// <see cref="Options"/> to the engine (read from the stack frame of the wrapped alternative, §3.9).
+/// </summary>
+/// <param name="Inner">The wrapped rule — the wrapper parses exactly like it</param>
+/// <param name="Options">Recovery annotations (Terminators/Anchors/CanStart/TryInsert/MaxSkip/Recoverable); null = no annotations</param>
+public sealed record RecoveryRule(Rule Inner, Recovery.RecoveryOptions? Options = null) : Rule(Inner.Kind)
+{
+    public override string ToString() => Inner.ToString();
+
+    public override Rule InlineReferences(Dictionary<string, Rule> inlineableRules) =>
+        new RecoveryRule(Inner.InlineReferences(inlineableRules), Options);
+
+    public override IEnumerable<Rule> GetSubRules<T>()
+    {
+        if (this is T)
+            yield return this;
+        foreach (var subRule in Inner.GetSubRules<T>())
+            yield return subRule;
+    }
+}
+
+/// <summary>
 /// A reference to another rule by name, enabling recursive grammar definitions.
 /// Example: new Ref("Expression") refers to a rule named "Expression".
 /// During parsing, the parser looks up and applies the referenced rule.

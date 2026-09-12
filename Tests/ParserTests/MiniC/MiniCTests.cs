@@ -45,7 +45,7 @@ public partial class MiniCTests
             // Recovery rules:
             new Seq([new Ref("Expr"), (Terminals.ErrorOperator()), new ReqRef("Expr",  200)], "RecoveryOperator"),
             new Seq([new Ref("Expr"), Terminals.ErrorEmpty(), new ReqRef("Expr",  200)], "RecoveryEmptyOperator"),
-            Terminals.ErrorEmpty(),
+            new RecoveryRule(Terminals.ErrorEmpty()),
         };
 
         // Statement rules

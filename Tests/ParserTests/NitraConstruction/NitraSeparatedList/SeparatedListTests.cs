@@ -24,7 +24,7 @@ public partial class SeparatedListTests
             Terminals.Ident(),
             new Seq([Terminals.Ident(), new Literal("("), new SeparatedList(new Ref("ExpOptional"), new Literal(","), Kind: "ArgsRestOptional", EndBehavior: SeparatorEndBehavior.Optional), closingBracket], "CallOptional"),
 
-            Terminals.ErrorEmpty(),
+            new RecoveryRule(Terminals.ErrorEmpty()),
         };
 
         _parser.Rules["ExpRequired"] = new Rule[]
@@ -33,7 +33,7 @@ public partial class SeparatedListTests
             Terminals.Ident(),
             new Seq([Terminals.Ident(), new Literal("("), new SeparatedList(new Ref("ExpRequired"), new Literal(","), Kind: "ArgsRestRequired", EndBehavior: SeparatorEndBehavior.Required), closingBracket], "CallRequired"),
 
-            Terminals.ErrorEmpty(),
+            new RecoveryRule(Terminals.ErrorEmpty()),
         };
 
         _parser.Rules["ExpForbidden"] = new Rule[]
@@ -42,7 +42,7 @@ public partial class SeparatedListTests
             Terminals.Ident(),
             new Seq([Terminals.Ident(), new Literal("("), new SeparatedList(new Ref("ExpForbidden"), new Literal(","), Kind: "ArgsRestForbidden", EndBehavior: SeparatorEndBehavior.Forbidden), closingBracket], "CallForbidden"),
 
-            Terminals.ErrorEmpty(),
+            new RecoveryRule(Terminals.ErrorEmpty()),
         };
 
         _parser.BuildTdoppRules();

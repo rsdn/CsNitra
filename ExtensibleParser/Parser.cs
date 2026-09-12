@@ -517,7 +517,8 @@ public class Parser(Terminal trivia, Log? log = null)
         for (var altIdx = 0; altIdx < prefixRules.Length; altIdx++)
         {
             var prefix = prefixRules[altIdx];
-            _stackFrames.Add(new StackFrame(ruleName, minPrecedence, new RuleFrameLocation(altIdx), null, null));
+            var altOptions = prefix is RecoveryRule rr ? rr.Options : null;
+            _stackFrames.Add(new StackFrame(ruleName, minPrecedence, new RuleFrameLocation(altIdx), null, altOptions));
             try
             {
                 Log($"  Trying prefix: {prefix}");
@@ -565,11 +566,12 @@ public class Parser(Terminal trivia, Log? log = null)
                         maxPos = postNewPos;
                         bestResult = postfixResult;
                     }
-                    else if (postNewPos == maxPos && bestResult == null && isRecoveryPos)
+                    else if (postNewPos == maxPos && bestResult == null && isRecoveryPos
+                             && prefix is RecoveryRule rc && (rc.Options is null || rc.Options.Recoverable))
                     {
-                        // Это if нужен для обработки Error-правил восстанавливающих парсинг в случае недописанных конструкаций
-                        // (в которых пропущен терминал). Например, в случае пропущенного подврыважния в "1 + ".
-                        // Далее сдесь можно сделать логику разрешения неоднозначностей и более качественная работа с Error-правилами.
+                        // ε-совпадение Error-правила (пропущенный операнд/аргумент): нулевой прогресс принимается,
+                        // но ТОЛЬКО если альтернатива аннотирована RecoveryRule (Recoverable, по умолчанию true).
+                        // Триггер — аннотация автора, а не глобальный флаг isRecoveryPos (замена хака 0.3B, §1.5).
                         maxPos = postNewPos;
                         bestResult = postfixResult;
                     }
@@ -751,6 +753,7 @@ public class Parser(Terminal trivia, Log? log = null)
             Ref r => ParseRule(r.RuleName, 0, startPos, input),
             Optional o => ParseOptional(o, startPos, input),
             OftenMissed o => ParseOftenMissed(o, startPos, input),
+            RecoveryRule r => ParseAlternative(r.Inner, startPos, input),
             AndPredicate a => ParseAndPredicate(a, startPos, input),
             NotPredicate n => ParseNotPredicate(n, startPos, input),
             SeparatedList sl => ParseSeparatedList(sl, startPos, input),
