@@ -66,8 +66,9 @@ public class Parser(Terminal trivia, Log? log = null)
     private int _parseDepth;
     private int _maxParseDepth = 4096;
 
-    // Лог патчей текущего кандидата (MemoPatch): заполняется хуками, пока активен, — основа отката.
-    private List<Recovery.MemoPatch>? _patchLog;
+    // Логи патчей текущего кандидата (memo и инъекции): заполняются хуками, пока активны, — основа отката.
+    private List<MemoPatch>? _memoPatchLog;
+    private List<InjectionPatch>? _injectionPatchLog;
 
     // Хук для тестов/engine: инжекции в Фазе 0 никто не порождает, слой активен с Фазы 1.
     public void AddInjection(Terminal terminal, int pos, Injection injection) => _injections[(pos, terminal)] = injection;
@@ -77,7 +78,7 @@ public class Parser(Terminal trivia, Log? log = null)
     public void ApplyInjection(Terminal terminal, int pos, Injection injection)
     {
         var key = (pos, terminal);
-        RecordInjection(key, injection);
+        RecordInjection(key);
         _injections[key] = injection;
     }
 
@@ -95,7 +96,7 @@ public class Parser(Terminal trivia, Log? log = null)
     public void SetMemo(string rule, int pos, int precedence, Result value)
     {
         var key = (pos, rule, precedence);
-        RecordMemo(key, value);
+        RecordMemo(key);
         _memo[key] = value;
     }
 
@@ -111,7 +112,7 @@ public class Parser(Terminal trivia, Log? log = null)
     {
         foreach (var key in _memo.Keys.Where(k => k.pos == pos && k.rule == rule).ToList())
         {
-            RecordMemo(key, value);
+            RecordMemo(key);
             _memo[key] = value;
         }
     }
@@ -126,41 +127,46 @@ public class Parser(Terminal trivia, Log? log = null)
 
     // ============ MemoPatch-лог (1.3): применение патчей кандидата + Hygiene атомарно, откат по логy ============
 
-    private void BeginPatchLog() => _patchLog = new List<Recovery.MemoPatch>();
-
-    private List<Recovery.MemoPatch> EndPatchLog()
+    private void BeginPatchLog()
     {
-        var log = _patchLog!;
-        _patchLog = null;
+        _memoPatchLog = new List<MemoPatch>();
+        _injectionPatchLog = new List<InjectionPatch>();
+    }
+
+    private PatchLog EndPatchLog()
+    {
+        var log = new PatchLog(_memoPatchLog!, _injectionPatchLog!);
+        _memoPatchLog = null;
+        _injectionPatchLog = null;
         return log;
     }
 
-    private void RecordMemo((int pos, string rule, int precedence) key, Result value)
+    private void RecordMemo((int pos, string rule, int precedence) key)
     {
-        if (_patchLog is not { } log)
+        if (_memoPatchLog is not { } log)
             return;
         var had = _memo.TryGetValue(key, out var old);
-        log.Add(new Recovery.MemoPatch(_memo, key, had ? (object)old : null, value));
+        log.Add(new MemoPatch(key, had ? old : null));
     }
 
     private void RecordMemoRemove((int pos, string rule, int precedence) key)
     {
-        if (_patchLog is not { } log)
+        if (_memoPatchLog is not { } log)
             return;
-        _memo.TryGetValue(key, out var old);
-        log.Add(new Recovery.MemoPatch(_memo, key, old, null));
+        var had = _memo.TryGetValue(key, out var old);
+        log.Add(new MemoPatch(key, had ? old : null));
     }
 
-    private void RecordInjection((int pos, Terminal Terminal) key, Recovery.Injection value)
+    private void RecordInjection((int pos, Terminal Terminal) key)
     {
-        if (_patchLog is not { } log)
+        if (_injectionPatchLog is not { } log)
             return;
         var had = _injections.TryGetValue(key, out var old);
-        log.Add(new Recovery.MemoPatch(_injections, key, had ? (object)old : null, value));
+        log.Add(new InjectionPatch(key, had ? old : null));
     }
 
     // Патчи кандидата + Hygiene в одном атомарном логy (всё для отката). Интеграция цикла (1.3).
-    public List<Recovery.MemoPatch> ApplyPatches(Recovery.RecoveryCandidate candidate, int e, Recovery.FailureSnapshot? snapshot, string startRule, int currentStartPos)
+    public PatchLog ApplyPatches(RecoveryCandidate candidate, int e, FailureSnapshot? snapshot, string startRule, int currentStartPos)
     {
         BeginPatchLog();
         candidate.Apply(this);
@@ -169,7 +175,7 @@ public class Parser(Terminal trivia, Log? log = null)
     }
 
     // Hygiene в отдельном логy (для тестов): см. HygieneCore.
-    public List<Recovery.MemoPatch> Hygiene(int e, Recovery.FailureSnapshot? snapshot, string startRule, int currentStartPos)
+    public PatchLog Hygiene(int e, FailureSnapshot? snapshot, string startRule, int currentStartPos)
     {
         BeginPatchLog();
         HygieneCore(e, snapshot, startRule, currentStartPos);
@@ -184,45 +190,38 @@ public class Parser(Terminal trivia, Log? log = null)
     //  (b) start-правило на currentStartPos ЛЮБОГО типа (Partial/Success < EOF): устаревший верхнеуровневый результат
     //      первого прохода — иначе re-парсинг читает его и не переиспытывает start-правило (тесты SeparatedList/ErrorEmpty).
     // (a) Failure на e для правил снимка — подмножество (c).
-    // I2 нарушается только для Failure в префиксе [currentStartPos, e) и для записи start-правила — не удаётся избежать. Требует активный _patchLog.
-    private void HygieneCore(int e, Recovery.FailureSnapshot? snapshot, string startRule, int currentStartPos)
+    // I2 нарушается только для Failure в префиксе [currentStartPos, e) и для записи start-правила — не удаётся избежать. Требует активный лог патчей.
+    private void HygieneCore(int e, FailureSnapshot? snapshot, string startRule, int currentStartPos)
     {
         foreach (var key in _memo.Keys.ToList())
             if (key.pos == currentStartPos && key.rule == startRule || _memo[key].ResultKind == Result.Kind.Failure)
                 RemoveMemo(key.rule, key.pos, key.precedence);
     }
 
-    // Откат логa (обратный порядок): возвращает OldValue (или удаляет ключ, если OldValue == null).
-    public void RollbackPatches(List<Recovery.MemoPatch> log)
+    // Откат логов (обратный порядок): возвращает OldValue (или удаляет ключ, если OldValue == null).
+    public void RollbackPatches(PatchLog log)
     {
-        for (var i = log.Count - 1; i >= 0; i--)
+        for (var i = log.Memo.Count - 1; i >= 0; i--)
         {
-            var patch = log[i];
-            if (patch.Table == _memo)
-            {
-                var key = (ValueTuple<int, string, int>)patch.Key;
-                if (patch.OldValue is { } old)
-                {
-                    _memo[key] = (Result)old;
-                }
-                else
-                {
-                    _memo.Remove(key);
-                }
-            }
+            var patch = log.Memo[i];
+            if (patch.OldValue is { } old)
+                _memo[patch.Key] = old;
             else
-            {
-                var key = (ValueTuple<int, Terminal>)patch.Key;
-                if (patch.OldValue is { } old)
-                    _injections[key] = (Recovery.Injection)old;
-                else
-                    _injections.Remove(key);
-            }
+                _memo.Remove(patch.Key);
+        }
+
+        for (var i = log.Injection.Count - 1; i >= 0; i--)
+        {
+            var patch = log.Injection[i];
+            if (patch.OldValue is { } old)
+                _injections[patch.Key] = old;
+            else
+                _injections.Remove(patch.Key);
         }
     }
 
     // С0 — неявный кандидат «ре-парсинг как есть»: без патчей (Hygiene применяется в ApplyPatches). Всегда первый.
-    private Recovery.RecoveryCandidate CandidateS0(int e, Recovery.FailureSnapshot? snapshot, string startRule) =>
+    private RecoveryCandidate CandidateS0(int e, FailureSnapshot? snapshot, string startRule) =>
         new("S0", 0, e, 0, startRule, null, _ => { }, _ => { }, []);
 
     public Terminal Trivia { get; private set; } = trivia;
@@ -407,7 +406,7 @@ public class Parser(Terminal trivia, Log? log = null)
             // спекулятивные parse'ы) и только если S0 не дал прогресса. Порядок проб/акцепта не меняется (S0 и так первый).
             var recoveredThisIteration = false;
 
-            bool TryCandidate(Recovery.RecoveryCandidate candidate)
+            bool TryCandidate(RecoveryCandidate candidate)
             {
                 if (attempts.Contains(candidate.Id))
                     return false; // уже пробовали на этой точке — следующий кандидат
@@ -606,13 +605,13 @@ public class Parser(Terminal trivia, Log? log = null)
 
         if (bestResult is { } result)
         {
-            RecordMemo(memoKey, result);
+            RecordMemo(memoKey);
             _memo[memoKey] = result;
             return result;
         }
 
         var failure = Result.Failure(maxFailPos);
-        RecordMemo(memoKey, failure);
+        RecordMemo(memoKey);
         _memo[memoKey] = failure;
         return failure;
     }

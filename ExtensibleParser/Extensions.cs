@@ -2,14 +2,14 @@
 
 namespace ExtensibleParser;
 
-public sealed record FatalError(string Input, int Pos, (int Line, int Col) Location, ExtensibleParser.Terminal[] Expecteds);
+public sealed record FatalError(string Input, int Pos, (int Line, int Col) Location, Terminal[] Expecteds);
 
 
 public static class Extensions
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
 #if NETSTANDARD2_0
-    public static string Str(this ReadOnlySpan<char> span) => span.ToString();
+    public static string Str(this CharsRef span) => span.ToString();
 #else
     public static ReadOnlySpan<char> Str(this ReadOnlySpan<char> span) => span;
 #endif

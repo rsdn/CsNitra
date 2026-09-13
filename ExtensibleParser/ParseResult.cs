@@ -11,7 +11,7 @@ public sealed record Success<T>(T Program) : ParseResult
     public override bool IsSuccess => true;
 }
 
-public sealed record Failed(ExtensibleParser.FatalError ErrorInfo) : ParseResult
+public sealed record Failed(FatalError ErrorInfo) : ParseResult
 {
     public override bool IsSuccess => false;
 }

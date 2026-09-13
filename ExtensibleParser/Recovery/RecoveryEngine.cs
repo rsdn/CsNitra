@@ -229,14 +229,14 @@ public static class RecoveryEngine
 
             var injOlds = CaptureInjections(parser, insertions);
             var apply = memoPatch is { } mp
-                ? (Action<Parser>)(p =>
+                ? (p =>
                 {
                     mp.Apply(p);
                     ApplyInjections(p, insertions);
                 })
                 : (Action<Parser>)(p => ApplyInjections(p, insertions));
             var rollback = memoPatch is { } mr
-                ? (Action<Parser>)(p =>
+                ? (p =>
                 {
                     RollbackInjections(p, injOlds);
                     mr.Rollback(p);
