@@ -59,3 +59,15 @@ MCP-инструменты для **поисков, чтения, compile-gate �
 3. SDK-предупреждение `Pinned SDK 8.0.100 was not found` (фактический 8.0.411 через rollforward) — шумит в каждом build-ответе, не блокирует.
 
 Вывод: MCP (targeted test + поиск/чтение/diagnostics + reload) — основной инструмент; полный прогон — bash. Новая грабо: **stale тестовый DLL после `run_dotnet_build`** → для надёжности TDD-цикл вести `run_specific_test` c `noBuild=false` (или bash-build перед `--no-build` прогоном).
+
+## 3.2 session
+
+Контекст: item 3.2 — **только документация** (`docs/RecoveryAuthorGuide.md`) + обновление чек-листа. Код не тронут, сборка/тесты не запускались (по ТЗ).
+
+- **MCP-инструменты не использовались.** Задача doc-only: чтение плана/чек-листа/кода и запись markdown. Для чтения использованы host-инструменты `read` / `grep` / `glob` / `edit` / `write` — их оказалось достаточно (никакой компиляции/тестов/семантического анализа не требовалось).
+- **Что сработало:** host `read` (план/чек-лист/код) + `grep` (точные diagnostic-сообщения в `RecoveryEngine.cs`, ранги `Rank:`, `Unrecovery`/`IsRecovery`) + `edit` (чек-лист, append usage). Быстро, без MCP-оверхеда.
+- **Чего не хватало / наблюдения:**
+  1. Для doc-задач, ссылающихся на точный API/константы/сообщения, host `grep`/`read` лучше MCP: нет загрузки workspace, нет риска stale-DLL/таймаутов. MCP-инструменты (`run_dotnet_build`/`run_specific_test`/semantic) здесь **ненужны** и только бы добавили overhead (workspace-load минуты, request-таймауты).
+  2. Точные diagnostic-строки и ранги кандидатов пришлось вытаскивать `grep`'ом по `RecoveryEngine.cs` (`Rank:` / `new RecoveryDiagnostic`) — MCP-semantic (`find_symbol_definition`) не дали бы больше, т.к. это строковые литералы, а не символы.
+  3. `Unrecovered` — в enum, но движком не порождается; задокументировано как «запасной» (grep по `ExtensibleParser` → 1 вхождение, только определение).
+- **Вывод:** для doc-only итераций держать правило «host read/grep/edit, без MCP»; MCP подключать только когда нужен compile-gate / целевой тест / семантика.
