@@ -341,6 +341,25 @@ public static class RecoveryEngine
             return len;
         }
 
+        // Оптимизация (2.4): дешёвые терминаторы первыми. Детерминированный порядок:
+        // стабильная сортировка по (категория стоимости, позиция в исходном агрегате GetTerminators):
+        //   0 — single-char Literal (StartsWith на 1 символ), 1 — остальные Literal, 2 — regex/остальные (DFA).
+        // Тир (равная категория) — по исходному порядку агрегата. Если несколько терминаторов совпадают
+        // в одной позиции — выигрывает дешевле; при равной категории — тот, что раньше в агрегате.
+        // EOF (совпадает только при s == input.Length) вынесен из сортировки и проверяется отдельно.
+        var ordered = new List<(Terminal T, int Cost, int OrigIdx)>(terminators.Length);
+        var hasEof = false;
+        for (var i = 0; i < terminators.Length; i++)
+        {
+            if (terminators[i] is EofTerminal)
+            {
+                hasEof = true;
+                continue;
+            }
+            ordered.Add((terminators[i], TerminatorCost(terminators[i]), i));
+        }
+        ordered.Sort((a, b) => a.Cost != b.Cost ? a.Cost.CompareTo(b.Cost) : a.OrigIdx.CompareTo(b.OrigIdx));
+
         var curly = 0;
         var paren = 0;
         var bracket = 0;
@@ -359,18 +378,8 @@ public static class RecoveryEngine
                 case ']': if (bracket > 0) bracket--; break;
             }
 
-            foreach (var t in terminators)
+            foreach (var (t, _, _) in ordered)
             {
-                if (t is EofTerminal)
-                {
-                    if (s == input.Length)
-                    {
-                        foundS = s;
-                        foundT = t;
-                    }
-                    break;
-                }
-
                 if (Match(t, s) < 0)
                     continue;
 
@@ -387,6 +396,12 @@ public static class RecoveryEngine
                 foundS = s;
                 foundT = t;
                 break;
+            }
+
+            if (foundS < 0 && hasEof && s == input.Length)
+            {
+                foundS = s;
+                foundT = EofTerminal.Instance;
             }
 
             if (foundS >= 0)
@@ -639,6 +654,15 @@ public static class RecoveryEngine
     private static string Preview(string input, int pos, int len = 5) => pos >= input.Length
         ? "«»"
         : $"«{input.AsSpan(pos, Math.Min(input.Length - pos, len)).Str()}»";
+
+    // Категория стоимости терминала для S3-скана (2.4): дешёвые первыми.
+    // 0 — single-char Literal (StartsWith на 1 символ), 1 — остальные Literal, 2 — regex/остальные (DFA-match).
+    private static int TerminatorCost(Terminal t) => t switch
+    {
+        Literal { Value.Length: 1 } => 0,
+        Literal => 1,
+        _ => 2,
+    };
 
     // Детерминированный порядок (§3.4.3): (Rank, Cost, Pos, RuleName, TerminalKind).
     private static List<RecoveryCandidate> Sort(List<RecoveryCandidate> candidates) =>

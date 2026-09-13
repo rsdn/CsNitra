@@ -44,6 +44,10 @@ public class Parser(Terminal trivia, Log? log = null)
     // Хук для тестов (паттерн LastSnapshot/LastPartial): число ленивых вызовов RecoveryEngine.Generate в последнем Parse.
     public int EngineGenerateCalls { get; private set; }
 
+    // Хук для тестов (2.4, бенчмарк): число проходов recovery-цикла (итераций) в последнем Parse.
+    // Сбрасывается в начале Parse, инкрементируется на каждой итерации цикла восстановления.
+    public int RecoveryPasses { get; private set; }
+
     // Лимиты цикла восстановления: предельное число итераций и число попыток кандидатов на одной точке восстановления.
     public int MaxRecoveryIterations { get; set; } = 64;
     public int MaxRecoveryAttemptsPerPosition { get; set; } = 3;
@@ -341,6 +345,7 @@ public class Parser(Terminal trivia, Log? log = null)
         _recoveryDiagnostics.Clear();
         _attempts.Clear();
         EngineGenerateCalls = 0;
+        RecoveryPasses = 0;
 
         if (input.Length > 0)
         {
@@ -359,6 +364,7 @@ public class Parser(Terminal trivia, Log? log = null)
 
         for (var iter = 0; ; iter++)
         {
+            RecoveryPasses++;
             Log($"Starting at {currentStartPos} iter={iter} parse for rule '{startRule}' _recoveryPoint={_recoveryPoint}");
             result = ParseRule(startRule, minPrecedence: 0, startPos: currentStartPos, input);
 
