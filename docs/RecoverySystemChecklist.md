@@ -10,7 +10,7 @@
 - `[x]` — выполнен и проверен
 - `[!]` — есть проблемы / отложено
 
-**Текущий пункт:** 3.1
+**Текущий пункт:** 3.0a
 
 ---
 
@@ -363,10 +363,34 @@
 
 ## Фаза 3. End-to-end и документация
 
-### 3.1 E2E-набор на MiniC
+> **Декомпозиция Фазы 3 на минимальные итерации:** `docs/RecoveryPhase3Decomposition.md`.
+> E2E (3.1) вскрыл 3 системных бага движка → вынесены в 3.0a–3.0c (чинятся до 3.1).
+
+### 3.0a Stack guard (без зависимостей) — **СНАЧАЛА**
 - [ ] Статус
+- **Что:** убрать stack overflow. Репро: `int foo() { return 0; } ###` + `MaxRecoveryAttemptsPerPosition=11` → детерминированный SO (3/3). Механизм: S3 (терминатор=EOF) абсорбер `###`→`int` в (24,int), e 24→27(EOF) принят, далее recovery в e=EOF → бесконечная рекурсия `ParseSeq→ParseSeq`. Фикс: guard глубины рекурсии (счётчик, при превышении → `Failure` ветки); доп: стоп цикла при `e==input.Length`.
+- **Верификация:** репро не крашится; полный ParserTests зелёный; сборка 0/0.
+- **Заметки:** пер-позиционный бюджет не ограничивает суммарную работу (каждое e — свежий `attempts`, Parser.cs:385).
+
+### 3.0b Бюджет: достижимость S2/S3/S5 (зависит от 3.0a)
+- [ ] Статус
+- **Что:** S1 генерирует до `|FollowSet|+2` кандидатов и выедает пер-позиционный бюджет раньше, чем дойдут S2/S3/S5 (true-EOF: S3 = 11-я попытка; between-функции: S2 = 11-я). Фикс (выбрать): (a) дефолт 3→16; (b) per-rank бюджет; (c) кап S1.
+- **Верификация:** true-EOF доходит до S3/S5 (Skipped/Trailing, без краша); between — до S2; полный ParserTests зелёный.
+- **Заметки:**
+
+### 3.0c Размещение абсорбера S2/S3/S5 (зависит от 3.0a, 3.0b)
+- [ ] Статус
+- **Что:** абсорбер мусора ставится на уровне цикла/Seq (мусор между/после итераций глотается целиком), а не слепо на упавшем терминале верхнего кадра. Сейчас `### `→`int` в (24,int) рассинхронизирует (Ident съедает настоящий `int`): between-функции даёт e 24→32→36, но `ErrorInfo=36` (до EOF не доходит).
+- **Верификация:** true-EOF → Success@EOF + Skipped/Trailing + абсорбер в дереве; between → Success@EOF (bar целиком); полный ParserTests зелёный (AnchorResync/CandidateGeneration).
+- **Заметки:**
+
+### 3.1 E2E-набор на MiniC
+- [~] Статус — 5/11 тестов в `MiniCEndToEndTests.cs`: 1–4 зелёные, 5 (`Test_TrailingGarbage`) `[Ignore]` (ждёт 3.0a/3.0c), 6–11 не написаны.
 - **Что:** `Test_MissingClosingBrace_Function`, `Test_MissingSemicolon_MultipleStatements`, `Test_UnexpectedToken_Expression`, `Test_NestedErrors_MultipleBlocks`, `Test_TrailingGarbage`, `Test_Recovery_DoesNotBreakCorrectCode` (I6), `Test_EverythingRepresentedInTree` (I4), `Test_ParsingReachesEndOfString`, `Test_Deterministic` (I5), `Test_Anchor_Resync_NextMember` (T1), `Test_DoubleError_CanStart` (T2).
 - **Заметки:**
+  - 1–4: отклонения от ТЗ задокументированы в комментариях (OftenMissed `;`/`}` → S0 без диагностики; S1 только для plain-Literal).
+  - `Test_TrailingGarbage` переписать на true-EOF после 3.0a+3.0b+3.0c.
+  - 6–11: T1/T2 требуют авторских аннотаций (RecoveryRule: Terminators/Anchors/CanStart) в MiniC-грамматике.
 
 ### 3.2 Документация
 - [ ] Статус
@@ -375,7 +399,7 @@
 
 ### 3.3 Опционально
 - [ ] Статус
-- **Что:** `ParseWithStackGuard`-аналог; `RecoveryEnabled=false` (полное отключение → однопассовый режим).
+- **Что:** `RecoveryEnabled=false` (полное отключение → однопассовый режим). `ParseWithStackGuard`-аналог вынесен в 3.0a (стал обязательным — краш).
 - **Заметки:**
 
 ### 3.4 Обновить чек-лист + пометить v1
