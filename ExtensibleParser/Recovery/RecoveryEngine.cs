@@ -1,5 +1,7 @@
 namespace ExtensibleParser.Recovery;
 
+#if RECOVERY
+
 /// <summary>
 /// Чистый генератор кандидатов восстановления (§3.4): по точке восстановления e и снимку
 /// порождает детерминированный отсортированный список патчей (S1..S5).
@@ -721,3 +723,5 @@ public static class RecoveryEngine
             .ThenBy(c => c.TerminalKind ?? string.Empty, StringComparer.Ordinal)
             .ToList();
 }
+
+#endif

@@ -9,9 +9,6 @@
     <Import_RootNamespace>ExtensibleParser</Import_RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="$(MSBuildThisFileDirectory)/**/*.cs" Exclude="$(MSBuildThisFileDirectory)Parser.Recovery.cs;$(MSBuildThisFileDirectory)Parser.NoRecovery.cs" />
-    <!-- Варианты recovery-хуков: по умолчанию (EnableRecovery не задан) — recovery. -->
-    <Compile Include="$(MSBuildThisFileDirectory)Parser.Recovery.cs" Condition="'$(EnableRecovery)' != 'false'" />
-    <Compile Include="$(MSBuildThisFileDirectory)Parser.NoRecovery.cs" Condition="'$(EnableRecovery)' == 'false'" />
+    <Compile Include="$(MSBuildThisFileDirectory)/**/*.cs" />
   </ItemGroup>
 </Project>

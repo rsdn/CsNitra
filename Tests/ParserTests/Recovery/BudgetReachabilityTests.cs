@@ -1,8 +1,9 @@
-﻿#nullable enable
+#nullable enable
 
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
+#if RECOVERY
 namespace MiniC;
 
 // 3.0b: достижимость S2/S3/S5 при ЯВНО выставленном бюджете (16).
@@ -146,3 +147,4 @@ public sealed class BudgetReachabilityTests
     private static string Describe(IReadOnlyList<RecoveryDiagnostic> diags)
         => string.Join("; ", diags.Select(d => $"{d.Kind} [{d.StartPos}..{d.EndPos}) term={d.Terminal?.Kind ?? "-"} rule={d.RuleName ?? "-"}"));
 }
+#endif

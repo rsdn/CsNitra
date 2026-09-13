@@ -3,6 +3,7 @@
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
+#if RECOVERY
 namespace Recovery;
 
 [TestClass]
@@ -351,3 +352,4 @@ public class ParseContextTests
         Assert.AreEqual(partial1, partial2);
     }
 }
+#endif

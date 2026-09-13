@@ -3,6 +3,7 @@
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
+#if RECOVERY
 namespace Recovery;
 
 [TestClass]
@@ -121,3 +122,5 @@ public sealed class TerminalCacheTests
         Assert.IsTrue(ReferenceEquals(eof, EofTerminal.Instance));
     }
 }
+
+#endif

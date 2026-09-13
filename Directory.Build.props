@@ -3,4 +3,11 @@
     <BaseOutputPath>$(MSBuildThisFileDirectory)bin\</BaseOutputPath>
     <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
   </PropertyGroup>
+  <!-- По умолчанию RECOVERY определён (реcovery включён); -p:EnableRecovery=false выключает его. -->
+  <PropertyGroup>
+    <EnableRecovery Condition="'$(EnableRecovery)' == ''">true</EnableRecovery>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(EnableRecovery)' == 'true'">
+    <DefineConstants>$(DefineConstants);RECOVERY</DefineConstants>
+  </PropertyGroup>
 </Project>

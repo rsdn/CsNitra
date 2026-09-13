@@ -2,6 +2,8 @@
 
 namespace ExtensibleParser;
 
+#if !RECOVERY
+
 // Вариант без recovery (EnableRecovery=false): хуки тривиальны (константы/no-op),
 // чтобы в Release JIT инлайнил и свернул их в ноль. Состояния recovery-подсистемы нет.
 public partial class Parser
@@ -17,3 +19,5 @@ public partial class Parser
     private partial Result Recover(string input, string startRule, int currentStartPos) => ParseRule(startRule, minPrecedence: 0, startPos: currentStartPos, input);
     private partial Result Speculative(Func<Result> parse) => parse();
 }
+
+#endif

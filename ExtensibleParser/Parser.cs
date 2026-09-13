@@ -28,8 +28,6 @@ public partial class Parser(Terminal trivia, Log? log = null)
     private FollowSetCalculator? _followCalculator;
 
     private readonly List<StackFrame> _stackFrames = [];
-
-    public IReadOnlyList<StackFrame> CurrentStackFrames => _stackFrames;
     private HashSet<Terminal> _expected = [];
 
     // 3.0a: guard глубины рекурсивного парсинга — предохранитель от stack overflow во время recovery re-parse.
@@ -38,61 +36,6 @@ public partial class Parser(Terminal trivia, Log? log = null)
     // поэтому у них лимит не обнуляется; Parse уточняет его как функцию длины входа.
     private int _parseDepth;
     private int _maxParseDepth = 4096;
-
-    // Хук для тестов/engine: инжекции в Фазе 0 никто не порождает, слой активен с Фазы 1.
-    public void AddInjection(Terminal terminal, int pos, Injection injection) => _injections[(pos, terminal)] = injection;
-
-    // Хуки engine (1.2): применение/откат инъекций с сохранением старого значения.
-    public IReadOnlyDictionary<(int Pos, Terminal Terminal), Injection> Injections => _injections;
-    public void ApplyInjection(Terminal terminal, int pos, Injection injection)
-    {
-        var key = (pos, terminal);
-        OnInjectionApplied(key);
-        _injections[key] = injection;
-    }
-
-    // oldValue == null — ключа не было (удалить), иначе — вернуть старое значение.
-    public void RollbackInjection(Terminal terminal, int pos, Injection? oldValue)
-    {
-        if (oldValue is { } old)
-            _injections[(pos, terminal)] = old;
-        else
-            _injections.Remove((pos, terminal));
-    }
-
-    // Хуки engine (1.2): доступ к memo для патчей/инспекции.
-    public IReadOnlyDictionary<(int pos, string rule, int precedence), Result> Memo => _memo;
-    public void SetMemo(string rule, int pos, int precedence, Result value)
-    {
-        var key = (pos, rule, precedence);
-        OnMemoWritten(key);
-        _memo[key] = value;
-    }
-
-    public void RemoveMemo(string rule, int pos, int precedence)
-    {
-        var key = (pos, rule, precedence);
-        OnMemoRemoved(key);
-        _memo.Remove(key);
-    }
-
-    // Патч для всех прецедентов (e, rule, prec'), присутствующих в memo (TDOPP, §3.4 S3).
-    public void PatchMemo(string rule, int pos, Result value)
-    {
-        foreach (var key in _memo.Keys.Where(k => k.pos == pos && k.rule == rule).ToList())
-        {
-            OnMemoWritten(key);
-            _memo[key] = value;
-        }
-    }
-
-    public FollowSetCalculator? FollowCalculator => _followCalculator;
-    public Terminal[] GetTerminators(IReadOnlyList<StackFrame> stack) =>
-        _followCalculator?.GetTerminators(stack) ?? [EofTerminal.Instance];
-
-    // Одноразовый parse правила без recovery-цикла (спекулятивная валидация engine'а, §3.4 S2).
-    public Result ParseRuleOnce(string ruleName, int minPrecedence, int startPos, string input) =>
-        ParseRule(ruleName, minPrecedence, startPos, input);
 
     public Terminal Trivia { get; private set; } = trivia;
     public Log? Logger { get; set; } = log;

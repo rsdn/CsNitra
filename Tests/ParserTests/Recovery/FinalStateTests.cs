@@ -1,8 +1,9 @@
-﻿#nullable enable
+#nullable enable
 
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
+#if RECOVERY
 namespace Recovery;
 
 [TerminalMatcher]
@@ -186,3 +187,4 @@ public sealed class FinalStateTests
         Assert.AreEqual(0, parser.RecoveryDiagnostics.Count);
     }
 }
+#endif

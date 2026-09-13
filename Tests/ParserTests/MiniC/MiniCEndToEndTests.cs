@@ -1,9 +1,10 @@
-﻿#nullable enable
+#nullable enable
 
 using System.Text;
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
+#if RECOVERY
 namespace MiniC;
 
 // E2E-набор на MiniC (чек-лист 3.1, план v2 §4 Фаза 3 + §3.7 инварианты I4/I5/I6 + §3.9 аннотации).
@@ -404,3 +405,4 @@ public sealed class MiniCEndToEndTests
         }
     }
 }
+#endif

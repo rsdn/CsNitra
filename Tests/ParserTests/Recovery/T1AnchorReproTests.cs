@@ -1,8 +1,9 @@
-﻿#nullable enable
+#nullable enable
 
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
+#if RECOVERY
 namespace Recovery;
 
 // 3.1.2b: E2E-тесты author-аннотаций Anchors (T1) и CanStart (T2).
@@ -92,3 +93,4 @@ public sealed class T1AnchorReproTests
             $"Expected ≥1 Skipped 'resync point' diagnostic (S2 T2 resync used, not S0/S3), got: {diag}");
     }
 }
+#endif

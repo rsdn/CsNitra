@@ -2,6 +2,7 @@
 
 using ExtensibleParser;
 
+#if RECOVERY
 namespace Recovery;
 
 [TerminalMatcher]
@@ -163,3 +164,5 @@ public sealed class IterativeRecoveryTests
         Assert.IsTrue(_parser.EngineGenerateCalls >= 1, $"Expected EngineGenerateCalls >= 1, got {_parser.EngineGenerateCalls}");
     }
 }
+
+#endif

@@ -1,9 +1,10 @@
-﻿#nullable enable
+#nullable enable
 
 using System.Text;
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
+#if RECOVERY
 namespace MiniC;
 
 // 3.0c: размещение абсорбера S2/S3 на уровне цикла/Seq.
@@ -186,3 +187,4 @@ public sealed class AbsorberPlacementTests
         }
     }
 }
+#endif

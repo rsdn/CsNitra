@@ -1,9 +1,10 @@
-﻿#nullable enable
+#nullable enable
 
 using System.Diagnostics;
 using System.Text;
 using ExtensibleParser;
 
+#if RECOVERY
 namespace Recovery;
 
 [TerminalMatcher]
@@ -150,3 +151,4 @@ public sealed class RecoveryPerfTests
             $"memo(N=10)={m10.MemoCount} not < 3*memo(N=5)={3 * m5.MemoCount}\n{report}");
     }
 }
+#endif
