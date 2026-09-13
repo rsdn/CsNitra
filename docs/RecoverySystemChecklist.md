@@ -10,7 +10,7 @@
 - `[x]` — выполнен и проверен
 - `[!]` — есть проблемы / отложено
 
-**Текущий пункт:** 3.0a
+**Текущий пункт:** 3.0c
 
 ---
 
@@ -383,10 +383,17 @@
   - Пер-позиционный бюджет не ограничивает суммарную работу (каждое e — свежий `attempts`, Parser.cs:385) — остаётся актуальным для 3.0b.
 
 ### 3.0b Бюджет: достижимость S2/S3/S5 (зависит от 3.0a)
-- [ ] Статус
-- **Что:** S1 генерирует до `|FollowSet|+2` кандидатов и выедает пер-позиционный бюджет раньше, чем дойдут S2/S3/S5 (true-EOF: S3 = 11-я попытка; between-функции: S2 = 11-я). Фикс (выбрать): (a) дефолт 3→16; (b) per-rank бюджет; (c) кап S1.
-- **Верификация:** true-EOF доходит до S3/S5 (Skipped/Trailing, без краша); between — до S2; полный ParserTests зелёный.
+- [x] Статус — выполнен, проверен (BudgetReachabilityTests 2/2; полный ParserTests 285 passed / 0 failed / 3 skipped; сборка 0/0)
+- **Что:** S1 генерирует до `|FollowSet|+2` ≈ 9-12 кандидатов и с дефолтом 3 (и даже 10) выедает пер-позиционный бюджет раньше, чем дойдут S2/S3/S5 (true-EOF: S3 = 11-я попытка, S5 = 13-я; between-функции: S2 = 11-я). Решение: **дефолт остаётся 3 (предохранитель по плану); глубокие сценарии ставят бюджет ЯВНО.**
+- **Верификация:** true-EOF (бюджет 16) доходит до S3/S5 (Skipped); between (бюджет 16) — до S2 (Skipped); полный ParserTests 285/0/3.
 - **Заметки:**
+  - **Почему НЕ глобальный подъём дефолта (проверено):** первый вариант — дефолт 3→16 — **сломал 4 существующих теста**: `RequiredCallWith1/2/3Args` (SeparatedList: `ErrorInfo.Expecteds` стал 3 терминала вместо 1 — `_expected` загрязняется принятыми recovery-кандидатами) и `Test_Recoverable_False_Disables_Epsilon_Acceptance` (S1-кандидаты из FailedTerminal/Expected/FollowSet — НЕ опции кадра, не гейтятся Recoverable=false — восстановили операнд вопреки opt-out). Единственного глобального бюджета, работающего и для E2E (нужен ≥13), и для существующих тестов (нужен 3), не существует. Откатил дефолт к 3.
+  - **Решение:** дефолт `MaxRecoveryAttemptsPerPosition = 3` (Parser.cs) — «предохранитель» по плану (§3.1, I3). Глубокие сценарии (E2E: resync/panic/trailing) ставят бюджет ЯВНО: `parser.MaxRecoveryAttemptsPerPosition = 16`. 3.0a гарантирует, что подъём бюджета не даёт краша.
+  - **Тесты:** `Tests/ParserTests/Recovery/BudgetReachabilityTests.cs` (MiniC-грамматика-копия, `namespace MiniC`), 2 теста с **явным** бюджетом 16:
+    - `Test_BetweenFunctions_S2Resync_Reachable`: `int foo() { return 0; } ### int bar() { return 1; }` → ассерт `RecoveryDiagnostics` содержит `RecoveryKind.Skipped` (S2 resync принят, прогресс e 24→32→36).
+    - `Test_TrueEof_S3S5_Reachable`: `int foo() { return 0; } ###` → ассерт `RecoveryDiagnostics` содержит `RecoveryKind.Skipped` (S3 принят, прогресс e 24→27=EOF). (`RecoveryKind.Trailing` в enum нет — S5 даёт `Skipped`; полный Success@EOF — задача 3.0c.)
+  - **Результаты:** 2/2 зелёные; полный `ParserTests` — **285 passed / 0 failed / 3 skipped** (база 282 + StackGuardTests 1 + BudgetReachabilityTests 2); сборка `Nitra.sln` — 0/0.
+  - **Таймауты:** ни один не поднят выше 10с; новые тесты <1с.
 
 ### 3.0c Размещение абсорбера S2/S3/S5 (зависит от 3.0a, 3.0b)
 - [ ] Статус

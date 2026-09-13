@@ -50,6 +50,12 @@ public class Parser(Terminal trivia, Log? log = null)
 
     // Лимиты цикла восстановления: предельное число итераций и число попыток кандидатов на одной точке восстановления.
     public int MaxRecoveryIterations { get; set; } = 64;
+
+    // Дефолт 3 — «предохранитель» по плану (§3.1, I3): ограничивает число попыток кандидатов на одной
+    // точке восстановления. Глубокие сценарии (E2E: resync/panic/trailing, ранги S2/S3/S5 = 11-я+ попытка)
+    // ставят бюджет ЯВНО (parser.MaxRecoveryAttemptsPerPosition = 16) — глобальный подъём дефолта ломает
+    // консервативное поведение существующих тестов (загрязнение _expected / восстановление вопреки
+    // Recoverable=false), проверено (3.0b). 3.0a гарантирует, что подъём бюджета не даёт краша.
     public int MaxRecoveryAttemptsPerPosition { get; set; } = 3;
     private readonly Dictionary<int, HashSet<string>> _attempts = new();
 
