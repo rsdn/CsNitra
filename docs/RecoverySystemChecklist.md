@@ -10,7 +10,7 @@
 - `[x]` — выполнен и проверен
 - `[!]` — есть проблемы / отложено
 
-**Текущий пункт:** 3.1 (3.0a–3.0c выполнены)
+**Текущий пункт:** 3.2 (Фаза 3 E2E 3.1 завершена: 11/11)
 
 ---
 
@@ -418,14 +418,19 @@
 - **Верификация (основной агент):** при проверке обнаружен и исправлен реальный баг сборки, который субагент не поймал (инкрементальная MCP-сборка не пере-оценила csproj): в `Tests/ParserTests/ParserTests.csproj` была лишняя `<Compile Include="Recovery\AbsorberPlacementTests.cs" />` → `NETSDK1022: Duplicate 'Compile' items` (SDK уже авто-включает .cs). Строку убрал; чистая сборка (`--no-incremental`) 0/0, полный ParserTests 287/0/3 подтверждены.
 
 ### 3.1 E2E-набор на MiniC
-- [~] Статус — 10/11 тестов в `MiniCEndToEndTests.cs`: 1–9 зелёные, 10–11 (T1/T2) не написаны.
+- [x] Статус — 11/11: 1–9 в `MiniCEndToEndTests.cs` (MiniC-грамматика), 10–11 (T1/T2) в `Tests/ParserTests/Recovery/T1AnchorReproTests.cs` (миним. грамматика). Все зелёные.
 - **Что:** `Test_MissingClosingBrace_Function`, `Test_MissingSemicolon_MultipleStatements`, `Test_UnexpectedToken_Expression`, `Test_NestedErrors_MultipleBlocks`, `Test_TrailingGarbage`, `Test_Recovery_DoesNotBreakCorrectCode` (I6), `Test_EverythingRepresentedInTree` (I4), `Test_ParsingReachesEndOfString`, `Test_Deterministic` (I5), `Test_Anchor_Resync_NextMember` (T1), `Test_DoubleError_CanStart` (T2).
 - **Заметки:**
   - 1–4: отклонения от ТЗ задокументированы в комментариях (OftenMissed `;`/`}` → S0 без диагностики; S1 только для plain-Literal).
   - **3.1.1 `Test_TrailingGarbage` — выполнен** (true-EOF `int foo() { return 0; } ###`, бюджет 16): Success@EOF + `ErrorInfo == null` + ≥1 `Skipped`-диагностика + ≥1 абсорбер-узел. `[Ignore]` снят; прохождение — результат 3.0a–3.0c.
   - **3.1.2a тесты 6–9 — выполнены** (инварианты §3.7): (6) `Test_Recovery_DoesNotBreakCorrectCode` (I6) — корректный код → Success@EOF, `ErrorInfo == null`, 0 recovery-узлов (recovery латентен); (7) `Test_EverythingRepresentedInTree` (I4) — терминальные спаны `[StartPos, EndPos)` точно тайлом покрывают `[0, len)` (без дыр/наложений); (8) `Test_ParsingReachesEndOfString` — восстановление до `end == input.Length`; (9) `Test_Deterministic` (I5) — два свежих идентичных парсера → идентичное дерево (Kind/StartPos/EndPos/IsRecovery) и идентичная диагностика.
     - **Субтильность I4:** тайлинг по `[StartPos, EndPos)`, а НЕ `[StartPos, StartPos+ContentLength)`: хвостовой trivia поглощается в `EndPos` следующего терминала (`Parser.ParseTerminal`), отдельным узлом не представляется — `ContentLength < EndPos-StartPos`, и спаны по `ContentLength` дали бы дыры на trivia.
-  - 10–11 (T1/T2): требуют авторских аннотаций (RecoveryRule: Terminators/Anchors/CanStart) в MiniC-грамматике.
+  - **3.1.2b тесты 10–11 — выполнены** в `Tests/ParserTests/Recovery/T1AnchorReproTests.cs` (миним. грамматика без OftenMissed, `namespace Recovery`): (10) `Test_T1_AuthorAnchor_ResyncToNextItem` — авторский `Anchors` ведёт S2-resync к следующему члену (вход `int a; ### int b;` → Success@EOF + «resync point»); (11) `Test_T2_AuthorCanStart_DoubleError` — мягкий `CanStart` (ItemStart) даёт прогресс, когда полный якорь не валиден (вход `int a; ### int b` → Success@EOF + «resync point»). Миним. грамматика без OftenMissed — чтобы S0 не перехватывал (см. finding ниже).
+  - **3.1.2b — предварительное исследование (без изменения кода), репро `Tests/ParserTests/Recovery/T1AnchorReproTests.cs`:**
+    - **Вывод: движок НЕ багованный.** Механизмы author `Anchors` (T1) и `CanStart` (T2) работают корректно. Доказано 3 пройденными репро: (1) миним. грамматика **без** OftenMissed + `Anchors` → S2-resync работает; (2) миним. без OftenMissed + `CanStart` → S2 T2 работает; (3) MiniC-like с OftenMissed, одиночная пропущенная `}` → S2-resync работает.
+    - **Единственный FAIL — не баг, а штатный приоритет S0 > S2.** S0 (OftenMissed re-parse, инлайн в парсере, высший приоритет) пробует ε-принять OftenMissed-терминал **до** кандидатов S1–S5 (ранги S1=0/1, S2=2, S3=3, S4=4, S5=5; `RecoveryEngine.Sort` = `OrderBy(Rank).ThenBy(Cost)…`). Если S0 делает прогресс — S2 (T1/T2) вообще не пробуется. В двойной ошибке (пропущенные `;`+`}`, оба OftenMissed) S0 чинит обе → Success@EOF **без** «resync point»-диагностики. Это корректно.
+    - **Следствие для тестов:** чтобы реально exercise T1/T2, нужны входы, которые S0/S1 **не могут** починить (миним. грамматика без OftenMissed-терминалов, либо мусор, не являющийся вставляемым терминалом). Оригинальные тесты 3.1.2b (MiniC-входы с OftenMissed `;`/`}`) были неверны: на них правильный механизм — S0, не S2.
+    - **⚠️ ТРЕБУЕТ ОТДЕЛЬНОГО АНАЛИЗА (будущее):** не должен ли T2 (`CanStart`) иметь приоритет над S0 в отдельных случаях (напр. следующая конструкция — известный якорь/CanStart)? Это дизайн-вопрос о качестве восстановления (S0 ε-принимает «лёгкий» OftenMissed, даже если resync к якорю дал бы чище дерево). Зафиксировано в плане §5 (риски). Не блокирует 3.1.2b.
 
 ### 3.2 Документация
 - [ ] Статус
