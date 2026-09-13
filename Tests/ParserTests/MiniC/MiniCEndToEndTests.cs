@@ -136,7 +136,7 @@ public sealed class MiniCEndToEndTests
 
         var recoveryNodes = CostCalculator.CountRecoveryNodes(node!);
         Assert.IsTrue(recoveryNodes >= 2,
-            $"Expected >= 2 recovery nodes (one per missing ;), got {recoveryNodes}. tree={DescribeTree((Node)node)}");
+            $"Expected >= 2 recovery nodes (one per missing ;), got {recoveryNodes}. tree={DescribeTree(node!)}");
     }
 
     // ============ Тест 3: неожиданный токен в выражении ============

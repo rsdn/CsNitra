@@ -53,6 +53,13 @@ public class Parser(Terminal trivia, Log? log = null)
     public int MaxRecoveryAttemptsPerPosition { get; set; } = 3;
     private readonly Dictionary<int, HashSet<string>> _attempts = new();
 
+    // 3.0a: guard глубины рекурсивного парсинга — предохранитель от stack overflow во время recovery re-parse.
+    // _parseDepth — текущая вложенность ParseAlternative (incr на входе, decr в finally); _maxParseDepth — лимит.
+    // Дефолт 4096 безопасен для спекулятивных парсеров, которые вызывают ParseRule напрямую (не через Parse),
+    // поэтому у них лимит не обнуляется; Parse уточняет его как функцию длины входа.
+    private int _parseDepth;
+    private int _maxParseDepth = 4096;
+
     // Лог патчей текущего кандидата (MemoPatch): заполняется хуками, пока активен, — основа отката.
     private List<Recovery.MemoPatch>? _patchLog;
 
@@ -346,6 +353,8 @@ public class Parser(Terminal trivia, Log? log = null)
         _attempts.Clear();
         EngineGenerateCalls = 0;
         RecoveryPasses = 0;
+        _parseDepth = 0;
+        _maxParseDepth = input.Length * 4 + 128;
 
         if (input.Length > 0)
         {
@@ -669,6 +678,15 @@ public class Parser(Terminal trivia, Log? log = null)
                 break;
             }
 
+            // Guard: нулевой прогресс (ε-постфикс/инъекция не сдвинули позицию) — иначе бесконечный цикл.
+            // На легитимных разборах постфикс-оператор всегда съедает ≥1 символ, guard не срабатывает;
+            // в recovery с ε-вставками останавливает зацикливание.
+            if (bestPos <= newPos)
+            {
+                Log($"ContinueFromPartialPostfix: цикл остановлен: нулевой прогресс at {newPos}", LogImportance.High);
+                break;
+            }
+
             Log($"Postfix at {newPos} [{bestNode}] is preferred. New pos: {bestPos}");
             currentResult = bestNode!;
             newPos = bestPos;
@@ -749,22 +767,41 @@ public class Parser(Terminal trivia, Log? log = null)
     private Result ParseAlternative(
         Rule rule,
         int startPos,
-        string input) => rule switch
+        string input)
+    {
+        // 3.0a: guard глубины рекурсии — единая точка: все рекурсивные правила (Seq/Ref/циклы/предикаты)
+        // проходят через ParseAlternative. При превышении лимита ветка абортится (Failure), чтобы не
+        // уронить процесс (stack overflow) во время recovery re-parse. На легитимных разборах не срабатывает.
+        _parseDepth++;
+        if (_parseDepth > _maxParseDepth)
         {
-            Terminal t => ParseTerminal(t, startPos, input),
-            Seq s => ParseSeq(s, startPos, input),
-            OneOrMany o => ParseOneOrMany(o, startPos, input),
-            ZeroOrMany z => ParseZeroOrMany(z, startPos, input),
-            ReqRef r => ParseRule(r.RuleName, r.Precedence, startPos, input),
-            Ref r => ParseRule(r.RuleName, 0, startPos, input),
-            Optional o => ParseOptional(o, startPos, input),
-            OftenMissed o => ParseOftenMissed(o, startPos, input),
-            RecoveryRule r => ParseAlternative(r.Inner, startPos, input),
-            AndPredicate a => ParseAndPredicate(a, startPos, input),
-            NotPredicate n => ParseNotPredicate(n, startPos, input),
-            SeparatedList sl => ParseSeparatedList(sl, startPos, input),
-            _ => throw new IndexOutOfRangeException($"Unsupported rule type: {rule.GetType().Name}: {rule}")
-        };
+            _parseDepth--;
+            return Result.Failure(startPos);
+        }
+        try
+        {
+            return rule switch
+            {
+                Terminal t => ParseTerminal(t, startPos, input),
+                Seq s => ParseSeq(s, startPos, input),
+                OneOrMany o => ParseOneOrMany(o, startPos, input),
+                ZeroOrMany z => ParseZeroOrMany(z, startPos, input),
+                ReqRef r => ParseRule(r.RuleName, r.Precedence, startPos, input),
+                Ref r => ParseRule(r.RuleName, 0, startPos, input),
+                Optional o => ParseOptional(o, startPos, input),
+                OftenMissed o => ParseOftenMissed(o, startPos, input),
+                RecoveryRule r => ParseAlternative(r.Inner, startPos, input),
+                AndPredicate a => ParseAndPredicate(a, startPos, input),
+                NotPredicate n => ParseNotPredicate(n, startPos, input),
+                SeparatedList sl => ParseSeparatedList(sl, startPos, input),
+                _ => throw new IndexOutOfRangeException($"Unsupported rule type: {rule.GetType().Name}: {rule}")
+            };
+        }
+        finally
+        {
+            _parseDepth--;
+        }
+    }
 
     private Result ParseAndPredicate(AndPredicate a, int startPos, string input)
     {
