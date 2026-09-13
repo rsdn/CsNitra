@@ -180,19 +180,16 @@ public sealed class MiniCEndToEndTests
             $"Expected >= 2 diagnostics (one per missing }}), got {diags.Count}. All: {Describe(diags)} tree={DescribeTree((Node)node)}");
     }
 
-    // ============ Тест 5: корректная программа + хвостовой мусор ============
-    // Игнорируется до фикса движка (см. docs/RecoveryPhase3Decomposition.md):
-    //  - true-EOF (`... ###`) + бюджет >= 11 → детерминированный STACK OVERFLOW (3.0a);
-    //  - мусор между функциями: S2 resync даёт прогресс, но до EOF не доходит — абсорбер
-    //    глотает `### ` как `int` и рассинхронизирует разбор (3.0c).
-    // После 3.0a+3.0b+3.0c переписать на true-EOF: Success@EOF + Skipped/Trailing + абсорбер.
+    // ============ Тест 5: корректная программа + хвостовой мусор до true-EOF ============
+    // Сценарий true-EOF trailing-garbage: корректная функция, затем `###` в самом конце
+    // (до EOF). Бюджет 16 (глубокий сценарий). После 3.0a (stack guard) + 3.0b (бюджет 3)
+    // + 3.0c (абсорбер на уровне цикла) — Success@EOF + Skipped-диагностика + абсорбер-узел.
 
     [TestMethod]
-    [Ignore("Engine bugs 3.0a/3.0c — см. docs/RecoveryPhase3Decomposition.md")]
     public void Test_TrailingGarbage()
     {
-        _parser.MaxRecoveryAttemptsPerPosition = 10;
-        var input = "int foo() { return 0; } ### int bar() { return 1; }";
+        _parser.MaxRecoveryAttemptsPerPosition = 16;
+        var input = "int foo() { return 0; } ###";
         var result = _parser.Parse(input, "Module", out _);
 
         Assert.IsTrue(result.TryGetSuccess(out var node, out var end) && end == input.Length,

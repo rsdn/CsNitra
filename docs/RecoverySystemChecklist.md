@@ -418,11 +418,11 @@
 - **Верификация (основной агент):** при проверке обнаружен и исправлен реальный баг сборки, который субагент не поймал (инкрементальная MCP-сборка не пере-оценила csproj): в `Tests/ParserTests/ParserTests.csproj` была лишняя `<Compile Include="Recovery\AbsorberPlacementTests.cs" />` → `NETSDK1022: Duplicate 'Compile' items` (SDK уже авто-включает .cs). Строку убрал; чистая сборка (`--no-incremental`) 0/0, полный ParserTests 287/0/3 подтверждены.
 
 ### 3.1 E2E-набор на MiniC
-- [~] Статус — 5/11 тестов в `MiniCEndToEndTests.cs`: 1–4 зелёные, 5 (`Test_TrailingGarbage`) `[Ignore]` (ждёт 3.0a/3.0c), 6–11 не написаны.
+- [~] Статус — 6/11 тестов в `MiniCEndToEndTests.cs`: 1–5 зелёные, 6–11 не написаны.
 - **Что:** `Test_MissingClosingBrace_Function`, `Test_MissingSemicolon_MultipleStatements`, `Test_UnexpectedToken_Expression`, `Test_NestedErrors_MultipleBlocks`, `Test_TrailingGarbage`, `Test_Recovery_DoesNotBreakCorrectCode` (I6), `Test_EverythingRepresentedInTree` (I4), `Test_ParsingReachesEndOfString`, `Test_Deterministic` (I5), `Test_Anchor_Resync_NextMember` (T1), `Test_DoubleError_CanStart` (T2).
 - **Заметки:**
   - 1–4: отклонения от ТЗ задокументированы в комментариях (OftenMissed `;`/`}` → S0 без диагностики; S1 только для plain-Literal).
-  - `Test_TrailingGarbage` переписать на true-EOF после 3.0a+3.0b+3.0c.
+  - **3.1.1 `Test_TrailingGarbage` — выполнен** (true-EOF `int foo() { return 0; } ###`, бюджет 16): Success@EOF + `ErrorInfo == null` + ≥1 `Skipped`-диагностика + ≥1 абсорбер-узел. `[Ignore]` снят; прохождение — результат 3.0a–3.0c.
   - 6–11: T1/T2 требуют авторских аннотаций (RecoveryRule: Terminators/Anchors/CanStart) в MiniC-грамматике.
 
 ### 3.2 Документация
