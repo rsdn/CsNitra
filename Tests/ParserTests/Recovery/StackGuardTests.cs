@@ -1,7 +1,6 @@
 ﻿#nullable enable
 
 using ExtensibleParser;
-using ExtensibleParser.Recovery;
 
 namespace MiniC;
 
@@ -100,6 +99,9 @@ public sealed class StackGuardTests
     }
 
     // ============ 3.0a: хвостовой мусор в истинном EOF + бюджет 11 → не краш (stack guard) ============
+    // После 3.0c (абсорбер на уровне цикла) хвостовой мусор в истинном EOF восстанавливается до
+    // Success@EOF (S3 panic-терминатор = EOF, абсорбер глотает хвост целиком). Главное для 3.0a —
+    // что Parse ВЕРНУЛ результат (Success@EOF), а не уронил test host (Stack overflow).
 
     [TestMethod]
     public void Test_TrailingGarbageAtEof_NoStackOverflow()
@@ -108,9 +110,8 @@ public sealed class StackGuardTests
         var input = "int foo() { return 0; } ###";
         var result = _parser.Parse(input, "Module", out _);
 
-        // До EOF не доехать (3.0b/3.0c ещё не сделаны) — результат невосстановленный, ErrorInfo не-null.
-        // Главное — что Parse ВЕРНУЛ результат, а не уронил test host (Stack overflow).
-        Assert.IsNotNull(_parser.ErrorInfo,
-            $"Expected unrecovered result (ErrorInfo != null), got Success@EOF. result={result.ResultKind}@{result.NewPos}/{result.MaxFailPos}");
+        Assert.IsTrue(result.TryGetSuccess(out _, out var end) && end == input.Length,
+            $"Expected Success@EOF (recovered, no crash), got {result.ResultKind}@{result.NewPos}/{result.MaxFailPos} ErrorInfo={_parser.ErrorInfo?.Pos}");
+        Assert.IsNull(_parser.ErrorInfo);
     }
 }

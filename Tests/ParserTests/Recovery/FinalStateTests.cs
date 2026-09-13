@@ -151,12 +151,15 @@ public sealed class FinalStateTests
 
     // 3. Невосстановлено: кандидаты исчерпаны, результат < EOF → ErrorInfo != null (FatalError),
     //    RecoveryDiagnostics содержит принятые восстановления.
+    // Вход: хвостовой мусор ### в истинном EOF. В этой грамматике (без Optional(Params), как в
+    // MiniC) recovery принимает panic-кандидаты (Skipped-диагностика) и продвигает e, но финальный
+    // результат не дотягивает до EOF → невосстановленное состояние (FatalError в конце мусора).
     [TestMethod]
     public void Test_Unrecovered_CandidatesExhausted_FatalError()
     {
         var parser = NewRecoveryParser();
         parser.MaxRecoveryAttemptsPerPosition = 10;
-        var input = "int f() { int x; } ### int g() { int y; }";
+        var input = "int f() { int x; } ###";
         var result = parser.Parse(input, "Module", out _);
 
         Assert.IsFalse(result.TryGetSuccess(out _, out var end) && end == input.Length, "Expected result not reaching EOF");

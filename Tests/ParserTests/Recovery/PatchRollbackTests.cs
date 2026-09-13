@@ -318,9 +318,8 @@ public sealed class PatchRollbackTests
     // 9. E2E: реальный recovery-путь применяет S2/S3-кандидатов (часть принята с прогрессом,
     //    часть отклонена без прогресса). Инвариант: в Memo НЕТ фантомных Success (Node == null,
     //    т.е. default(Result)) и все инъекции осмысленны (не Length==0 && NodeKind=="").
-    //    Вход: мусор ### между закрытым блоком и валидной функцией → S2 resync (принят, e 19→27),
-    //    S3 panic (принят, e 27→28), S1 вставка (принята, e 28→31); на e=31 S3/S4/S5 отклонены
-    //    без прогресса → recovery останавливается (ErrorInfo != null).
+    //    Вход: мусор ### между закрытым блоком и валидной функцией → S2 resync на уровне цикла
+    //    (абсорбер-патч memo Function в e, 3.0c) принят → recovery доходит до Success@EOF.
     [TestMethod]
     public void Test_Rejected_S2_S3_Candidates_Leave_No_Memo_Phantoms()
     {
@@ -331,11 +330,13 @@ public sealed class PatchRollbackTests
         var input = "int f() { int x; } ### int g() { int y; }";
         var result = parser.Parse(input, "Module", out _);
 
-        // Сценарий: recovery остановился, не достигнув EOF (финальные S2/S3-кандидаты отклонены без прогресса).
-        Assert.IsNotNull(parser.ErrorInfo, "Expected recovery to stop without reaching EOF");
-        // S2/S3-кандидаты применялись и принимались (Skipped-диагностика resync/panic).
+        // Сценарий (3.0c): S2 resync на уровне цикла принят → recovery доходит до Success@EOF.
+        Assert.IsTrue(result.TryGetSuccess(out _, out var end) && end == input.Length,
+            $"Expected Success@EOF, got {result.ResultKind}@{result.NewPos}/{result.MaxFailPos} ErrorInfo={parser.ErrorInfo?.Pos}");
+        Assert.IsNull(parser.ErrorInfo);
+        // S2-кандидат применялся и принимался (Skipped-диагностика resync).
         Assert.IsTrue(parser.RecoveryDiagnostics.Any(d => d.Kind == RecoveryKind.Skipped),
-            "Expected S2/S3 Skipped diagnostics (resync/panic candidates were applied)");
+            "Expected S2 Skipped diagnostic (resync candidate was applied)");
 
         // Инвариант: в Memo нет фантомного Success (Node == null, т.е. default(Result)).
         foreach (var kv in parser.Memo)

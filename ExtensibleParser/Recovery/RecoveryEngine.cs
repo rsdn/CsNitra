@@ -156,14 +156,25 @@ public static class RecoveryEngine
             var penalty = CostCalculator.TierPenalty(tier);
             var insertions = new List<(int Pos, Terminal T, Injection Injection)>();
             var diagnostics = new List<RecoveryDiagnostic>();
-            var failedElement = top.Location is SeqFrameLocation { ElementIndex: var topIdx }
+            var topIdx = top.Location is SeqFrameLocation { ElementIndex: var ti } ? ti : -1;
+            var failedElement = topIdx >= 0
                 ? FindSeq(parser, top.RuleName, topIdx)?.Elements[topIdx]
                 : null;
             (Action<Parser> Apply, Action<Parser> Rollback)? memoPatch = null;
 
             if (resyncPos > e)
             {
-                if (failedElement is Ref refRule)
+                // 3.0c: падение в НАЧАЛЕ итерации цикла (topIdx == 0), чьё правило совпадает с якорем
+                // resync → абсорбер на уровне цикла: патч memo правила в e, чтобы внешний цикл пропустил
+                // регион [e..resyncPos) целиком как одну итерацию и возобновился с чистого терминала.
+                if (topIdx == 0 && top.RuleName == anchorName)
+                {
+                    var absorber = new TerminalNode("Skipped", e, resyncPos, resyncPos - e, IsRecovery: true);
+                    var value = Result.Success(absorber, resyncPos, resyncPos);
+                    var memoOlds = CaptureMemo(parser, top.RuleName, e);
+                    memoPatch = (p => p.PatchMemo(top.RuleName, e, value), p => RollbackMemo(p, top.RuleName, e, memoOlds));
+                }
+                else if (failedElement is Ref refRule)
                 {
                     var absorber = new TerminalNode("Skipped", e, resyncPos, resyncPos - e, IsRecovery: true);
                     var value = Result.Success(absorber, resyncPos, resyncPos);
@@ -295,6 +306,21 @@ public static class RecoveryEngine
             }
     }
 
+    // Ближайший (от верхнего кадра) элемент цикла из снимка — цель абсорбера на уровне цикла (3.0c).
+    private static Ref? FindEnclosingLoopElement(Parser parser, FailureSnapshot snapshot)
+    {
+        for (var i = snapshot.Stack.Length - 1; i >= 0; i--)
+        {
+            var frame = snapshot.Stack[i];
+            if (frame.Location is not LoopFrameLocation)
+                continue;
+            var first = DeriveLoopAnchors(parser, frame.RuleName).FirstOrDefault();
+            if (first is { } r)
+                return r;
+        }
+        return null;
+    }
+
     private static T? NearestOptions<T>(FailureSnapshot snapshot, Func<StackFrame, T?> selector)
         where T : class
     {
@@ -412,13 +438,34 @@ public static class RecoveryEngine
             return;
 
         var top = snapshot.Stack[^1];
-        var failedElement = top.Location is SeqFrameLocation { ElementIndex: var idx }
-            ? FindSeq(parser, top.RuleName, idx)?.Elements[idx]
+        var topIdx = top.Location is SeqFrameLocation { ElementIndex: var idx } ? idx : -1;
+        var failedElement = topIdx >= 0
+            ? FindSeq(parser, top.RuleName, topIdx)?.Elements[topIdx]
             : null;
         var cost = CostCalculator.SkipCost(input, e, foundS);
         var diagnostic = new RecoveryDiagnostic(e, foundS, RecoveryKind.Skipped, $"skip to terminator {foundT.Kind}", foundT, top.RuleName);
 
-        if (failedElement is Ref r)
+        // 3.0c: падение в НАЧАЛЕ итерации цикла (topIdx == 0), чьё правило — элемент ближайшего цикла,
+        // И терминатор — истинный EOF (foundS == input.Length, хвостовой мусор) → абсорбер на уровне
+        // цикла: патч memo правила в e, чтобы цикл пропустил [e..foundS) целиком и дошёл до EOF.
+        var loopElement = FindEnclosingLoopElement(parser, snapshot);
+        if (topIdx == 0 && foundS == input.Length && loopElement is { } le && top.RuleName == le.RuleName)
+        {
+            var absorber = new TerminalNode("Skipped", e, foundS, foundS - e, IsRecovery: true);
+            var value = Result.Success(absorber, foundS, foundS);
+            var olds = CaptureMemo(parser, top.RuleName, e);
+            candidates.Add(new RecoveryCandidate(
+                Id: $"S3:{top.RuleName}:{foundT.Kind}",
+                Rank: 3,
+                Pos: foundS,
+                Cost: cost,
+                RuleName: top.RuleName,
+                TerminalKind: foundT.Kind,
+                Apply: p => p.PatchMemo(top.RuleName, e, value),
+                Rollback: p => RollbackMemo(p, top.RuleName, e, olds),
+                Diagnostics: [diagnostic]));
+        }
+        else if (failedElement is Ref r)
         {
             var absorber = new TerminalNode("Skipped", e, foundS, foundS - e, IsRecovery: true);
             var value = Result.Success(absorber, foundS, foundS);

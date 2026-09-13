@@ -10,7 +10,7 @@
 - `[x]` — выполнен и проверен
 - `[!]` — есть проблемы / отложено
 
-**Текущий пункт:** 3.0c
+**Текущий пункт:** 3.1 (3.0a–3.0c выполнены)
 
 ---
 
@@ -396,10 +396,26 @@
   - **Таймауты:** ни один не поднят выше 10с; новые тесты <1с.
 
 ### 3.0c Размещение абсорбера S2/S3/S5 (зависит от 3.0a, 3.0b)
-- [ ] Статус
-- **Что:** абсорбер мусора ставится на уровне цикла/Seq (мусор между/после итераций глотается целиком), а не слепо на упавшем терминале верхнего кадра. Сейчас `### `→`int` в (24,int) рассинхронизирует (Ident съедает настоящий `int`): between-функции даёт e 24→32→36, но `ErrorInfo=36` (до EOF не доходит).
-- **Верификация:** true-EOF → Success@EOF + Skipped/Trailing + абсорбер в дереве; between → Success@EOF (bar целиком); полный ParserTests зелёный (AnchorResync/CandidateGeneration).
-- **Заметки:**
+- [x] Статус — выполнен, проверен (AbsorberPlacementTests 2/2; полный ParserTests 287 passed / 0 failed / 3 skipped; сборка 0/0)
+- **Что:** абсорбер мусора ставится на уровне цикла/Seq (мусор между/после итераций глотается целиком), а не слепо на упавшем терминале верхнего кадра. До фикса `### `→`int` в (24,int) рассинхронизировал (Ident съедал настоящий `int` следующей функции): between-функции давал `Success@24` + `ErrorInfo=36` (bar не разобран); true-EOF — `Success@24` + `ErrorInfo=27` (не Success@EOF).
+- **Фикс (RecoveryEngine.cs):** S2 (`AddResyncCandidate`) и S3 (`GenerateS3`) получили новый первичный ветка-абсорбер на **уровне цикла**:
+  - **S2:** условие `topIdx == 0 && top.RuleName == anchorName` → патч memo на `top.RuleName` (правило-элемент цикла, напр. `Function`) в точке `e` с `Result.Success(TerminalNode("Skipped", e, resyncPos, …), resyncPos, resyncPos)`. Следующая итерация цикла стартует с чистого терминала (не с уже съеденного `int`).
+  - **S3:** условие `topIdx == 0 && foundS == input.Length && loopElement is { } le && top.RuleName == le.RuleName` → патч memo на `top.RuleName` в точке `e` с `Result.Success(TerminalNode("Skipped", e, foundS, …), foundS, foundS)`. Ограничение `foundS == input.Length` — только true-EOF (терминатор = EOF), чтобы не ломать mid-input S3-терминаторы (`CandidateGenerationTests`).
+  - **Хелпер `FindEnclosingLoopElement`:** сканирует снапшот-стек top→bottom, находит ближайший `LoopFrameLocation`, возвращает первый результат `DeriveLoopAnchors` (правило-элемент цикла).
+  - **S5:** НЕ тронут (репро не проходят через S5 — S3 принимается раньше; риск низкий, но для полноты осталось в скоупе).
+- **До/после (MiniC-грамматика, бюджет 16):**
+  - **between-функции** (`int foo() { return 0; } ### int bar() { return 1; }`, len=51): ДО `Success@24` + `ErrorInfo=36` + `Skipped[24..28)+Inserted[32..32)` + RecoveryNodes=0; ПОСЛЕ `Success@51` + `ErrorInfo=null` + `Skipped[24..28)` + RecoveryNodes=1, дерево = `foo` + `Skipped[REC]` + `bar` (bar целиком).
+  - **true-EOF** (`int foo() { return 0; } ###`, len=27): ДО `Success@24` + `ErrorInfo=27` + `Skipped[24..27)` + RecoveryNodes=0; ПОСЛЕ `Success@27` + `ErrorInfo=null` + `Skipped[24..27)` + RecoveryNodes=1, дерево = `foo` + `Skipped[REC]`.
+- **Обновлённые тесты (ассерты ужесточены до Success@EOF):**
+  - `StackGuardTests.Test_TrailingGarbageAtEof_NoStackOverflow` — теперь `Success@EOF` + `ErrorInfo == null` (было `ErrorInfo != null` с комментарием «3.0b/3.0c ещё не сделаны»).
+  - `PatchRollbackTests.Test_Rejected_S2_S3_Candidates_Leave_No_Memo_Phantoms` — теперь `Success@EOF` + `ErrorInfo == null`.
+  - `FinalStateTests.Test_Unrecovered_CandidatesExhausted_FatalError` — вход сменён на true-EOF `int f() { int x; } ###` (в этой грамматике без `Optional(Params)` он НЕ восстанавливается до EOF — остаётся «невосстановленным» кейсом; `Success@19` + per-char Skipped-диагностики).
+- **Новые тесты:** `Tests/ParserTests/Recovery/AbsorberPlacementTests.cs` (`namespace MiniC`, MiniC-грамматика-копия, `MaxRecoveryAttemptsPerPosition = 16`), 2 теста:
+  - `Test_BetweenFunctions_AbsorberAtLoopLevel_SuccessAtEof`: between-функции → `TryGetSuccess && end == input.Length` + ≥1 Skipped-диагностика + ≥1 recovery-узел в дереве (`CostCalculator.CountRecoveryNodes`).
+  - `Test_TrueEof_AbsorberAtLoopLevel_SuccessAtEof`: true-EOF → `TryGetSuccess && end == input.Length` + ≥1 Skipped-диагностика + ≥1 recovery-узел в дереве.
+- **Результаты:** AbsorberPlacementTests 2/2; полный `Tests/ParserTests` — **287 passed / 0 failed / 3 skipped** (база 285 + 2 новых; 3 — предсуществующие `[Ignore]`); сборка `Nitra.sln` — **0 ошибок / 0 предупреждений**.
+- **Таймауты:** ни один не поднят выше 10с (per-test); полный прогон ParserTests через bash `dotnet test` ~1с (MCP `run_dotnet_test` по всему проекту упирается в request-таймаут VSTest на ~300 параллельных тестах — не hang, все классы проверены по отдельности).
+- **Верификация (основной агент):** при проверке обнаружен и исправлен реальный баг сборки, который субагент не поймал (инкрементальная MCP-сборка не пере-оценила csproj): в `Tests/ParserTests/ParserTests.csproj` была лишняя `<Compile Include="Recovery\AbsorberPlacementTests.cs" />` → `NETSDK1022: Duplicate 'Compile' items` (SDK уже авто-включает .cs). Строку убрал; чистая сборка (`--no-incremental`) 0/0, полный ParserTests 287/0/3 подтверждены.
 
 ### 3.1 E2E-набор на MiniC
 - [~] Статус — 5/11 тестов в `MiniCEndToEndTests.cs`: 1–4 зелёные, 5 (`Test_TrailingGarbage`) `[Ignore]` (ждёт 3.0a/3.0c), 6–11 не написаны.
