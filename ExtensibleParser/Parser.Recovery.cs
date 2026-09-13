@@ -39,6 +39,14 @@ public partial class Parser
     public int MaxRecoveryAttemptsPerPosition { get; set; } = 3;
     private readonly Dictionary<int, HashSet<string>> _attempts = new();
 
+    // Состояние, перенесённое из ядра: используется только recovery-подсистемой
+    // (ядро обращается к нему исключительно через partial-хуки в Parser.cs).
+    private FollowSetCalculator? _followCalculator;
+    private readonly List<StackFrame> _stackFrames = [];
+    private readonly Dictionary<(int Pos, Terminal Terminal), Injection> _injections = new(TerminalComparer.KeyComparer);
+    private int _parseDepth;
+    private int _maxParseDepth = 4096;
+
     // Хук для тестов/engine: инжекции в Фазе 0 никто не порождает, слой активен с Фазы 1.
     public void AddInjection(Terminal terminal, int pos, Injection injection) => _injections[(pos, terminal)] = injection;
 
@@ -109,6 +117,144 @@ public partial class Parser
     private partial bool IsRecoveryPosition(int pos) => pos == _recoveryPoint;
     private partial bool SuppressSideEffects => _suppressSideEffects;
     private partial void ResetRecoveryPoint() => _recoveryPoint = -1;
+
+    // ============ Методы, перенесённые из ядра (recovery-only) ============
+
+    // Точка восстановления E (§2): Failure → ErrorPos; Partial → max(NewPos, ErrorPos);
+    // Success до EOF → max(NewPos, ErrorPos): NewPos — хвостовой мусор, ErrorPos — самая дальняя точка падения.
+    private int RecoveryPointOf(Result result, string input)
+    {
+        if (result.TryGetSuccess(out _, out var end))
+            return end < input.Length ? Math.Max(end, ErrorPos) : input.Length;
+        if (result.TryGetPartial(out _, out var partialEnd))
+            return Math.Max(partialEnd, ErrorPos);
+        return ErrorPos;
+    }
+
+    // Инъекция: Length == 0 — пустой узел-вставка, Length > 0 — абсорбер [pos..pos+Length).
+    private Result CreateInjectedResult(Injection injection, int pos)
+    {
+        var endPos = pos + injection.Length;
+        var node = new TerminalNode(injection.NodeKind, pos, endPos, injection.Length, IsRecovery: true);
+        return Result.Success(node, endPos, endPos);
+    }
+
+    // §3.9/2.3: OftenMissed — сахар над TryInsert: кадр несёт RecoveryOptions(TryInsert: [элемент]),
+    // чтобы engine (S1, ранг 0) генерировал кандидата вставки терминала в точке восстановления.
+    private static RecoveryOptions? OftenMissedOptions(Rule rule) =>
+        rule is OftenMissed { Element: Terminal terminal }
+            ? new RecoveryOptions { TryInsert = [terminal] }
+            : null;
+
+    // ============ Реализации хуков (продолжение) ============
+
+    private partial void InitFollowCalculator(Dictionary<string, Rule[]> rules) => _followCalculator = new FollowSetCalculator(rules);
+    private partial void SetMaxParseDepth(int inputLength)
+    {
+        _parseDepth = 0;
+        _maxParseDepth = inputLength * 4 + 128;
+    }
+    private partial void ClearInjections() => _injections.Clear();
+
+    private partial bool BeginParseFrame(int startPos)
+    {
+        _parseDepth++;
+        return _parseDepth > _maxParseDepth;
+    }
+    private partial void EndParseFrame() => _parseDepth--;
+
+    private partial void PushRuleFrame(string ruleName, int minPrecedence, FrameLocation location, RecoveryOptions? options) =>
+        _stackFrames.Add(new StackFrame(ruleName, minPrecedence, location, null, options));
+    private partial void PopFrame() => _stackFrames.RemoveAt(_stackFrames.Count - 1);
+    private partial Result WithFrame(FrameLocation location, Terminal[]? expected, string fallbackRuleName, RecoveryOptions? options, Func<Result> action)
+    {
+        PushFrame(location, expected, fallbackRuleName, options);
+        try
+        {
+            return action();
+        }
+        finally
+        {
+            PopFrame();
+        }
+    }
+
+    private void PushFrame(FrameLocation location, Terminal[]? expected, string fallbackRuleName, RecoveryOptions? options)
+    {
+        var ruleName = _stackFrames.Count > 0 ? _stackFrames[^1].RuleName : fallbackRuleName;
+        var precedence = _stackFrames.Count > 0 ? _stackFrames[^1].Precedence : 0;
+        _stackFrames.Add(new StackFrame(ruleName, precedence, location, expected, options));
+    }
+
+    private partial Terminal[] ExpectedFor(Rule element) => FirstSets.Get(element, _followCalculator);
+    private partial RecoveryOptions? OptionsFor(Rule rule) => rule is RecoveryRule rr ? rr.Options : OftenMissedOptions(rule);
+    private partial Rule[] PrefixesFor(string ruleName, bool isRecoveryPos)
+    {
+        var tdoppRule = TdoppRules[ruleName];
+        return isRecoveryPos ? tdoppRule.RecoveryPrefix : tdoppRule.Prefix;
+    }
+    private partial RuleWithPrecedence[] PostfixesFor(string ruleName, bool isRecoveryPos)
+    {
+        var tdoppRule = TdoppRules[ruleName];
+        return isRecoveryPos ? tdoppRule.RecoveryPostfix : tdoppRule.Postfix;
+    }
+    private partial Result? InjectionAt(int pos, Terminal terminal) =>
+        _injections.TryGetValue((pos, terminal), out var injection) ? CreateInjectedResult(injection, pos) : null;
+    private partial bool AcceptEpsilonMatch(Rule prefix) =>
+        prefix is RecoveryRule rc && (rc.Options is null || rc.Options.Recoverable);
+    private partial Result? ParseRecoveryRuleType(Rule rule, int startPos, string input) =>
+        rule is RecoveryRule r ? ParseAlternative(r.Inner, startPos, input) : null;
+    private partial Result? InsertOftenMissed(OftenMissed oftenMissed, int startPos, Result failedResult) =>
+        IsRecoveryPosition(startPos)
+            ? Result.Success(new TerminalNode(oftenMissed.Kind, startPos, startPos, ContentLength: 0, IsRecovery: true), startPos, failedResult.MaxFailPos)
+            : null;
+    private partial bool IsRecoveryTerminal(Terminal terminal) => terminal is RecoveryTerminal;
+    private partial bool IsRecoveryRule(Rule alt) => alt.GetSubRules<RecoveryTerminal>().Any();
+    private partial (Rule[] Prefix, RuleWithPrecedence[] Postfix) BuildRecoveryTdopp(string ruleName, Rule[] alternatives)
+    {
+        var recoveryPrefix = new List<Rule>();
+        var recoveryPostfix = new List<RuleWithPrecedence>();
+        foreach (var alt in alternatives)
+        {
+            if (alt is Seq { Elements: [Ref rule, .. var rest] } && rule.RuleName == ruleName)
+            {
+                var reqRef = rest.OfType<ReqRef>().FirstOrDefault();
+                if (reqRef is { })
+                    recoveryPostfix.Add(new RuleWithPrecedence(Kind: alt.Kind, new Seq(rest, alt.Kind), reqRef.Precedence, reqRef.Right));
+                else
+                {
+                    var precedence = rule is ReqRef x ? x.Precedence : 0;
+                    recoveryPostfix.Add(new RuleWithPrecedence(Kind: alt.Kind, new Seq(rest, alt.Kind), precedence, Right: false));
+                }
+            }
+            else
+                recoveryPrefix.Add(alt);
+        }
+        return (recoveryPrefix.ToArray(), recoveryPostfix.ToArray());
+    }
+
+    // Финализация Parse (recovery): стек правил, таблица мемоизации, точка восстановления e, ErrorInfo.
+    private partial void FinalizeResult(Result result, string input)
+    {
+        Log($"--- RULE STACK TRACE ---", LogImportance.High);
+        foreach (var frame in _stackFrames)
+            Log($"  Rule: {frame.RuleName}, Prec: {frame.Precedence}, Loc: {frame.Location}, Expected: [{string.Join(", ", (frame.Expected ?? Array.Empty<Terminal>()).Select(t => t.Kind))}]", LogImportance.High);
+        Log($"------------------------", LogImportance.High);
+
+        var debugInfos = MemoizationVisualazer(input);
+        Log($"Parse failed. Memoization table:");
+        foreach (var info in debugInfos)
+            Log($"    {info.Info}");
+        Log($"and of memoization table.");
+
+        var e = RecoveryPointOf(result, input);
+
+        // Финальные состояния §3.6: Success@EOF / Partial@EOF — восстановлено (ErrorInfo = null,
+        // дыры описаны RecoveryDiagnostics); иначе — невосстановлено: FatalError в последней точке e.
+        var recovered = (result.TryGetSuccess(out _, out var successEnd) && successEnd == input.Length)
+            || (result.TryGetPartial(out _, out var partialEnd) && partialEnd == input.Length);
+        ErrorInfo = recovered ? null : new FatalError(input, e, Location: input.PositionToLineCol(e), _expected.ToArray());
+    }
 
     // Один parse (без fail-fast): setup recovery-состояния + цикл восстановления (S0 + ленивый Generate).
     private partial Result Recover(string input, string startRule, int currentStartPos)

@@ -25,17 +25,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
     public int ErrorPos { get; private set; }
     public FatalError? ErrorInfo { get; private set; }
 
-    private FollowSetCalculator? _followCalculator;
-
-    private readonly List<StackFrame> _stackFrames = [];
     private HashSet<Terminal> _expected = [];
-
-    // 3.0a: guard глубины рекурсивного парсинга — предохранитель от stack overflow во время recovery re-parse.
-    // _parseDepth — текущая вложенность ParseAlternative (incr на входе, decr в finally); _maxParseDepth — лимит.
-    // Дефолт 4096 безопасен для спекулятивных парсеров, которые вызывают ParseRule напрямую (не через Parse),
-    // поэтому у них лимит не обнуляется; Parse уточняет его как функцию длины входа.
-    private int _parseDepth;
-    private int _maxParseDepth = 4096;
 
     public Terminal Trivia { get; private set; } = trivia;
     public Log? Logger { get; set; } = log;
@@ -51,21 +41,56 @@ public partial class Parser(Terminal trivia, Log? log = null)
 
     // Чистый кэш результата TryMatch (length >= 0 или -1); mismatch кэшируется и никогда не чистится в ходе прохода.
     private readonly Dictionary<(int Pos, Terminal Terminal), int> _terminalCache = new(TerminalComparer.KeyComparer);
-    // Слой инъекций engine'а: проверяется ПЕРЕД _terminalCache.
-    private readonly Dictionary<(int Pos, Terminal Terminal), Injection> _injections = new(TerminalComparer.KeyComparer);
 
     // Хуки recovery-подсистемы: реализация в Parser.Recovery.cs;
     // в сборке EnableRecovery=false (Parser.NoRecovery.cs) — тривиальные (no-op/константы).
+    // Ядро (этот файл) recovery-кода не содержит: только вызовы этих хуков.
+
+    // Точки входа / финализация
+    private partial Result Recover(string input, string startRule, int currentStartPos);
+    private partial void FinalizeResult(Result result, string input);
+
+    // Состояние: инициализация/сброс
+    private partial void InitFollowCalculator(Dictionary<string, Rule[]> rules);
+    private partial void SetMaxParseDepth(int inputLength);
+    private partial void ClearInjections();
+
+    // Глубина рекурсии (guard от stack overflow)
+    private partial bool BeginParseFrame(int startPos);
+    private partial void EndParseFrame();
+
+    // Стек кадров (для генерации кандидатов восстановления)
+    private partial void PushRuleFrame(string ruleName, int minPrecedence, FrameLocation location, RecoveryOptions? options);
+    private partial void PopFrame();
+    private partial Result WithFrame(FrameLocation location, Terminal[]? expected, string fallbackRuleName, RecoveryOptions? options, Func<Result> action);
+
+    // Запросы к recovery-состоянию
+    private partial bool IsRecoveryPosition(int pos);
+    private partial bool SuppressSideEffects { get; }
+    private partial void ResetRecoveryPoint();
+    private partial Terminal[] ExpectedFor(Rule element);
+    private partial RecoveryOptions? OptionsFor(Rule rule);
+    private partial Rule[] PrefixesFor(string ruleName, bool isRecoveryPos);
+    private partial RuleWithPrecedence[] PostfixesFor(string ruleName, bool isRecoveryPos);
+    private partial Result? InjectionAt(int pos, Terminal terminal);
+    private partial bool AcceptEpsilonMatch(Rule prefix);
+    private partial Result? ParseRecoveryRuleType(Rule rule, int startPos, string input);
+    private partial Result? InsertOftenMissed(OftenMissed oftenMissed, int startPos, Result failedResult);
+    private partial bool IsRecoveryTerminal(Terminal terminal);
+
+    // Побочные эффекты (снимки/патчи)
     private partial void OnMismatch(Terminal terminal, int pos);
     private partial void OnMemoWritten((int pos, string rule, int precedence) key);
     private partial void OnMemoRemoved((int pos, string rule, int precedence) key);
     private partial void OnInjectionApplied((int Pos, Terminal Terminal) key);
     private partial void OnPartialCaptured(Result partialResult);
-    private partial bool IsRecoveryPosition(int pos);
-    private partial bool SuppressSideEffects { get; }
-    private partial void ResetRecoveryPoint();
-    private partial Result Recover(string input, string startRule, int currentStartPos);
+
+    // Спекулятивный parse
     private partial Result Speculative(Func<Result> parse);
+
+    // Построение TDOPP-правил
+    private partial bool IsRecoveryRule(Rule alt);
+    private partial (Rule[] Prefix, RuleWithPrecedence[] Postfix) BuildRecoveryTdopp(string ruleName, Rule[] alternatives);
 
     public void BuildTdoppRules()
     {
@@ -79,7 +104,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
                 .ToArray();
 
         BuildTdoppRulesInternal();
-        _followCalculator = new FollowSetCalculator(Rules);
+        InitFollowCalculator(Rules);
     }
 
     private void BuildTdoppRulesInternal()
@@ -90,48 +115,35 @@ public partial class Parser(Terminal trivia, Log? log = null)
             var alternatives = kvp.Value;
             var prefix = new List<Rule>();
             var postfix = new List<RuleWithPrecedence>();
-            var recoveryPrefix = new List<Rule>();
-            var recoveryPostfix = new List<RuleWithPrecedence>();
 
             foreach (var alt in alternatives)
             {
-                bool isRecoveryRule = alt.GetSubRules<RecoveryTerminal>().Any();
+                if (IsRecoveryRule(alt))
+                    continue;
 
                 if (alt is Seq { Elements: [Ref rule, .. var rest] } && rule.RuleName == ruleName)
                 {
                     var reqRef = rest.OfType<ReqRef>().FirstOrDefault();
                     if (reqRef is { })
-                    {
-                        recoveryPostfix.Add(new RuleWithPrecedence(Kind: alt.Kind, new Seq(rest, alt.Kind), reqRef.Precedence, reqRef.Right));
-
-                        if (!isRecoveryRule)
-                            postfix.Add(new RuleWithPrecedence(Kind: alt.Kind, new Seq(rest, alt.Kind), reqRef.Precedence, reqRef.Right));
-                    }
+                        postfix.Add(new RuleWithPrecedence(Kind: alt.Kind, new Seq(rest, alt.Kind), reqRef.Precedence, reqRef.Right));
                     else
                     {
                         var precedence = rule is ReqRef x ? x.Precedence : 0;
-                        recoveryPostfix.Add(new RuleWithPrecedence(Kind: alt.Kind, new Seq(rest, alt.Kind), precedence, Right: false));
-
-                        if (!isRecoveryRule)
-                            postfix.Add(new RuleWithPrecedence(Kind: alt.Kind, new Seq(rest, alt.Kind), precedence, Right: false));
+                        postfix.Add(new RuleWithPrecedence(Kind: alt.Kind, new Seq(rest, alt.Kind), precedence, Right: false));
                     }
                 }
                 else
-                {
-                    recoveryPrefix.Add(alt);
-
-                    if (!isRecoveryRule)
-                        prefix.Add(alt);
-                }
+                    prefix.Add(alt);
             }
 
+            var (recoveryPrefix, recoveryPostfix) = BuildRecoveryTdopp(ruleName, alternatives);
             TdoppRules[ruleName] = new TdoppRule(
                 new Ref(ruleName),
                 Kind: ruleName,
                 prefix.ToArray(),
                 postfix.ToArray(),
-                recoveryPrefix.ToArray(),
-                recoveryPostfix.ToArray()
+                recoveryPrefix,
+                recoveryPostfix
             );
         }
     }
@@ -175,9 +187,8 @@ public partial class Parser(Terminal trivia, Log? log = null)
         var currentStartPos = startPos;
         _memo.Clear();
         _terminalCache.Clear();
-        _injections.Clear();
-        _parseDepth = 0;
-        _maxParseDepth = input.Length * 4 + 128;
+        ClearInjections();
+        SetMaxParseDepth(input.Length);
 
         if (input.Length > 0)
         {
@@ -187,46 +198,11 @@ public partial class Parser(Terminal trivia, Log? log = null)
             currentStartPos += triviaLength;
         }
 
-
         Log($"Starting at {currentStartPos} parse for rule '{startRule}'");
 
         var result = Recover(input, startRule, currentStartPos);
-
-        // Recovery in recovery rules mode failed.
-        // Выводим стек правил с метаинформацией
-        Log($"--- RULE STACK TRACE ---", LogImportance.High);
-        foreach (var frame in _stackFrames)
-            Log($"  Rule: {frame.RuleName}, Prec: {frame.Precedence}, Loc: {frame.Location}, Expected: [{string.Join(", ", (frame.Expected ?? Array.Empty<Terminal>()).Select(t => t.Kind))}]", LogImportance.High);
-        Log($"------------------------", LogImportance.High);
-
-        var debugInfos = MemoizationVisualazer(input);
-
-        Log($"Parse failed. Memoization table:");
-        foreach (var info in debugInfos)
-            Log($"    {info.Info}");
-        Log($"and of memoization table.");
-
-        var e = RecoveryPointOf(result, input);
-
-        // Финальные состояния §3.6: Success@EOF / Partial@EOF — восстановлено (ErrorInfo = null,
-        // дыры описаны накопленными RecoveryDiagnostics); иначе — невосстановлено: FatalError
-        // в последней неотвратимой точке (последняя точка восстановления e).
-        var recovered = (result.TryGetSuccess(out _, out var successEnd) && successEnd == input.Length)
-            || (result.TryGetPartial(out _, out var partialEnd) && partialEnd == input.Length);
-        ErrorInfo = recovered ? null : new FatalError(input, e, Location: input.PositionToLineCol(e), _expected.ToArray());
+        FinalizeResult(result, input);
         return result;
-    }
-
-    // Точка восстановления E (§2): Failure → ErrorPos; Partial → max(NewPos, ErrorPos);
-    // Success до EOF → max(NewPos, ErrorPos): NewPos — хвостовой мусор, ErrorPos — самая дальняя точка падения
-    // (для дегенеративных Success'ов, где разбор «сдался» раньше реальной ошибки).
-    private int RecoveryPointOf(Result result, string input)
-    {
-        if (result.TryGetSuccess(out _, out var end))
-            return end < input.Length ? Math.Max(end, ErrorPos) : input.Length;
-        if (result.TryGetPartial(out _, out var partialEnd))
-            return Math.Max(partialEnd, ErrorPos);
-        return ErrorPos;
     }
 
     private Result ParseRule(
@@ -261,14 +237,14 @@ public partial class Parser(Terminal trivia, Log? log = null)
 
         var bestResult = (Result?)null;
         var maxPos = startPos;
-        var prefixRules = isRecoveryPos ? tdoppRule.RecoveryPrefix : tdoppRule.Prefix;
+        var prefixRules = PrefixesFor(ruleName, isRecoveryPos);
         var maxFailPos = startPos;
 
         for (var altIdx = 0; altIdx < prefixRules.Length; altIdx++)
         {
             var prefix = prefixRules[altIdx];
-            var altOptions = prefix is RecoveryRule rr ? rr.Options : OftenMissedOptions(prefix);
-            _stackFrames.Add(new StackFrame(ruleName, minPrecedence, new RuleFrameLocation(altIdx), null, altOptions));
+            var altOptions = OptionsFor(prefix);
+            PushRuleFrame(ruleName, minPrecedence, new RuleFrameLocation(altIdx), altOptions);
             try
             {
                 Log($"  Trying prefix: {prefix}");
@@ -298,7 +274,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
                 // If prefix was partial, propagate partial status
                 if (gotPartial && postfixResult.ResultKind != Result.Kind.Partial)
                 {
-                    var propCtx = new ParseContext(ruleName, new RuleFrameLocation(altIdx), FirstSets.Get(prefix, _followCalculator), null);
+                    var propCtx = new ParseContext(ruleName, new RuleFrameLocation(altIdx), ExpectedFor(prefix), null);
                     postfixResult = Result.Partial(postfixResult.Node!, postfixResult.NewPos, postfixResult.MaxFailPos, propCtx);
                 }
 
@@ -316,12 +292,9 @@ public partial class Parser(Terminal trivia, Log? log = null)
                         maxPos = postNewPos;
                         bestResult = postfixResult;
                     }
-                    else if (postNewPos == maxPos && bestResult == null && isRecoveryPos
-                             && prefix is RecoveryRule rc && (rc.Options is null || rc.Options.Recoverable))
+                    else if (postNewPos == maxPos && bestResult == null && isRecoveryPos && AcceptEpsilonMatch(prefix))
                     {
-                        // ε-совпадение Error-правила (пропущенный операнд/аргумент): нулевой прогресс принимается,
-                        // но ТОЛЬКО если альтернатива аннотирована RecoveryRule (Recoverable, по умолчанию true).
-                        // Триггер — аннотация автора, а не глобальный флаг isRecoveryPos (замена хака 0.3B, §1.5).
+                        // ε-совпадение Error-правила: нулевой прогресс принимается только для recoverable RecoveryRule.
                         maxPos = postNewPos;
                         bestResult = postfixResult;
                     }
@@ -364,7 +337,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
             var bestNode = (ISyntaxNode?)null;
             var bestPos = newPos;
             var isRecoveryPos = IsRecoveryPosition(newPos);
-            var postfixRules = isRecoveryPos ? rule.RecoveryPostfix : rule.Postfix;
+            var postfixRules = PostfixesFor(rule.Kind, isRecoveryPos);
 
             foreach (var postfix in postfixRules)
             {
@@ -450,8 +423,8 @@ public partial class Parser(Terminal trivia, Log? log = null)
         {
             var element = postfix.Seq.Elements[elemIdx];
             Log($"    Parsing at {newPos} postfix element: {element}");
-            var result = WithFrame(new PostfixFrameLocation(elemIdx), FirstSets.Get(element, _followCalculator), postfix.Seq.Kind ?? "Seq",
-                () => ParseAlternative(element, newPos, input));
+            var result = WithFrame(new PostfixFrameLocation(elemIdx), ExpectedFor(element), postfix.Seq.Kind ?? "Seq",
+                null, () => ParseAlternative(element, newPos, input));
 
             if (result.MaxFailPos > maxFailPos)
                 maxFailPos = result.MaxFailPos;
@@ -504,17 +477,12 @@ public partial class Parser(Terminal trivia, Log? log = null)
         int startPos,
         string input)
     {
-        // 3.0a: guard глубины рекурсии — единая точка: все рекурсивные правила (Seq/Ref/циклы/предикаты)
-        // проходят через ParseAlternative. При превышении лимита ветка абортится (Failure), чтобы не
-        // уронить процесс (stack overflow) во время recovery re-parse. На легитимных разборах не срабатывает.
-        _parseDepth++;
-        if (_parseDepth > _maxParseDepth)
-        {
-            _parseDepth--;
+        if (BeginParseFrame(startPos))
             return Result.Failure(startPos);
-        }
         try
         {
+            if (ParseRecoveryRuleType(rule, startPos, input) is { } recoveryRuleResult)
+                return recoveryRuleResult;
             return rule switch
             {
                 Terminal t => ParseTerminal(t, startPos, input),
@@ -525,7 +493,6 @@ public partial class Parser(Terminal trivia, Log? log = null)
                 Ref r => ParseRule(r.RuleName, 0, startPos, input),
                 Optional o => ParseOptional(o, startPos, input),
                 OftenMissed o => ParseOftenMissed(o, startPos, input),
-                RecoveryRule r => ParseAlternative(r.Inner, startPos, input),
                 AndPredicate a => ParseAndPredicate(a, startPos, input),
                 NotPredicate n => ParseNotPredicate(n, startPos, input),
                 SeparatedList sl => ParseSeparatedList(sl, startPos, input),
@@ -534,7 +501,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
         }
         finally
         {
-            _parseDepth--;
+            EndParseFrame();
         }
     }
 
@@ -566,20 +533,11 @@ public partial class Parser(Terminal trivia, Log? log = null)
         return Result.Success(new NoneNode(optional.Kind ?? "Optional", startPos, startPos), startPos, result.MaxFailPos);
     }
 
-    // §3.9/2.3: OftenMissed — документированный сахар над TryInsert: кадр элемента/альтернативы несёт
-    // RecoveryOptions(TryInsert: [элемент]), чтобы engine (S1, ранг 0) тоже генерировал кандидата вставки
-    // терминала в точке восстановления (идемпотентно с инлайновой вставкой в recovery-позиции).
-    private static RecoveryOptions? OftenMissedOptions(Rule rule) =>
-        rule is OftenMissed { Element: Terminal terminal }
-            ? new RecoveryOptions { TryInsert = [terminal] }
-            : null;
-
     private Result ParseOftenMissed(OftenMissed oftenMissed, int startPos, string input)
     {
         var result = ParseAlternative(oftenMissed.Element, startPos, input);
-
-        if (!result.IsSuccess && IsRecoveryPosition(startPos))
-            return Result.Success(new TerminalNode(oftenMissed.Kind, startPos, startPos, ContentLength: 0, IsRecovery: true), startPos, result.MaxFailPos);
+        if (!result.IsSuccess && InsertOftenMissed(oftenMissed, startPos, result) is { } inserted)
+            return inserted;
         return result;
     }
 
@@ -590,8 +548,8 @@ public partial class Parser(Terminal trivia, Log? log = null)
         var elements = new List<ISyntaxNode>();
 
         // Parse at least one element
-        var firstResult = WithFrame(new LoopFrameLocation("OneOrMany", 0), FirstSets.Get(oneOrMany.Element, _followCalculator), oneOrMany.Kind ?? "OneOrMany",
-            () => ParseAlternative(oneOrMany.Element, currentPos, input));
+        var firstResult = WithFrame(new LoopFrameLocation("OneOrMany", 0), ExpectedFor(oneOrMany.Element), oneOrMany.Kind ?? "OneOrMany",
+            null, () => ParseAlternative(oneOrMany.Element, currentPos, input));
 
         // Try success first, then partial
         bool gotSuccess = firstResult.TryGetSuccess(out var firstNode, out var newPos);
@@ -611,8 +569,8 @@ public partial class Parser(Terminal trivia, Log? log = null)
         int iteration = 1;
         while (true)
         {
-            var result = WithFrame(new LoopFrameLocation("OneOrMany", iteration), FirstSets.Get(oneOrMany.Element, _followCalculator), oneOrMany.Kind ?? "OneOrMany",
-                () => ParseAlternative(oneOrMany.Element, currentPos, input));
+            var result = WithFrame(new LoopFrameLocation("OneOrMany", iteration), ExpectedFor(oneOrMany.Element), oneOrMany.Kind ?? "OneOrMany",
+                null, () => ParseAlternative(oneOrMany.Element, currentPos, input));
 
             if (result.MaxFailPos > maxFailPos)
                 maxFailPos = result.MaxFailPos;
@@ -640,7 +598,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
         var loopCtx = isPartial ? new ParseContext(
                 oneOrMany.Kind ?? "OneOrMany",
                 new LoopFrameLocation("OneOrMany", iteration),
-                FirstSets.Get(oneOrMany.Element, _followCalculator),
+                ExpectedFor(oneOrMany.Element),
                 null)
             : null;
 
@@ -660,8 +618,8 @@ public partial class Parser(Terminal trivia, Log? log = null)
         int iteration = 0;
         while (true)
         {
-            var result = WithFrame(new LoopFrameLocation("ZeroOrMany", iteration), FirstSets.Get(zeroOrMany.Element, _followCalculator), zeroOrMany.Kind ?? "ZeroOrMany",
-                () => ParseAlternative(zeroOrMany.Element, currentPos, input));
+            var result = WithFrame(new LoopFrameLocation("ZeroOrMany", iteration), ExpectedFor(zeroOrMany.Element), zeroOrMany.Kind ?? "ZeroOrMany",
+                null, () => ParseAlternative(zeroOrMany.Element, currentPos, input));
 
             if (result.MaxFailPos > maxFailPos)
                 maxFailPos = result.MaxFailPos;
@@ -689,7 +647,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
         var loopCtx = isPartial ? new ParseContext(
                 zeroOrMany.Kind ?? "ZeroOrMany",
                 new LoopFrameLocation("ZeroOrMany", iteration),
-                FirstSets.Get(zeroOrMany.Element, _followCalculator),
+                ExpectedFor(zeroOrMany.Element),
                 null)
             : null;
 
@@ -704,8 +662,8 @@ public partial class Parser(Terminal trivia, Log? log = null)
 
     private Result ParseTerminal(Terminal terminal, int startPos, string input)
     {
-        if (_injections.TryGetValue((startPos, terminal), out var injection))
-            return CreateInjectedResult(injection, startPos);
+        if (InjectionAt(startPos, terminal) is { } injected)
+            return injected;
 
         if (!_terminalCache.TryGetValue((startPos, terminal), out var contentLength))
         {
@@ -734,7 +692,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
                 startPos,
                 EndPos: currentPos,
                 contentLength,
-                IsRecovery: terminal is RecoveryTerminal
+                IsRecovery: IsRecoveryTerminal(terminal)
             ),
             currentPos,
             maxFailPos: currentPos
@@ -758,14 +716,6 @@ public partial class Parser(Terminal trivia, Log? log = null)
         }
     }
 
-    // Инъекция: Length == 0 — пустой узел-вставка, Length > 0 — абсорбер [pos..pos+Length).
-    private Result CreateInjectedResult(Injection injection, int pos)
-    {
-        var endPos = pos + injection.Length;
-        var node = new TerminalNode(injection.NodeKind, pos, endPos, injection.Length, IsRecovery: true);
-        return Result.Success(node, endPos, endPos);
-    }
-
     private Result ParseSeq(
         Seq seq,
         int startPos,
@@ -781,8 +731,8 @@ public partial class Parser(Terminal trivia, Log? log = null)
         for (int elemIdx = 0; elemIdx < seq.Elements.Length; elemIdx++)
         {
             var element = seq.Elements[elemIdx];
-            var result = WithFrame(new SeqFrameLocation(elemIdx), FirstSets.Get(element, _followCalculator), seq.Kind ?? "Seq",
-                () => ParseAlternative(element, newPos, input), OftenMissedOptions(element));
+            var result = WithFrame(new SeqFrameLocation(elemIdx), ExpectedFor(element), seq.Kind ?? "Seq",
+                OptionsFor(element), () => ParseAlternative(element, newPos, input));
 
             if (result.MaxFailPos > maxFailPos)
                 maxFailPos = result.MaxFailPos;
@@ -797,7 +747,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
                 if (elemIdx > 0 && newPos > startPos)
                 {
                     var partialResult = Result.Partial(BuildPartialSeqNode(seq, elements, startPos, newPos), newPos, result.MaxFailPos,
-                        new ParseContext(seq.Kind ?? "Seq", new SeqFrameLocation(elemIdx), FirstSets.Get(element, _followCalculator), null));
+                        new ParseContext(seq.Kind ?? "Seq", new SeqFrameLocation(elemIdx), ExpectedFor(element), null));
                     OnPartialCaptured(partialResult);
                     return partialResult;
                 }
@@ -840,28 +790,6 @@ public partial class Parser(Terminal trivia, Log? log = null)
         => elements.Count == 1
             ? elements[0]
             : new SeqNode(seq.Kind ?? "Seq", elements, startPos, endPos);
-
-    private Result WithFrame(FrameLocation location, Terminal[]? expected, string fallbackRuleName, Func<Result> parse, RecoveryOptions? options = null)
-    {
-        PushFrame(location, expected, fallbackRuleName, options);
-        try
-        {
-            return parse();
-        }
-        finally
-        {
-            PopFrame();
-        }
-    }
-
-    private void PushFrame(FrameLocation location, Terminal[]? expected, string fallbackRuleName, RecoveryOptions? options = null)
-    {
-        var ruleName = _stackFrames.Count > 0 ? _stackFrames[_stackFrames.Count - 1].RuleName : fallbackRuleName;
-        var precedence = _stackFrames.Count > 0 ? _stackFrames[_stackFrames.Count - 1].Precedence : 0;
-        _stackFrames.Add(new StackFrame(ruleName, precedence, location, expected, options));
-    }
-
-    private void PopFrame() => _stackFrames.RemoveAt(_stackFrames.Count - 1);
 
     private Result ParseSeparatedList(SeparatedList listRule, int startPos, string input)
     {
@@ -921,7 +849,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
                     Log($"Missing separator at {currentPos}.");
                     if (isPartial)
                     {
-                        var sepRequiredCtx = new ParseContext(listRule.Kind, new SeqFrameLocation(elements.Count), FirstSets.Get(listRule.Separator, _followCalculator), null);
+                        var sepRequiredCtx = new ParseContext(listRule.Kind, new SeqFrameLocation(elements.Count), ExpectedFor(listRule.Separator), null);
                         return Result.Partial(new ListNode(listRule.Kind, elements, delimiters, startPos, currentPos), currentPos, maxFailPos, sepRequiredCtx);
                     }
                     return Result.Failure(maxFailPos);
