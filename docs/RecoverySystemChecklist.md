@@ -418,12 +418,14 @@
 - **Верификация (основной агент):** при проверке обнаружен и исправлен реальный баг сборки, который субагент не поймал (инкрементальная MCP-сборка не пере-оценила csproj): в `Tests/ParserTests/ParserTests.csproj` была лишняя `<Compile Include="Recovery\AbsorberPlacementTests.cs" />` → `NETSDK1022: Duplicate 'Compile' items` (SDK уже авто-включает .cs). Строку убрал; чистая сборка (`--no-incremental`) 0/0, полный ParserTests 287/0/3 подтверждены.
 
 ### 3.1 E2E-набор на MiniC
-- [~] Статус — 6/11 тестов в `MiniCEndToEndTests.cs`: 1–5 зелёные, 6–11 не написаны.
+- [~] Статус — 10/11 тестов в `MiniCEndToEndTests.cs`: 1–9 зелёные, 10–11 (T1/T2) не написаны.
 - **Что:** `Test_MissingClosingBrace_Function`, `Test_MissingSemicolon_MultipleStatements`, `Test_UnexpectedToken_Expression`, `Test_NestedErrors_MultipleBlocks`, `Test_TrailingGarbage`, `Test_Recovery_DoesNotBreakCorrectCode` (I6), `Test_EverythingRepresentedInTree` (I4), `Test_ParsingReachesEndOfString`, `Test_Deterministic` (I5), `Test_Anchor_Resync_NextMember` (T1), `Test_DoubleError_CanStart` (T2).
 - **Заметки:**
   - 1–4: отклонения от ТЗ задокументированы в комментариях (OftenMissed `;`/`}` → S0 без диагностики; S1 только для plain-Literal).
   - **3.1.1 `Test_TrailingGarbage` — выполнен** (true-EOF `int foo() { return 0; } ###`, бюджет 16): Success@EOF + `ErrorInfo == null` + ≥1 `Skipped`-диагностика + ≥1 абсорбер-узел. `[Ignore]` снят; прохождение — результат 3.0a–3.0c.
-  - 6–11: T1/T2 требуют авторских аннотаций (RecoveryRule: Terminators/Anchors/CanStart) в MiniC-грамматике.
+  - **3.1.2a тесты 6–9 — выполнены** (инварианты §3.7): (6) `Test_Recovery_DoesNotBreakCorrectCode` (I6) — корректный код → Success@EOF, `ErrorInfo == null`, 0 recovery-узлов (recovery латентен); (7) `Test_EverythingRepresentedInTree` (I4) — терминальные спаны `[StartPos, EndPos)` точно тайлом покрывают `[0, len)` (без дыр/наложений); (8) `Test_ParsingReachesEndOfString` — восстановление до `end == input.Length`; (9) `Test_Deterministic` (I5) — два свежих идентичных парсера → идентичное дерево (Kind/StartPos/EndPos/IsRecovery) и идентичная диагностика.
+    - **Субтильность I4:** тайлинг по `[StartPos, EndPos)`, а НЕ `[StartPos, StartPos+ContentLength)`: хвостовой trivia поглощается в `EndPos` следующего терминала (`Parser.ParseTerminal`), отдельным узлом не представляется — `ContentLength < EndPos-StartPos`, и спаны по `ContentLength` дали бы дыры на trivia.
+  - 10–11 (T1/T2): требуют авторских аннотаций (RecoveryRule: Terminators/Anchors/CanStart) в MiniC-грамматике.
 
 ### 3.2 Документация
 - [ ] Статус

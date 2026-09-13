@@ -39,3 +39,23 @@ MCP-инструменты для **поисков, чтения, compile-gate �
 3. **Подтверждена корректность счёта:** снятие `[Ignore]` меняет passed/skipped (287/3 → 288/2), Total 290 стабилен. При проверке «всё ли зелёное» важно сверять именно Total и Failed, а не только passed.
 
 Вывод: MCP (build + targeted test + поиск/чтение) — основной инструмент; полный прогон — только bash. Рекомендация MCP: дать `run_dotnet_test` опцию «запустить и вернуть PID/журнал» или стриминг-прогресса, чтобы не упирается в request-таймаут на ~300 параллельных тестах; либо поднять клиентский таймаут отдельно для full-suite.
+
+## 3.1.2a session
+
+Контекст: item 3.1.2a — добавить 4 инвариант-теста (6–9: I6/I4/reaches-EOF/I5) в `MiniCEndToEndTests.cs` + приватные хелперы. Тест-только, движок не трогал.
+
+| Инструмент | Как пошло |
+|---|---|
+| `roslyn_run_specific_test` | **Отлично** (4/4 `<1с`, `Total:1 Passed:1 Failed:0`). FQN резолвится через Roslyn без ручного `--filter`. Главный TDD-инструмент. |
+| `roslyn_find_symbol_definition` / `roslyn_get_diagnostics_for_file` / `read`/`edit`/`grep` | **Отлично.** Быстро, без замечаний. |
+| `roslyn_get_test_list` | **Отлично** для диагностики: подтвердил, что workspace видит 4 новых теста (FQN есть) — т.е. проблема не в workspace, а в stale-DLL. |
+| `roslyn_reload` | **Необходим:** после правок workspace был stale; reload подхватил новые методы. |
+| `roslyn_run_dotnet_build` | **Проблема (см. ниже).** Отчитывался «Build succeeded», но НЕ обновил тестовую сборку. |
+| bash `dotnet test Tests/ParserTests --no-build --nologo` | **Отлично** для полного прогона. `Passed: 292, Failed: 0, Skipped: 2` (Total 294 = 288 + 4 новых). |
+
+Замечания / грабли:
+1. **`roslyn_run_dotnet_build` не обновил `ParserTests.dll`.** После правок и двух MCP-build'ов (оба «Build succeeded») `bin\x64\Debug\net8.0\ParserTests.dll` остался со старым таймстампом (17:47 < правки 17:59). Следствие: `roslyn_run_specific_test` c `noBuild=true` → «no matching tests» (FQN резолвится в workspace, но метода нет в скомпилированном DLL). Обход: `roslyn_run_specific_test` c `noBuild=false` (сам делает `dotnet build`) — сразу нашёл и прогнал тест. **Рекомендация:** в диагностике «no matching tests» явно различать «FQN нет в workspace» и «FQN есть в workspace, но отсутствует в DLL» (второй случай → подсказать `noBuild=false`/rebuild); либо гарантировать, что `run_dotnet_build` реально пересобирает тестовые проекты (сейчас `--no-incremental` не помогает).
+2. **Platform-рассогласование.** Workspace загружен с `Platform=x64` → MCP-сборки/`run_specific_test` используют `bin\x64\Debug\`, а голый bash `dotnet test` (без Platform) — `bin\Debug\`. Два разных DLL. Для `--no-build` bash-прогона важно, чтобы нужный DLL был свеж (в сессии оба оказались свежи, но это хрупко).
+3. SDK-предупреждение `Pinned SDK 8.0.100 was not found` (фактический 8.0.411 через rollforward) — шумит в каждом build-ответе, не блокирует.
+
+Вывод: MCP (targeted test + поиск/чтение/diagnostics + reload) — основной инструмент; полный прогон — bash. Новая грабо: **stale тестовый DLL после `run_dotnet_build`** → для надёжности TDD-цикл вести `run_specific_test` c `noBuild=false` (или bash-build перед `--no-build` прогоном).
