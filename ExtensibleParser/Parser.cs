@@ -70,6 +70,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
     private partial void ResetRecoveryPoint();
     private partial Terminal[] ExpectedFor(Rule element);
     private partial RecoveryOptions? OptionsFor(Rule rule);
+    private partial RecoveryOptions? OftenMissedOptionsFor(Rule element);
     private partial Rule[] PrefixesFor(string ruleName, bool isRecoveryPos);
     private partial RuleWithPrecedence[] PostfixesFor(string ruleName, bool isRecoveryPos);
     private partial Result? InjectionAt(int pos, Terminal terminal);
@@ -201,6 +202,8 @@ public partial class Parser(Terminal trivia, Log? log = null)
         Log($"Starting at {currentStartPos} parse for rule '{startRule}'");
 
         var result = Recover(input, startRule, currentStartPos);
+        if (result.TryGetSuccess(out _, out var end) && end == input.Length)
+            return result;
         FinalizeResult(result, input);
         return result;
     }
@@ -732,7 +735,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
         {
             var element = seq.Elements[elemIdx];
             var result = WithFrame(new SeqFrameLocation(elemIdx), ExpectedFor(element), seq.Kind ?? "Seq",
-                OptionsFor(element), () => ParseAlternative(element, newPos, input));
+                OftenMissedOptionsFor(element), () => ParseAlternative(element, newPos, input));
 
             if (result.MaxFailPos > maxFailPos)
                 maxFailPos = result.MaxFailPos;

@@ -188,6 +188,7 @@ public partial class Parser
 
     private partial Terminal[] ExpectedFor(Rule element) => FirstSets.Get(element, _followCalculator);
     private partial RecoveryOptions? OptionsFor(Rule rule) => rule is RecoveryRule rr ? rr.Options : OftenMissedOptions(rule);
+    private partial RecoveryOptions? OftenMissedOptionsFor(Rule rule) => rule is OftenMissed { Element: Terminal terminal } ? new RecoveryOptions { TryInsert = [terminal] } : null;
     private partial Rule[] PrefixesFor(string ruleName, bool isRecoveryPos)
     {
         var tdoppRule = TdoppRules[ruleName];

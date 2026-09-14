@@ -196,6 +196,7 @@ public partial class SeparatedListTests
         );
 
 
+#if RECOVERY
     [TestMethod]
     public void ForbiddenCallWith1ArgsWitEndDelim() =>
         TestSeparatedListRecovery(
@@ -222,6 +223,8 @@ public partial class SeparatedListTests
             "Call: func(1, 2, 3, «Error: expected Expr»)",
             expecteds: ["Number", "Ident"]
         );
+
+#endif
 
     private void TestSeparatedListRecovery(string startRule, string input, string expectedAst, string[] expecteds)
     {

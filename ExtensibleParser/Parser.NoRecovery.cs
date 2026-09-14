@@ -20,7 +20,20 @@ public partial class Parser
     private partial bool SuppressSideEffects => false;
     private partial void ResetRecoveryPoint() { }
     private partial Result Recover(string input, string startRule, int currentStartPos) => ParseRule(startRule, minPrecedence: 0, startPos: currentStartPos, input);
-    private partial Result Speculative(Func<Result> parse) => parse();
+    private partial Result Speculative(Func<Result> parse)
+    {
+        var savedErrorPos = ErrorPos;
+        var savedExpected = _expected.ToArray();
+        try
+        {
+            return parse();
+        }
+        finally
+        {
+            ErrorPos = savedErrorPos;
+            _expected = new HashSet<Terminal>(savedExpected);
+        }
+    }
 
     // Финализация без recovery: однократный парсинг, падение на MaxFailPos (ErrorPos/_expected).
     private partial void FinalizeResult(Result result, string input) =>
@@ -37,14 +50,18 @@ public partial class Parser
 
     private partial Terminal[] ExpectedFor(Rule element) => [];
     private partial RecoveryOptions? OptionsFor(Rule rule) => null;
+    private partial RecoveryOptions? OftenMissedOptionsFor(Rule rule) => null;
     private partial Rule[] PrefixesFor(string ruleName, bool isRecoveryPos) => TdoppRules[ruleName].Prefix;
     private partial RuleWithPrecedence[] PostfixesFor(string ruleName, bool isRecoveryPos) => TdoppRules[ruleName].Postfix;
     private partial Result? InjectionAt(int pos, Terminal terminal) => null;
     private partial bool AcceptEpsilonMatch(Rule prefix) => false;
+    // Recovery-альтернативы в no-recovery режиме не используются: они участвуют только в
+    // recovery-позициях, которых здесь нет. Поэтому IsRecoveryRule исключает их из основного
+    // Prefix (как в recovery-режиме), а ParseRecoveryRuleType их не разворачивает.
     private partial Result? ParseRecoveryRuleType(Rule rule, int startPos, string input) => null;
     private partial Result? InsertOftenMissed(OftenMissed oftenMissed, int startPos, Result failedResult) => null;
     private partial bool IsRecoveryTerminal(Terminal terminal) => false;
-    private partial bool IsRecoveryRule(Rule alt) => false;
+    private partial bool IsRecoveryRule(Rule alt) => alt.GetSubRules<RecoveryTerminal>().Any();
     private partial (Rule[] Prefix, RuleWithPrecedence[] Postfix) BuildRecoveryTdopp(string ruleName, Rule[] alternatives) => ([], []);
 }
 
