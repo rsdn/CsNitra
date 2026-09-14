@@ -46,7 +46,7 @@ rawTree : array[int]   // bump-аллокатор узлов: Allocate(size), Pa
 memoize : array[int]   // индекс = позиция в тексте, значение = указатель на голову списка узлов
 ```
 
-### Layout узла (`Constants.n:11-49`)
+### Layout узла (`Constants.n:11-49`; `RawTreeParsedState = ~int.MaxValue` — `ParseResult.n:29`)
 
 Узел — блок int'ов, начинающийся с указателя `ptr`:
 
@@ -126,7 +126,8 @@ ParseSession.Parse()
 - `PanicRecovery` → классический panic-mode с вычислением follow-множеств
   «стоппер-токенов» (RecoveryParser.PanicRecovery.n);
 - `FirstErrorRecovery` → минимальная: на первом fail вставляет пустые субправилы
-  и отбрасывает хвост.
+  и отбрасывает хвост. (В исходнике имена с опечатками: `FirsrErrorRecovery`,
+  `DeafultRecoveryTimeout` — ParseSession.n:23, 95-97.)
 
 ---
 
@@ -230,8 +231,10 @@ wall-clock 200 мс (`RecoveryTimeout`, ParseSession.n:23).
    основного прохода. Специальные обходы (`FindExtension` пропускает Bad/partial,
    ParsePrefix.n:50-62 возвращает -1 на partial) вынуждают повторные исследования;
    взаимодействие тонкое — и медленность, и трудноотладимость.
-4. **`DeleteTokenOrGarbage`** — на каждый кандидат-токен в точке сбоя полный слив
-   worklist'а.
+4. **`DeleteTokenOrGarbage`** — каждый кандидат-токен в точке сбоя регистрирует
+   удаление и enqueue-ит продолжения (`SubruleParsed`, Delete.n:42-85); полный
+   слив worklist'а (`Parse()`) происходит один раз на итерацию внешнего цикла
+   (RecoveryParser.n:85-91), но число кандидатов растит чарт и стоимость слива.
 5. **Почему «иногда, и сложно выявить»:** ограничение *время*, а не *работа*.
    У отдельных входов (много ошибок, глубокие вложенные циклы, амбивалентность)
    поиск **наедает полный 200-мс бюджет** — «зависание ровно на 200 мс». Порог

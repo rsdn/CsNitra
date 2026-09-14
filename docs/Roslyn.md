@@ -23,9 +23,15 @@
    «где закончить пропуск» решается по текущему контексту правила, а не
    глобально.
 4. **Глобальные предохранители.** `ParseWithStackGuard` (LanguageParser.cs:207-234):
-   `InsufficientExecutionStackException` → весь вход = один `BadToken` + EOF.
-   `IsMakingProgress` (SyntaxParser.cs:1178-1189): guardrail против бесконечных
-   циклов (assert в debug). Лимит 200 BadToken'ов.
+   `InsufficientExecutionStackException` → весь вход = один `BadToken` + EOF
+   (`CreateForGlobalFailure`). Вызывается из 4 точек входа, включая mid-parse
+   (`ParseMemberDeclaration` → `IncompleteMember`, `ParseStatement` →
+   `EmptyStatement`, `ParseExpression` → missing identifier) — overflow посреди
+   разбора даёт *локальный* плохой узел, а не только «весь файл». Плюс
+   превентивные `StackGuard.EnsureSufficientExecutionStack(_recursionDepth)` в 5
+   горячих точках (LanguageParser.cs:241, 2593, 3237, 8352, 11475) — бросают
+   *до* реального исчерпания стека. `IsMakingProgress` (SyntaxParser.cs:1178-1189):
+   guardrail против бесконечных циклов (assert в debug). Лимит 200 BadToken'ов.
 
 ---
 
@@ -36,7 +42,7 @@
 | # | Стратегия | Суть | Код |
 |---|---|---|---|
 | 1 | BadToken + лимит 200 | мусор = токен; >200 → остаток файла одним токеном | Lexer.cs:688-732 |
-| 5 | Identifier backtrack | не собрал ни символа → `TextWindow.Reset(start)`, возврат `false` вызывающему | Lexer.cs:1619-1623 |
+| 5 | Identifier backtrack | невалидный hex в `@0x...` (единственный `goto Fail` slow-path'а, :1605) → `TextWindow.Reset(start)`, возврат `false` вызывающему; в fast-path «не собран ни один символ → `false`» без Reset (ничего не потреблено; :1336, 1395-1397) | Lexer.cs:1605, 1619-1623 |
 | 8 | Runaway-режим интерполяции | при ошибке в строке следующая кавычка = закрывающая (дёшевый выход) | Lexer_StringLiteral.cs:1148 |
 | 13 | Инъекция фиктивного `0` | плохая экспонента `1e` → в буфер добавляется `0`, парсер получает валидное число | Lexer.cs:938-959 |
 | 17 | Незакрытый комментарий | EOF внутри `/* */` → весь остаток = комментарий | Lexer.cs:2208-2233 |
@@ -96,7 +102,9 @@ trailingTrivia = ...;   // пропущенное → SkippedTokensTrivia на �
   всё до EOF, одно `ERR_UnexpectedToken`, остаток → trivia. Это Roslyn-аналог
   «гарантированного S6».
 - `ParseWithStackGuard` + `CreateForGlobalFailure` (LanguageParser.cs:207-234):
-  stack overflow → весь файл одним BadToken'ом, `ForceEndOfFile()`.
+  stack overflow → весь файл одним BadToken'ом, `ForceEndOfFile()` (отдельный
+  примитив, SyntaxParser.cs:514-517, usable вне stack-guard; вызов из 4 точек
+  входа, включая mid-parse, — см. §1 п.4).
 - `IsMakingProgress` (SyntaxParser.cs:1178-1189): guardrail для
   `while`-циклов парсера — позиция токена должна расти, иначе assert.
 - 11 специализированных recovery (misplaced `else`, `for`→`foreach`,
