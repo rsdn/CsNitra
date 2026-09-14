@@ -1,8 +1,8 @@
 #nullable enable
 
-using System.Text;
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
+using System.Text;
 
 #if RECOVERY
 namespace MiniC;
@@ -115,7 +115,7 @@ public sealed class AbsorberPlacementTests
         // Абсорбер [24..28) глотает `### ` целиком на уровне цикла (Function), bar разбирается целиком.
         Assert.IsTrue(result.TryGetSuccess(out var node, out var end) && end == input.Length,
             $"Expected Success@EOF (bar parsed whole), got {result.ResultKind}@{result.NewPos}/{result.MaxFailPos} len={input.Length} " +
-            $"ErrorInfo={_parser.ErrorInfo?.Pos} passes={_parser.RecoveryPasses} diag={Describe(_parser.RecoveryDiagnostics)} tree={DescribeTree((Node)node!)}");
+            $"ErrorInfo={_parser.ErrorInfo?.Pos} passes={_parser.RecoveryPasses} diag={Describe(_parser.RecoveryDiagnostics)} tree={DescribeTree(node)}");
         Assert.IsNull(_parser.ErrorInfo);
 
         // Skipped-диагностика абсорбера (S2 resync).
@@ -124,9 +124,9 @@ public sealed class AbsorberPlacementTests
             $"Expected >= 1 Skipped diagnostic (absorber), got {skipped.Count}. All: {Describe(_parser.RecoveryDiagnostics)}");
 
         // Абсорбер представлен в дереве (IsRecovery-узел).
-        var recoveryNodes = CostCalculator.CountRecoveryNodes((Node)node!);
+        var recoveryNodes = CostCalculator.CountRecoveryNodes(node);
         Assert.IsTrue(recoveryNodes >= 1,
-            $"Expected >= 1 recovery node (absorber), got {recoveryNodes}. tree={DescribeTree((Node)node!)}");
+            $"Expected >= 1 recovery node (absorber), got {recoveryNodes}. tree={DescribeTree(node)}");
     }
 
     // ============ 3.0c: хвостовой мусор в истинном EOF → S3 на уровне цикла → Success@EOF ============
@@ -141,7 +141,7 @@ public sealed class AbsorberPlacementTests
         // Абсорбер [24..27) глотает хвост `###` целиком на уровне цикла (Function) → Success@EOF.
         Assert.IsTrue(result.TryGetSuccess(out var node, out var end) && end == input.Length,
             $"Expected Success@EOF, got {result.ResultKind}@{result.NewPos}/{result.MaxFailPos} len={input.Length} " +
-            $"ErrorInfo={_parser.ErrorInfo?.Pos} passes={_parser.RecoveryPasses} diag={Describe(_parser.RecoveryDiagnostics)} tree={DescribeTree((Node)node!)}");
+            $"ErrorInfo={_parser.ErrorInfo?.Pos} passes={_parser.RecoveryPasses} diag={Describe(_parser.RecoveryDiagnostics)} tree={DescribeTree(node)}");
         Assert.IsNull(_parser.ErrorInfo);
 
         // Skipped-диагностика абсорбера (S3 panic, терминатор = EOF).
@@ -150,9 +150,9 @@ public sealed class AbsorberPlacementTests
             $"Expected >= 1 Skipped diagnostic (absorber), got {skipped.Count}. All: {Describe(_parser.RecoveryDiagnostics)}");
 
         // Абсорбер представлен в дереве (IsRecovery-узел).
-        var recoveryNodes = CostCalculator.CountRecoveryNodes((Node)node!);
+        var recoveryNodes = CostCalculator.CountRecoveryNodes(node);
         Assert.IsTrue(recoveryNodes >= 1,
-            $"Expected >= 1 recovery node (absorber), got {recoveryNodes}. tree={DescribeTree((Node)node!)}");
+            $"Expected >= 1 recovery node (absorber), got {recoveryNodes}. tree={DescribeTree(node)}");
     }
 
     // ============ Хелперы ============
@@ -160,14 +160,14 @@ public sealed class AbsorberPlacementTests
     private static string Describe(IReadOnlyList<RecoveryDiagnostic> diags)
         => string.Join("; ", diags.Select(d => $"{d.Kind} [{d.StartPos}..{d.EndPos}) term={d.Terminal?.Kind ?? "-"} rule={d.RuleName ?? "-"}"));
 
-    private static string DescribeTree(Node node)
+    private static string DescribeTree(ISyntaxNode node)
     {
         var sb = new StringBuilder();
         DescribeTree(node, sb);
         return sb.ToString();
     }
 
-    private static void DescribeTree(Node node, StringBuilder sb)
+    private static void DescribeTree(ISyntaxNode node, StringBuilder sb)
     {
         var content = node is TerminalNode t ? $" len={t.ContentLength}" : "";
         var rec = node.IsRecovery ? " [REC]" : "";
@@ -175,14 +175,17 @@ public sealed class AbsorberPlacementTests
         switch (node)
         {
             case SeqNode seq:
-                foreach (var el in seq.Elements) DescribeTree((Node)el, sb);
+                foreach (var el in seq.RawElements)
+                    DescribeTree(el, sb);
                 break;
             case ListNode list:
-                foreach (var el in list.Elements) DescribeTree((Node)el, sb);
-                foreach (var d in list.Delimiters) DescribeTree((Node)d, sb);
+                foreach (var el in list.RawElements)
+                    DescribeTree(el, sb);
+                foreach (var d in list.Delimiters)
+                    DescribeTree(d, sb);
                 break;
             case SomeNode some:
-                DescribeTree((Node)some.Value, sb);
+                DescribeTree(some.Value, sb);
                 break;
         }
     }

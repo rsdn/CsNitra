@@ -135,7 +135,7 @@ public partial class Parser
     private Result CreateInjectedResult(Injection injection, int pos)
     {
         var endPos = pos + injection.Length;
-        var node = new TerminalNode(injection.NodeKind, pos, endPos, injection.Length, IsRecovery: true);
+        var node = new TerminalNode(injection.NodeKind, pos, endPos, injection.Length, IsRecovery: true, IsAbsorber: injection.IsSkip && injection.Length > 0);
         return Result.Success(node, endPos, endPos);
     }
 

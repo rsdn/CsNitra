@@ -230,7 +230,8 @@ public partial class MiniCTests
                 return z;
             }
             """,
-            "FunctionDecl: func1(x, y) { VarDecl: z; ExprStmt: (z = (x / 5)); Return(z) }; FunctionDecl: func2(x, y) { VarDecl: z; ExprStmt: (z = (x + y)); Return(z) }"
+            // Пропущенная } восстановлена нулевой вставкой (Kind "Error") — узел ошибки виден в AST (RawElements/Elements).
+            "FunctionDecl: func1(x, y) { VarDecl: z; ExprStmt: (z = (x / 5)); Return(z); «Error: expected Expr» }; FunctionDecl: func2(x, y) { VarDecl: z; ExprStmt: (z = (x + y)); Return(z) }"
         );
     }
 
@@ -259,7 +260,7 @@ public partial class MiniCTests
                 return z;
             }
             """,
-            "FunctionDecl: func1(x, y) { VarDecl: z; ExprStmt: (z = (x / 5)); IfStmt: z then { Return(x); Return(z) } }; FunctionDecl: func2(x, y) { VarDecl: z; ExprStmt: (z = (x + y)); Return(z) }"
+            "FunctionDecl: func1(x, y) { VarDecl: z; ExprStmt: (z = (x / 5)); IfStmt: z then { Return(x); Return(z); «Error: expected Expr» }; «Error: expected Expr» }; FunctionDecl: func2(x, y) { VarDecl: z; ExprStmt: (z = (x + y)); Return(z) }"
         );
     }
 
@@ -288,7 +289,7 @@ public partial class MiniCTests
                 return z;
             }
             """,
-            "FunctionDecl: func1(x, y) { VarDecl: z; ExprStmt: (z = (x «Unexpected: $^» 5)); IfStmt: z then { Return(x); Return(z) } }; FunctionDecl: func2(x, y) { VarDecl: z; ExprStmt: (z = (x + y)); Return(z) }"
+            "FunctionDecl: func1(x, y) { VarDecl: z; ExprStmt: (z = (x «Unexpected: $^» 5)); IfStmt: z then { Return(x); Return(z); «Error: expected Expr» }; «Error: expected Expr» }; FunctionDecl: func2(x, y) { VarDecl: z; ExprStmt: (z = (x + y)); Return(z) }"
         );
     }
 

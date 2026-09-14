@@ -313,10 +313,10 @@ public sealed class MiniCEndToEndTests
         switch (node)
         {
             case SeqNode seq:
-                foreach (var el in seq.Elements) DescribeTree((Node)el, sb);
+                foreach (var el in seq.RawElements) DescribeTree((Node)el, sb);
                 break;
             case ListNode list:
-                foreach (var el in list.Elements) DescribeTree((Node)el, sb);
+                foreach (var el in list.RawElements) DescribeTree((Node)el, sb);
                 foreach (var d in list.Delimiters) DescribeTree((Node)d, sb);
                 break;
             case SomeNode some:
@@ -367,10 +367,10 @@ public sealed class MiniCEndToEndTests
         switch (node)
         {
             case SeqNode seq:
-                foreach (var el in seq.Elements) CollectTerminalSpans((Node)el, spans);
+                foreach (var el in seq.RawElements) CollectTerminalSpans((Node)el, spans);
                 break;
             case ListNode list:
-                foreach (var el in list.Elements) CollectTerminalSpans((Node)el, spans);
+                foreach (var el in list.RawElements) CollectTerminalSpans((Node)el, spans);
                 foreach (var d in list.Delimiters) CollectTerminalSpans((Node)d, spans);
                 break;
             case SomeNode some:
@@ -393,10 +393,10 @@ public sealed class MiniCEndToEndTests
         switch (node)
         {
             case SeqNode seq:
-                foreach (var el in seq.Elements) WriteCanonical((Node)el, sb);
+                foreach (var el in seq.RawElements) WriteCanonical((Node)el, sb);
                 break;
             case ListNode list:
-                foreach (var el in list.Elements) WriteCanonical((Node)el, sb);
+                foreach (var el in list.RawElements) WriteCanonical((Node)el, sb);
                 foreach (var d in list.Delimiters) WriteCanonical((Node)d, sb);
                 break;
             case SomeNode some:

@@ -171,14 +171,14 @@ public static class RecoveryEngine
                 // регион [e..resyncPos) целиком как одну итерацию и возобновился с чистого терминала.
                 if (topIdx == 0 && top.RuleName == anchorName)
                 {
-                    var absorber = new TerminalNode("Skipped", e, resyncPos, resyncPos - e, IsRecovery: true);
+                    var absorber = new TerminalNode("Skipped", e, resyncPos, resyncPos - e, IsRecovery: true, IsAbsorber: true);
                     var value = Result.Success(absorber, resyncPos, resyncPos);
                     var memoOlds = CaptureMemo(parser, top.RuleName, e);
                     memoPatch = (p => p.PatchMemo(top.RuleName, e, value), p => RollbackMemo(p, top.RuleName, e, memoOlds));
                 }
                 else if (failedElement is Ref refRule)
                 {
-                    var absorber = new TerminalNode("Skipped", e, resyncPos, resyncPos - e, IsRecovery: true);
+                    var absorber = new TerminalNode("Skipped", e, resyncPos, resyncPos - e, IsRecovery: true, IsAbsorber: true);
                     var value = Result.Success(absorber, resyncPos, resyncPos);
                     var memoOlds = CaptureMemo(parser, refRule.RuleName, e);
                     memoPatch = (p => p.PatchMemo(refRule.RuleName, e, value), p => RollbackMemo(p, refRule.RuleName, e, memoOlds));
@@ -453,7 +453,7 @@ public static class RecoveryEngine
         var loopElement = FindEnclosingLoopElement(parser, snapshot);
         if (topIdx == 0 && foundS == input.Length && loopElement is { } le && top.RuleName == le.RuleName)
         {
-            var absorber = new TerminalNode("Skipped", e, foundS, foundS - e, IsRecovery: true);
+            var absorber = new TerminalNode("Skipped", e, foundS, foundS - e, IsRecovery: true, IsAbsorber: true);
             var value = Result.Success(absorber, foundS, foundS);
             var olds = CaptureMemo(parser, top.RuleName, e);
             candidates.Add(new RecoveryCandidate(
@@ -469,7 +469,7 @@ public static class RecoveryEngine
         }
         else if (failedElement is Ref r)
         {
-            var absorber = new TerminalNode("Skipped", e, foundS, foundS - e, IsRecovery: true);
+            var absorber = new TerminalNode("Skipped", e, foundS, foundS - e, IsRecovery: true, IsAbsorber: true);
             var value = Result.Success(absorber, foundS, foundS);
             var olds = CaptureMemo(parser, r.RuleName, e);
             candidates.Add(new RecoveryCandidate(

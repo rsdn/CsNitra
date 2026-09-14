@@ -15,7 +15,7 @@ public sealed record Tree(string Input, object Element)
 
     public object Elements => (ISyntaxNode)Element switch
     {
-        SeqNode x => x.Elements.Select(x => new Tree(Input, x)).ToArray(),
+        SeqNode x => x.RawElements.Select(x => new Tree(Input, x)).ToArray(),
         SomeNode x => new Tree(Input, x.Value).Elements,
         TerminalNode x => new Tree[0],
         ListNode x => ToTreeArray(x),
@@ -25,9 +25,9 @@ public sealed record Tree(string Input, object Element)
     private Tree[] ToTreeArray(ListNode listNode)
     {
         var result = new List<Tree>();
-        for (int i = 0; i < listNode.Elements.Count; i++)
+        for (int i = 0; i < listNode.RawElements.Count; i++)
         {
-            result.Add(new Tree(Input, listNode.Elements[i]));
+            result.Add(new Tree(Input, listNode.RawElements[i]));
             if (i < listNode.Delimiters.Count)
                 result.Add(new Tree(Input, listNode.Delimiters[i]));
         }

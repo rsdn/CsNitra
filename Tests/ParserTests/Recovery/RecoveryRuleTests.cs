@@ -13,8 +13,8 @@ public sealed class RecoveryRuleTests
     private static string Shape(ISyntaxNode node) => node switch
     {
         TerminalNode t => $"T[{t.Kind},{t.StartPos},{t.EndPos},{t.ContentLength},{t.IsRecovery}]",
-        SeqNode s => $"S[{s.Kind},{s.StartPos},{s.EndPos}]({string.Join(",", s.Elements.Select(Shape))})",
-        ListNode l => $"L[{l.Kind},{l.StartPos},{l.EndPos},{l.HasTrailingSeparator},{l.IsRecovery}]({string.Join(",", l.Elements.Select(Shape))}|{string.Join(",", l.Delimiters.Select(Shape))})",
+        SeqNode s => $"S[{s.Kind},{s.StartPos},{s.EndPos}]({string.Join(",", s.RawElements.Select(Shape))})",
+        ListNode l => $"L[{l.Kind},{l.StartPos},{l.EndPos},{l.HasTrailingSeparator},{l.IsRecovery}]({string.Join(",", l.RawElements.Select(Shape))}|{string.Join(",", l.Delimiters.Select(Shape))})",
         SomeNode o => $"Some[{o.Kind},{o.StartPos},{o.EndPos}]({Shape(o.Value)})",
         NoneNode n => $"None[{n.Kind},{n.StartPos},{n.EndPos}]",
         PredicateNode p => $"P[{p.Kind},{p.StartPos},{p.EndPos}]",

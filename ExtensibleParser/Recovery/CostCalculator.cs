@@ -43,7 +43,7 @@ public static class CostCalculator
     };
 
     /// <summary>Число узлов дерева с IsRecovery == true (вставленные токены + абсорберы).</summary>
-    public static int CountRecoveryNodes(Node root)
+    public static int CountRecoveryNodes(ISyntaxNode root)
     {
         static int Count(ISyntaxNode node)
         {
@@ -51,11 +51,11 @@ public static class CostCalculator
             switch (node)
             {
                 case SeqNode seq:
-                    foreach (var el in seq.Elements)
+                    foreach (var el in seq.RawElements)
                         count += Count(el);
                     break;
                 case ListNode list:
-                    foreach (var el in list.Elements)
+                    foreach (var el in list.RawElements)
                         count += Count(el);
                     foreach (var d in list.Delimiters)
                         count += Count(d);

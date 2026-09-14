@@ -146,7 +146,9 @@ public abstract record Node(string Kind, int StartPos, int EndPos, bool IsRecove
 /// <param name="EndPos">The ending position in the input text (exclusive).</param>
 /// <param name="ContentLength">The length of the actual matched content (may differ from EndPos-StartPos due to trivia).</param>
 /// <param name="IsRecovery">Whether this node was created during error recovery.</param>
-public record TerminalNode(string Kind, int StartPos, int EndPos, int ContentLength, bool IsRecovery = false) : Node(Kind, StartPos, EndPos, IsRecovery)
+/// <param name="IsAbsorber">Whether this node is a recovery absorber — a standalone node holding skipped text (dirt).
+/// Inserted missing tokens (zero width) and real recovery terminal matches are NOT absorbers.</param>
+public record TerminalNode(string Kind, int StartPos, int EndPos, int ContentLength, bool IsRecovery = false, bool IsAbsorber = false) : Node(Kind, StartPos, EndPos, IsRecovery)
 {
     /// <summary>Gets the span of the actual content (without trailing trivia).</summary>
     /// <param name="input">The original input text.</param>
@@ -173,10 +175,10 @@ public record TerminalNode(string Kind, int StartPos, int EndPos, int ContentLen
 /// Seq nodes represent grammar rules that are composed of multiple sequential elements.
 /// </summary>
 /// <param name="Kind">The kind/type name of this sequence.</param>
-/// <param name="Elements">The child nodes in order.</param>
+/// <param name="RawElements">All child nodes in order, including recovery absorbers (skipped text).</param>
 /// <param name="StartPos">The starting position in the input text.</param>
 /// <param name="EndPos">The ending position in the input text (exclusive).</param>
-public record SeqNode(string Kind, IReadOnlyList<ISyntaxNode> Elements, int StartPos, int EndPos) : Node(Foo(Kind, StartPos, EndPos), StartPos, EndPos)
+public record SeqNode(string Kind, IReadOnlyList<ISyntaxNode> RawElements, int StartPos, int EndPos) : Node(Foo(Kind, StartPos, EndPos), StartPos, EndPos)
 {
     private static string Foo(string x, int StartPos, int EndPos)
     {
@@ -185,6 +187,15 @@ public record SeqNode(string Kind, IReadOnlyList<ISyntaxNode> Elements, int Star
         }
         return x;
     }
+
+    /// <summary>
+    /// The child nodes in order without recovery absorbers (elements holding skipped text) —
+    /// the clean view for visitors and AST construction. Use <see cref="RawElements"/> for the
+    /// full tree (debugging, span tiling, recovery metrics).
+    /// </summary>
+    public IReadOnlyList<ISyntaxNode> Elements =>
+        RawElements.Where(e => e is not TerminalNode { IsAbsorber: true }).ToArray();
+
     /// <summary>Accepts a visitor to traverse this node.</summary>
     /// <param name="visitor">The visitor to accept.</param>
     public override void Accept(ISyntaxVisitor visitor) => visitor.Visit(this);
@@ -195,15 +206,23 @@ public record SeqNode(string Kind, IReadOnlyList<ISyntaxNode> Elements, int Star
 /// Used for parsing constructs like comma-separated lists in grammar rules.
 /// </summary>
 /// <param name="Kind">The kind/type name of this list.</param>
-/// <param name="Elements">The list elements.</param>
+/// <param name="RawElements">All list elements in order, including recovery absorbers (skipped text).</param>
 /// <param name="Delimiters">The separator nodes between elements.</param>
 /// <param name="StartPos">The starting position in the input text.</param>
 /// <param name="EndPos">The ending position in the input text (exclusive).</param>
 /// <param name="HasTrailingSeparator">Whether the list ends with a trailing separator.</param>
 /// <param name="IsRecovery">Whether this node was created during error recovery.</param>
-public record ListNode(string Kind, IReadOnlyList<ISyntaxNode> Elements, IReadOnlyList<ISyntaxNode> Delimiters, int StartPos, int EndPos, bool HasTrailingSeparator = false, bool IsRecovery = false)
+public record ListNode(string Kind, IReadOnlyList<ISyntaxNode> RawElements, IReadOnlyList<ISyntaxNode> Delimiters, int StartPos, int EndPos, bool HasTrailingSeparator = false, bool IsRecovery = false)
     : Node(Kind, StartPos, EndPos, IsRecovery)
 {
+    /// <summary>
+    /// The list elements without recovery absorbers (elements holding skipped text) —
+    /// the clean view for visitors and AST construction. Use <see cref="RawElements"/> for the
+    /// full tree (debugging, span tiling, recovery metrics).
+    /// </summary>
+    public IReadOnlyList<ISyntaxNode> Elements =>
+        RawElements.Where(e => e is not TerminalNode { IsAbsorber: true }).ToArray();
+
     /// <summary>Accepts a visitor to traverse this node.</summary>
     /// <param name="visitor">The visitor to accept.</param>
     public override void Accept(ISyntaxVisitor visitor) => visitor.Visit(this);

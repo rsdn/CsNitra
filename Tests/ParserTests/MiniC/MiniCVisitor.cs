@@ -47,7 +47,7 @@ public partial class MiniCTests
                 "FunctionDecl" => new FunctionDecl(
                     (Identifier)children[1],
                     children.Count > 4 && children[3] is Params p ? p.Parameters : new List<Identifier>(),
-                    (Block)children[^1]
+                    children.OfType<Block>().LastOrDefault() ?? new Block([])
                 ),
                 "ParamsList" => handleParamsList(children),
                 "ModuleFunctions" => new Block(children, HasBraces: false),
@@ -58,14 +58,13 @@ public partial class MiniCTests
                 "VarDecl" => new VarDecl((Token)children[0], (Identifier)children[1]),
                 "ArrayDecl" => new ArrayDecl(
                     (Token)children[0],
-                    (Identifier)children[3],
-                    children[6] is ArrayDeclItems p ? p.Numbers : new List<Number>()),
-                "IfStmt" => new IfStatement((Expr)children[2], wrapInBlockIfNeeded(children[4]), Else: null),
-                "IfElseStmt" => new IfStatement((Expr)children[2], wrapInBlockIfNeeded(children[4]), wrapInBlockIfNeeded(children[6])),
+                    children.OfType<Identifier>().First(),
+                    children.OfType<ArrayDeclItems>().FirstOrDefault()?.Numbers ?? new List<Number>()),
+                "IfStmt" => new IfStatement((Expr)children[2], wrapInBlockIfNeeded(children[^1]), Else: null),
+                "IfElseStmt" => new IfStatement((Expr)children[2], wrapInBlockIfNeeded(children[^3]), wrapInBlockIfNeeded(children[^1])),
                 "MultiBlock" => new Block(
                     children
-                        .Skip(1)
-                        .Take(children.Count - 2)
+                        .Where(c => c is not Token)
                         .SelectMany(c => c is Block b ? b.Statements : [c])
                         .ToList(),
                     HasBraces: true),
@@ -136,10 +135,8 @@ public partial class MiniCTests
             }
             static List<Expr> getCallArguments(List<Ast> children)
             {
-                Guard.AreEqual(4, children.Count);
-
                 var args = new List<Expr>();
-                if (children[2] is Args listArgs)
+                if (children.Count >= 3 && children[2] is Args listArgs)
                     args.AddRange(listArgs.Arguments);
 
                 return args;
