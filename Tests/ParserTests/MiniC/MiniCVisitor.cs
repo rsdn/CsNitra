@@ -8,7 +8,7 @@ namespace MiniC;
 
 public partial class MiniCTests
 {
-    private class MiniCVisitor(string input) : ISyntaxVisitor
+    internal class MiniCVisitor(string input) : ISyntaxVisitor
     {
         public Ast? Result { get; private set; }
         public string Input { get; } = input;
@@ -85,6 +85,7 @@ public partial class MiniCTests
                 "Or"  => makeBinaryOperator("||", children),
                 "RecoveryOperator" => makeRecoveryBinaryOperator(children),
                 "RecoveryEmptyOperator" => makeMissingBinaryOperator(children),
+                "Parens" => children[1],
                 "Neg" => new UnaryExpr("-", (Expr)children[1]),
                 "AssignmentExpr" => new BinaryExpr("=", (Expr)children[0], (Expr)children[2]),
                 "ParamsRest" => children[1], // Just return the parameter part (skip the comma)
