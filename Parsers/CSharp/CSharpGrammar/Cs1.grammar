@@ -131,7 +131,43 @@ UnarySign =
     | Plus = "+"
     | Minus = "-";
 
-Type = Identifier;
+// === Типы C# 1.0 (T1.4) — семантика по Roslyn LanguageParser.ParseType/ParseTypeCore/
+// ParseUnderlyingType/ParseArrayRankSpecifier/ParsePointerTypeMods (C:\RSDN\roslyn, main).
+// Postfix-цикл Roslyn (LanguageParser.cs:7614-7676): после базового типа любое число и в любом
+// порядке `*` (указатель) и `[...]` (ранг массива). В тип-контексте ранг-спецификатор содержит
+// только запятые (размеры — только в new/stackalloc, вне скоупа). Nullable `?` (CS2) и NRT (CS8)
+// не входят в C# 1.0.
+// TDOPP: саморекурсивные альтернативы — postfix-операторы Type; уровни TypePointer/TypeArray
+// объявлены во втором precedence-списке ниже (postfix с приоритетом 0 неприменим при
+// minPrecedence=0 — Parser.cs ContinueFromPartialPostfix).
+Type =
+    | PredefinedType
+    | QualifiedName
+    | PointerType = Type : TypePointer "*"
+    | ArrayType = Type : TypeArray ArrayRankSpecifier;
+
+// 16 преопределённых типов — Roslyn SyntaxFacts.IsPredefinedType (SyntaxKindFacts.cs:316-340).
+PredefinedType =
+    | "bool"
+    | "byte"
+    | "char"
+    | "decimal"
+    | "double"
+    | "float"
+    | "int"
+    | "long"
+    | "object"
+    | "sbyte"
+    | "short"
+    | "string"
+    | "uint"
+    | "ulong"
+    | "ushort"
+    | "void";
+
+// Ранг-спецификатор в тип-контексте: `[` + n запятых + `]` = ранг n+1 (Roslyn
+// ParseArrayRankSpecifier: каждая запятая добавляет размерность; `[]` = ранг 1).
+ArrayRankSpecifier = "[" ","* "]";
 
 ReservedKeyword =
     | "abstract"
@@ -221,6 +257,11 @@ precedence
     Unary, Multiplicative, Additive, Relational, Equality,
     LogicalAnd, LogicalXor, LogicalOr, CondAnd, CondOr,
     Conditional, Assignment, Comma;
+
+// === T1.4: уровни postfix-операторов Type (указатель, ранг массива).
+// Мержится со списком выше через якорь Comma (CsNitraTypeChecker.TryMergePrecedenceList);
+// на Expression не влияет (уровни Type не используются в Expression).
+precedence TypeArray, TypePointer, Comma;
 
 Expression =
     | PrimaryExpr   = Primary PostfixOp*
