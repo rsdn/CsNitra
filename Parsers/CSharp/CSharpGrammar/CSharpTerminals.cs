@@ -44,6 +44,12 @@ public sealed partial class CSharpTerminals
 
     public static Terminal InterpolatedRawText() => _interpolatedRawText;
 
+    public static Terminal RawOpenBraceLiteral() => _rawOpenBraceLiteral;
+
+    public static Terminal RawCloseBraceLiteral() => _rawCloseBraceLiteral;
+
+    public static Terminal RawHoleOpenBraces() => _rawHoleOpenBraces;
+
     public static Terminal RegularFormatText() => _regularFormatText;
 
     public static Terminal VerbatimFormatText() => _verbatimFormatText;
@@ -72,6 +78,9 @@ public sealed partial class CSharpTerminals
         InterpolatedRegularEscape(),
         InterpolatedVerbatimText(),
         InterpolatedRawText(),
+        RawOpenBraceLiteral(),
+        RawCloseBraceLiteral(),
+        RawHoleOpenBraces(),
         RegularFormatText(),
         VerbatimFormatText(),
         RawFormatText(),
@@ -93,6 +102,12 @@ public sealed partial class CSharpTerminals
     private static readonly Terminal _interpolatedVerbatimText = new InterpolatedVerbatimTextTerminal();
 
     private static readonly Terminal _interpolatedRawText = new InterpolatedRawTextTerminal();
+
+    private static readonly Terminal _rawOpenBraceLiteral = new RawOpenBraceLiteralTerminal();
+
+    private static readonly Terminal _rawCloseBraceLiteral = new RawCloseBraceLiteralTerminal();
+
+    private static readonly Terminal _rawHoleOpenBraces = new RawHoleOpenBracesTerminal();
 
     private static readonly Terminal _regularFormatText = new RegularFormatTextTerminal();
 
@@ -320,6 +335,86 @@ public sealed partial class CSharpTerminals
         }
 
         public override string ToString() => "RawFormatText";
+    }
+
+    // Raw string content: a brace run of length 1..D-1, where D is the dollar count of the
+    // enclosing literal (Parser.ContextCount, set by the context scope). A run of D+ braces is
+    // a hole (or an error) and does not match here.
+    private sealed record RawOpenBraceLiteralTerminal : Terminal
+    {
+        public RawOpenBraceLiteralTerminal() : base("RawOpenBraceLiteral")
+        {
+        }
+
+        public override int TryMatch(string input, int startPos)
+            => TryMatchLiteralBraceRun(input, startPos, '{');
+
+        public override bool Injectable => false;
+
+        public override string ToString() => "RawOpenBraceLiteral";
+    }
+
+    private sealed record RawCloseBraceLiteralTerminal : Terminal
+    {
+        public RawCloseBraceLiteralTerminal() : base("RawCloseBraceLiteral")
+        {
+        }
+
+        public override int TryMatch(string input, int startPos)
+            => TryMatchLiteralBraceRun(input, startPos, '}');
+
+        public override bool Injectable => false;
+
+        public override string ToString() => "RawCloseBraceLiteral";
+    }
+
+    // Raw string content: the opening brace run of a hole MINUS the first brace (which a plain
+    // "{" literal consumes first), so the full run is D..2D-1 (D = context count): the first
+    // K-D braces are literal text, the last D open the hole. Runs < D are literal
+    // (RawOpenBraceLiteral); runs >= 2D are an error (CS9006) and do not match. Failing here
+    // (one element into the hole seq) keeps the recovery failure shape identical to the
+    // pre-parameterization grammar.
+    private sealed record RawHoleOpenBracesTerminal : Terminal
+    {
+        public RawHoleOpenBracesTerminal() : base("RawHoleOpenBraces")
+        {
+        }
+
+        public override int TryMatch(string input, int startPos)
+        {
+            // No active context scope (e.g. speculative recovery probes) = cannot match.
+            var depth = Parser.ContextCount;
+            if (depth is null)
+                return -1;
+
+            var pos = startPos;
+            var length = input.Length;
+            while (pos < length && input[pos] == '{')
+                pos++;
+
+            var run = pos - startPos;
+            return run >= depth - 1 && run <= 2 * depth - 2 ? run : -1;
+        }
+
+        public override bool Injectable => false;
+
+        public override string ToString() => "RawHoleOpenBraces";
+    }
+
+    private static int TryMatchLiteralBraceRun(string input, int startPos, char brace)
+    {
+        // No active context scope (e.g. speculative recovery probes) = cannot match.
+        var depth = Parser.ContextCount;
+        if (depth is null)
+            return -1;
+
+        var pos = startPos;
+        var length = input.Length;
+        while (pos < length && input[pos] == brace)
+            pos++;
+
+        var run = pos - startPos;
+        return run > 0 && run < depth ? run : -1;
     }
 
     private static int TryScanNonBraceQuoteRun(string input, int startPos)

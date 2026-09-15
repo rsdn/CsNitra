@@ -34,50 +34,27 @@ VerbatimInterpolatedPart =
 VerbatimHole1 = "{" Expression VerbatimFormat? "}";
 VerbatimFormat = ":" VerbatimFormatText;
 
-// === D=1 raw: $"""...""" ===
-RawInterpolatedStringLiteral = "$" "\"\"\"" RawPart1* "\"\"\"";
+// === D>=1 raw: $"""...""" — одно параметризованное правило (Этап 5) ===
+// D = число $, передаётся через контекстный слот: context("$"+, тело).
+// Дыра = "{"-ран D..2D-1 (первые K-D скобки — литер. текст, последние D открывают):
+// первая "{" — обычный литерал, остаток рана (D-1..2D-2) — RawHoleOpenBraces; закрывается
+// ровно D "}" (остаток ранa возвращается в контент). Литеральные скобочные раны = 1..D-1.
+// Ран >= 2D открывающих / >= D закрывающих в контенте не матчится (CS9006/CS9007).
+RawInterpolatedStringLiteral = context("$"+, "\"\"\"" RawPart* "\"\"\"");
 
-RawPart1 =
-    | Hole = RawHole1
+RawPart =
+    | Hole = "{" RawHoleOpenBraces Expression RawFormat? "}"{n}
+    | OpenBrace = RawOpenBraceLiteral
+    | CloseBrace = RawCloseBraceLiteral
     | Quote1 = "\"" !"\""
     | Quote2 = "\"" "\"" !"\""
     | Text = InterpolatedRawText;
 
-RawHole1 = "{" Expression RawFormat? "}";
 RawFormat = ":" RawFormatText;
-
-// === D=2 raw: $$"""...""" ===
-RawInterpolatedStringLiteral2 = "$$" "\"\"\"" RawPart2* "\"\"\"";
-
-RawPart2 =
-    | HoleB = "{{{" Expression RawFormat? "}}"
-    | HoleA = "{{" Expression RawFormat? "}}"
-    | OpenBrace1 = "{" !"{"
-    | CloseBrace1 = "}" !"}"
-    | Quote1 = "\"" !"\""
-    | Quote2 = "\"" "\"" !"\""
-    | Text = InterpolatedRawText;
-
-// === D=3 raw: $$$"""...""" ===
-RawInterpolatedStringLiteral3 = "$$$" "\"\"\"" RawPart3* "\"\"\"";
-
-RawPart3 =
-    | HoleC = "{{{{{" Expression RawFormat? "}}}"
-    | HoleB = "{{{{" Expression RawFormat? "}}}"
-    | HoleA = "{{{" Expression RawFormat? "}}}"
-    | OpenBrace2 = "{{" !"{"
-    | OpenBrace1 = "{" !"{"
-    | CloseBrace2 = "}}" !"}"
-    | CloseBrace1 = "}" !"}"
-    | Quote1 = "\"" !"\""
-    | Quote2 = "\"" "\"" !"\""
-    | Text = InterpolatedRawText;
 
 // === Подключение к Expression (T0.3: повторное имя = добавление альтернатив) ===
 // Строки — prefix-альтернативы TDOPP-правила Expression (не саморекурсивны).
 Expression =
     | InterpolatedStringLiteral
     | VerbatimInterpolatedStringLiteral
-    | RawInterpolatedStringLiteral
-    | RawInterpolatedStringLiteral2
-    | RawInterpolatedStringLiteral3;
+    | RawInterpolatedStringLiteral;

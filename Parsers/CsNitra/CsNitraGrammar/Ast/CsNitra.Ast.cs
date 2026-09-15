@@ -225,6 +225,28 @@ public sealed partial record ZeroOrManyExpressionAst(
     public override string ToString() => $"{Element}*";
 }
 
+public sealed partial record RepeatExpressionAst(
+    RuleExpressionAst Element,
+    int? Count,
+    int StartPos,
+    int EndPos,
+    string? Kind = null
+) : RuleExpressionAst(StartPos, EndPos, Kind)
+{
+    public override string ToString() => $"{Element}{{{(Count?.ToString() ?? "n")}}}";
+}
+
+public sealed partial record ContextExpressionAst(
+    RuleExpressionAst Source,
+    RuleExpressionAst Body,
+    int StartPos,
+    int EndPos,
+    string? Kind = null
+) : RuleExpressionAst(StartPos, EndPos, Kind)
+{
+    public override string ToString() => $"context({Source}, {Body})";
+}
+
 public sealed partial record AndPredicateExpressionAst(
     Literal Predicate,
     RuleExpressionAst Expression,

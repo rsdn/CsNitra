@@ -57,6 +57,8 @@ public sealed class AstSimplifier
         OftenMissedExpressionAst a => TransformOftenMissedExpression(a, kind),
         OneOrManyExpressionAst a => TransformOneOrManyExpression(a, kind),
         ZeroOrManyExpressionAst a => TransformZeroOrManyExpression(a, kind),
+        RepeatExpressionAst a => TransformRepeatExpression(a, kind),
+        ContextExpressionAst a => TransformContextExpression(a, kind),
         AndPredicateExpressionAst a => TransformAndPredicateExpression(a, kind),
         NotPredicateExpressionAst a => TransformNotPredicateExpression(a, kind),
         SeparatedListExpressionAst a => TransformSeparatedListExpression(a, kind),
@@ -144,6 +146,19 @@ public sealed class AstSimplifier
     private RuleExpressionAst TransformZeroOrManyExpression(ZeroOrManyExpressionAst ast, string? kind) => ast with
     {
         Element = TransformExpression(ast.Element, kind: null),
+        Kind = InferKind(ast, kind)
+    };
+
+    private RuleExpressionAst TransformRepeatExpression(RepeatExpressionAst ast, string? kind) => ast with
+    {
+        Element = TransformExpression(ast.Element, kind: null),
+        Kind = InferKind(ast, kind)
+    };
+
+    private RuleExpressionAst TransformContextExpression(ContextExpressionAst ast, string? kind) => ast with
+    {
+        Source = TransformExpression(ast.Source, kind: null),
+        Body = TransformExpression(ast.Body, kind: null),
         Kind = InferKind(ast, kind)
     };
 

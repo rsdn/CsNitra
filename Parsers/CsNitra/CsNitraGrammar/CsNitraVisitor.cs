@@ -67,6 +67,8 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
                 "OftenMissed" => ProcessOftenMissedExpression(children, startPos, endPos),
                 "OneOrMany" => ProcessOneOrManyExpression(children, startPos, endPos),
                 "ZeroOrMany" => ProcessZeroOrManyExpression(children, startPos, endPos),
+                "Repeat" => ProcessRepeatExpression(children, startPos, endPos),
+                "Context" => ProcessContextExpression(children, startPos, endPos),
                 "AndPredicate" => ProcessAndPredicateExpression(children, startPos, endPos),
                 "NotPredicate" => ProcessNotPredicateExpression(children, startPos, endPos),
                 "RuleRef" => ProcessRuleRefExpression(children, startPos, endPos),
@@ -206,6 +208,23 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
     {
         [RuleExpressionAst element, Literal star] => new ZeroOrManyExpressionAst(element, star, startPos, endPos),
         _ => throw new InvalidOperationException("Expected expression in ZeroOrMany"),
+    };
+
+    private CsNitraAst ProcessRepeatExpression(List<CsNitraAst> children, int startPos, int endPos) => children switch
+    {
+        [RuleExpressionAst element, Literal open, Literal count, Literal close] => new RepeatExpressionAst(
+            element,
+            int.TryParse(count.Value, out var countValue) ? countValue : null,
+            startPos,
+            endPos),
+        _ => throw new InvalidOperationException($"Expected Repeat. But found [{string.Join(", ", children)}]")
+    };
+
+    private CsNitraAst ProcessContextExpression(List<CsNitraAst> children, int startPos, int endPos) => children switch
+    {
+        [Literal contextKw, Literal open, RuleExpressionAst source, Literal comma, RuleExpressionAst body, Literal close]
+            when contextKw.Value == "context" => new ContextExpressionAst(source, body, startPos, endPos),
+        _ => throw new InvalidOperationException($"Expected Context. But found [{string.Join(", ", children)}]")
     };
 
     private CsNitraAst ProcessAndPredicateExpression(List<CsNitraAst> children, int startPos, int endPos) => children switch

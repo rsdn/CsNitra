@@ -11,9 +11,8 @@ public class InterpolatedStringTests
 {
     private const string Regular = "InterpolatedStringLiteral";
     private const string Verbatim = "VerbatimInterpolatedStringLiteral";
-    private const string Raw1 = "RawInterpolatedStringLiteral";
-    private const string Raw2 = "RawInterpolatedStringLiteral2";
-    private const string Raw3 = "RawInterpolatedStringLiteral3";
+    // Single parameterized rule for all dollar depths D>=1 (Stage 5: context + Repeat).
+    private const string Raw = "RawInterpolatedStringLiteral";
 
     [TestMethod]
     public void Regular_ValidFragments_Parse()
@@ -75,54 +74,93 @@ public class InterpolatedStringTests
     [TestMethod]
     public void Raw1_ValidFragments_Parse()
     {
-        AssertParses("$\"\"\"{x}\"\"\"", Raw1);
-        AssertParses("$\"\"\"abc\"\"\"", Raw1);
-        AssertParses("$\"\"\"{x:0}\"\"\"", Raw1);
-        AssertParses("$\"\"\"{ $\"a{b}\" }\"\"\"", Raw1);
-        AssertParses("$\"\"\"\n{ x }\n\"\"\"", Raw1);
-        AssertParses("$\"\"\"a\"b\"\"\"", Raw1);
-        AssertParses("$\"\"\"a\"\"b\"\"\"", Raw1);
+        AssertParses("$\"\"\"{x}\"\"\"", Raw);
+        AssertParses("$\"\"\"abc\"\"\"", Raw);
+        AssertParses("$\"\"\"{x:0}\"\"\"", Raw);
+        AssertParses("$\"\"\"{ $\"a{b}\" }\"\"\"", Raw);
+        AssertParses("$\"\"\"\n{ x }\n\"\"\"", Raw);
+        AssertParses("$\"\"\"a\"b\"\"\"", Raw);
+        AssertParses("$\"\"\"a\"\"b\"\"\"", Raw);
     }
 
     [TestMethod]
     public void Raw1_InvalidFragments_Reject()
     {
-        AssertFails("$\"\"\"{x}\"\"\"\"", Raw1);
-        AssertFails("$\"\"\"{{x}}\"\"\"", Raw1);
-        AssertFails("$\"\"\"{x\"\"\"\"", Raw1);
+        AssertFails("$\"\"\"{x}\"\"\"\"", Raw);
+        AssertFails("$\"\"\"{{x}}\"\"\"", Raw);
+        AssertFails("$\"\"\"{x\"\"\"\"", Raw);
     }
 
     [TestMethod]
     public void Raw2_ValidFragments_Parse()
     {
-        AssertParses("$$\"\"\"{{x}}\"\"\"", Raw2);
-        AssertParses("$$\"\"\"{{{x}}}\"\"\"", Raw2);
-        AssertParses("$$\"\"\"{x}\"\"\"", Raw2);
-        AssertParses("$$\"\"\"{{x:0}}\"\"\"", Raw2);
+        AssertParses("$$\"\"\"{{x}}\"\"\"", Raw);
+        AssertParses("$$\"\"\"{{{x}}}\"\"\"", Raw);
+        AssertParses("$$\"\"\"{x}\"\"\"", Raw);
+        AssertParses("$$\"\"\"{{x:0}}\"\"\"", Raw);
     }
 
     [TestMethod]
     public void Raw2_InvalidFragments_Reject()
     {
-        AssertFails("$$\"\"\"{{{{x}}}}\"\"\"", Raw2);
-        AssertFails("$$\"\"\"{{x}\"\"\"", Raw2);
-        AssertFails("$$\"\"\"{x}}\"\"\"", Raw2);
+        AssertFails("$$\"\"\"{{{{x}}}}\"\"\"", Raw);
+        AssertFails("$$\"\"\"{{x}\"\"\"", Raw);
+        AssertFails("$$\"\"\"{x}}\"\"\"", Raw);
     }
 
     [TestMethod]
     public void Raw3_ValidFragments_Parse()
     {
-        AssertParses("$$$\"\"\"{{{x}}}\"\"\"", Raw3);
-        AssertParses("$$$\"\"\"{{x}}\"\"\"", Raw3);
-        AssertParses("$$$\"\"\"{x}\"\"\"", Raw3);
-        AssertParses("$$$\"\"\"{{{x:0}}}\"\"\"", Raw3);
+        AssertParses("$$$\"\"\"{{{x}}}\"\"\"", Raw);
+        AssertParses("$$$\"\"\"{{x}}\"\"\"", Raw);
+        AssertParses("$$$\"\"\"{x}\"\"\"", Raw);
+        AssertParses("$$$\"\"\"{{{x:0}}}\"\"\"", Raw);
+        // K=5 = 2 литер. + дыра; закрывающий ран 5 = дыра (3) + 2 литер.
+        AssertParses("$$$\"\"\"..{{{{{43}}}}}..\"\"\"", Raw);
     }
 
     [TestMethod]
     public void Raw3_InvalidFragments_Reject()
     {
-        AssertFails("$$$\"\"\"{{{{{{x}}}}}}\"\"\"", Raw3);
-        AssertFails("$$$\"\"\"{{{x}}\"\"\"", Raw3);
+        AssertFails("$$$\"\"\"{{{{{{x}}}}}}\"\"\"", Raw);
+        AssertFails("$$$\"\"\"{{{x}}\"\"\"", Raw);
+        // Закрывающий ран 6 = 2D → CS9007 (дыра закрывается ровно D, остаток ран ≥ D в контенте).
+        AssertFails("$$$\"\"\"..{{{{{43}}}}}}..\"\"\"", Raw);
+    }
+
+    // D>=4: was impossible before parameterization (only D=1,2,3 existed as separate rules).
+    [TestMethod]
+    public void Raw4Plus_ValidFragments_Parse()
+    {
+        AssertParses("$$$$\"\"\"{{{{x}}}}\"\"\"", Raw);
+        AssertParses("$$$$\"\"\"{{{{{x}}}}}\"\"\"", Raw);
+        // Закрывающий M=5 = дыра (4) + 1 литер.
+        AssertParses("$$$$\"\"\"{{{{x}}}}}\"\"\"", Raw);
+        AssertParses("$$$$\"\"\"{{{x}}}\"\"\"", Raw);
+        AssertParses("$$$$\"\"\"{{{{x:0}}}}\"\"\"", Raw);
+        AssertParses("$$$$$\"\"\"{{{{{x}}}}}\"\"\"", Raw);
+        AssertParses("$$$$$\"\"\"{{{{x}}}\"\"\"", Raw);
+        AssertParses("$$$$$\"\"\"{x}\"\"\"", Raw);
+    }
+
+    [TestMethod]
+    public void Raw4Plus_InvalidFragments_Reject()
+    {
+        // D=4: K=8 >= 2D (CS9006)
+        AssertFails("$$$$\"\"\"{{{{{{{{x}}}}}}}}\"\"\"", Raw);
+        // D=4: закрывающий M=8 = 2D → дыра (4) + ран 4 = D в контенте (CS9007)
+        AssertFails("$$$$\"\"\"{{{{x}}}}}}}}\"\"\"", Raw);
+        // D=5: K=5 = D => дыра, но закрывающий M=2 < D (CS9005)
+        AssertFails("$$$$$\"\"\"{{{{{x}}}\"\"\"", Raw);
+    }
+
+    // Nested context scopes: a raw string with its own dollar depth inside a hole.
+    [TestMethod]
+    public void NestedRawStrings_DifferentDepths_Parse()
+    {
+        AssertParses("$$$\"\"\"{{{ $\"\"\"{x}\"\"\" }}}\"\"\"", Raw);
+        AssertParses("$$$\"\"\"{{{ $$\"\"\"{{x}}\"\"\" }}}\"\"\"", Raw);
+        AssertParses("$$$$\"\"\"{{{{ $$$\"\"\"{{{x}}}\"\"\" }}}}\"\"\"", Raw);
     }
 
     // Newline-transparency: the global trivia scanner eats newlines between terminals inside a
@@ -131,9 +169,9 @@ public class InterpolatedStringTests
     public void NewlineTransparency_GrammarAcceptsRoslynRejects()
     {
         AssertParses("$\"a\nb\"", Regular);
-        AssertParses("$\"\"\"a\nb\"\"\"", Raw1);
-        AssertParses("$\"\"\"\n\"\"\"", Raw1);
-        AssertParses("$\"\"\"\nabc\ndef \"\"\"", Raw1);
+        AssertParses("$\"\"\"a\nb\"\"\"", Raw);
+        AssertParses("$\"\"\"\n\"\"\"", Raw);
+        AssertParses("$\"\"\"\nabc\ndef \"\"\"", Raw);
     }
 
     // §3.1: a top-level conditional without parens is parsed as a conditional by the grammar,

@@ -1,6 +1,5 @@
 ﻿using CSharpGrammar;
 using ExtensibleParser;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace CSharpGrammarTests;
 
@@ -154,7 +153,19 @@ public class CSharpTerminalsTests
     {
         AssertAll(
             CSharpTerminals.StringLiteral(),
-            [("\"\"", 2), ("\"abc\"", 5), ("\"hello\"", 7), ("\"a\\\"b\"", 6), ("\"\\\\\"", 4), ("\"\\\\n\"", 5)]);
+            [("""
+            ""
+            """, 2), ("""
+            "abc"
+            """, 5), ("""
+            "hello"
+            """, 7), ("""
+            "a\"b"
+            """, 6), ("""
+            "\\"
+            """, 4), ("""
+            "\\n"
+            """, 5)]);
     }
 
     [TestMethod]
@@ -163,17 +174,39 @@ public class CSharpTerminalsTests
         AssertAll(
             CSharpTerminals.StringLiteral(),
             [
-                ("\"\\\"\"", 4),
-                ("\"\\\'\"", 4),
-                ("\"\\\\\"", 4),
-                ("\"\\0\"", 4),
-                ("\"\\a\"", 4),
-                ("\"\\b\"", 4),
-                ("\"\\f\"", 4),
-                ("\"\\n\"", 4),
-                ("\"\\r\"", 4),
-                ("\"\\t\"", 4),
-                ("\"\\v\"", 4)
+                ("""
+                "\""
+                """, 4),
+                ("""
+                "\'"
+                """, 4),
+                ("""
+                "\\"
+                """, 4),
+                ("""
+                "\0"
+                """, 4),
+                ("""
+                "\a"
+                """, 4),
+                ("""
+                "\b"
+                """, 4),
+                ("""
+                "\f"
+                """, 4),
+                ("""
+                "\n"
+                """, 4),
+                ("""
+                "\r"
+                """, 4),
+                ("""
+                "\t"
+                """, 4),
+                ("""
+                "\v"
+                """, 4)
             ]);
     }
 
@@ -183,14 +216,30 @@ public class CSharpTerminalsTests
         AssertAll(
             CSharpTerminals.StringLiteral(),
             [
-                ("\"\\x4\"", 5),
-                ("\"\\x41\"", 6),
-                ("\"\\x0041\"", 8),
-                ("\"\\u0041\"", 8),
-                ("\"\\U00000041\"", 12),
-                ("\"\\U00010000\"", 12),
-                ("\"\\U00010FFF\"", 12),
-                ("\"a\\n\\x41\\u0041\"", 15)
+                ("""
+                "\x4"
+                """, 5),
+                ("""
+                "\x41"
+                """, 6),
+                ("""
+                "\x0041"
+                """, 8),
+                ("""
+                "\u0041"
+                """, 8),
+                ("""
+                "\U00000041"
+                """, 12),
+                ("""
+                "\U00010000"
+                """, 12),
+                ("""
+                "\U00010FFF"
+                """, 12),
+                ("""
+                "a\n\x41\u0041"
+                """, 15)
             ]);
     }
 
@@ -200,17 +249,39 @@ public class CSharpTerminalsTests
         AssertAll(
             CSharpTerminals.StringLiteral(),
             [
-                ("\"\\$\"", -1),
-                ("\"\\q\"", -1),
-                ("\"\\e\"", -1),
-                ("\"\\x\"", -1),
-                ("\"\\xZZ\"", -1),
-                ("\"\\u\"", -1),
-                ("\"\\u12\"", -1),
-                ("\"\\u12G4\"", -1),
-                ("\"\\U\"", -1),
-                ("\"\\U1234567\"", -1),
-                ("\"\\U12345678\"", -1)
+                ("""
+                "\$"
+                """, -1),
+                ("""
+                "\q"
+                """, -1),
+                ("""
+                "\e"
+                """, -1),
+                ("""
+                "\x"
+                """, -1),
+                ("""
+                "\xZZ"
+                """, -1),
+                ("""
+                "\u"
+                """, -1),
+                ("""
+                "\u12"
+                """, -1),
+                ("""
+                "\u12G4"
+                """, -1),
+                ("""
+                "\U"
+                """, -1),
+                ("""
+                "\U1234567"
+                """, -1),
+                ("""
+                "\U12345678"
+                """, -1)
             ]);
     }
 
@@ -220,11 +291,22 @@ public class CSharpTerminalsTests
         AssertAll(
             CSharpTerminals.StringLiteral(),
             [
-                ("\"abc", -1),
-                ("\"a\nb\"", -1),
-                ("\"a\rb\"", -1),
-                ("\"\\", -1),
-                ("\"\\x", -1)
+                ("""
+                "abc
+                """, -1),
+                ("""
+                "a
+                b"
+                """, -1),
+                ("""
+                "a                b"
+                """, -1),
+                ("""
+                "\
+                """, -1),
+                ("""
+                "\x
+                """, -1)
             ]);
     }
 
@@ -235,7 +317,11 @@ public class CSharpTerminalsTests
         // 3+ quote runs belong to RawStringLiteral.
         AssertAll(
             CSharpTerminals.StringLiteral(),
-            [("\"\"\"x\"\"\"", -1), ("\"\"\"\"\"\"x\"\"\"\"\"\"", -1)]);
+            [(""""
+            """x"""
+            """", -1), ("""""""
+            """"""x""""""
+            """"""", -1)]);
     }
 
     [TestMethod]
@@ -244,7 +330,9 @@ public class CSharpTerminalsTests
         AssertAll(
             CSharpTerminals.StringLiteral(),
             [
-                (@"$""abc""", -1),
+                ("""
+                $"abc"
+                """, -1),
                 ("$", -1)
             ]);
     }
@@ -255,13 +343,27 @@ public class CSharpTerminalsTests
         AssertAll(
             CSharpTerminals.RawStringLiteral(),
             [
-                ("\"\"\"abc\"\"\"", 9),
-                ("\"\"\"a\"b\"\"\"", 9),
-                ("\"\"\"a\"\"b\"\"\"", 10),
-                ("\"\"\" \"\"\"", 7),
+                (""""
+                """abc"""
+                """", 9),
+                (""""
+                """a"b"""
+                """", 9),
+                (""""
+                """a""b"""
+                """", 10),
+                (""""
+                """ """
+                """", 7),
                 ("\"\"\"\t\"\"\"", 7),
-                ("\"\"\"{x}\"\"\"", 9),
-                ("\"\"\"\"" + "ab" + "\"\"\"\"", 10)
+                (""""
+                """{x}"""
+                """", 9),
+                ("""""
+                """"
+                """"" + "ab" + """""
+                """"
+                """"", 10)
             ]);
     }
 
@@ -271,13 +373,44 @@ public class CSharpTerminalsTests
         AssertAll(
             CSharpTerminals.RawStringLiteral(),
             [
-                ("\"\"\"\nabc\n\"\"\"", 11),
-                ("\"\"\"\n\n\"\"\"", 8),
-                ("\"\"\"\r\nabc\r\n\"\"\"", 13),
-                ("\"\"\"\n  \n\"\"\"", 10),
-                ("\"\"\"\r\n  abc\r\n     def\r\n  \"\"\"", 27),
-                ("\"\"\"\n\"\"\n\"\"\"", 10),
-                ("\"\"\"\"" + "  \n\"\"\"\n\"\"\"\"", 15)
+                (""""
+                """
+                abc
+                """
+                """", 11),
+                (""""
+                """
+
+                """
+                """", 8),
+                (""""
+                """
+                abc
+                """
+                """", 13),
+                (""""
+                """
+                  
+                """
+                """", 10),
+                (""""
+                """
+                  abc
+                     def
+                  """
+                """", 27),
+                (""""
+                """
+                ""
+                """
+                """", 10),
+                ("""""
+                """"
+                """"" + """""
+                  
+                """
+                """"
+                """"", 15)
             ]);
     }
 
@@ -289,12 +422,37 @@ public class CSharpTerminalsTests
         AssertAll(
             CSharpTerminals.RawStringLiteral(),
             [
-                ("\"\"\"" + "a" + "\"\"\"\"" + "b" + "\"\"\"", 8),
-                ("\"\"\"" + "a" + "\"\"\"\"", 8),
-                ("\"\"\"" + "a" + "\"\"\"\"\"", 9),
-                ("\"\"\"\nabc\"\"\"\n\"\"\"", 10),
-                ("\"\"\"\nabc\n\"\"\"\"\"", 13),
-                ("\"\"\"  \na\"\"\"", 10)
+                (""""
+                """
+                """" + "a" + """""
+                """"
+                """"" + "b" + """"
+                """
+                """", 8),
+                (""""
+                """
+                """" + "a" + """""
+                """"
+                """"", 8),
+                (""""
+                """
+                """" + "a" + """"""
+                """""
+                """""", 9),
+                (""""
+                """
+                abc"""
+                """
+                """", 10),
+                (""""""
+                """
+                abc
+                """""
+                """""", 13),
+                (""""
+                """  
+                a"""
+                """", 10)
             ]);
     }
 
@@ -304,16 +462,40 @@ public class CSharpTerminalsTests
         AssertAll(
             CSharpTerminals.RawStringLiteral(),
             [
-                ("\"\"\"abc\"\"", -1),
-                ("\"\"\"abc", -1),
-                ("\"\"\"", -1),
-                ("\"\"\"\"", -1),
-                ("\"\"\"\"\"\"", -1),
-                ("\"\"\"\nabc", -1),
-                ("\"\"\"abc\ndef\"\"\"", -1),
-                ("\"\"\"\n\"\"\"", -1),
-                ("\"\"\"\n  \"\"\"", -1),
-                ("\"\"abc\"\"", -1),
+                (""""
+                """abc""
+                """", -1),
+                (""""
+                """abc
+                """", -1),
+                (""""
+                """
+                """", -1),
+                ("""""
+                """"
+                """"", -1),
+                ("""""""
+                """"""
+                """"""", -1),
+                (""""
+                """
+                abc
+                """", -1),
+                (""""
+                """abc
+                def"""
+                """", -1),
+                (""""
+                """
+                """
+                """", -1),
+                (""""
+                """
+                  """
+                """", -1),
+                ("""
+                ""abc""
+                """, -1),
                 ("abc", -1)
             ]);
     }
@@ -324,8 +506,12 @@ public class CSharpTerminalsTests
         AssertAll(
             CSharpTerminals.RawStringLiteral(),
             [
-                ("$" + "\"\"\"x\"\"\"", -1),
-                ("@" + "\"\"\"x\"\"\"", -1),
+                ("$" + """"
+                """x"""
+                """", -1),
+                ("@" + """"
+                """x"""
+                """", -1),
                 ("x", -1)
             ]);
     }
@@ -335,7 +521,13 @@ public class CSharpTerminalsTests
     {
         AssertAll(
             CSharpTerminals.VerbatimStringLiteral(),
-            [("@\"\"", 3), ("@\"abc\"", 6), ("@\"literal\"", 10)]);
+            [("""
+            @""
+            """, 3), ("""
+            @"abc"
+            """, 6), ("""
+            @"literal"
+            """, 10)]);
     }
 
     [TestMethod]
@@ -343,7 +535,15 @@ public class CSharpTerminalsTests
     {
         AssertAll(
             CSharpTerminals.VerbatimStringLiteral(),
-            [("@\"a\"\"b\"", 7), ("@\"\"\"\"", 5), ("@\"a\"\"\"", 6), ("@\"x\"", 4)]);
+            [("""
+            @"a""b"
+            """, 7), ("""""
+            @""""
+            """"", 5), (""""
+            @"a"""
+            """", 6), ("""
+            @"x"
+            """, 4)]);
     }
 
     [TestMethod]
@@ -351,7 +551,11 @@ public class CSharpTerminalsTests
     {
         AssertAll(
             CSharpTerminals.VerbatimStringLiteral(),
-            [("@\"back\\slash\"", 13), ("@\"\\e\"", 5)]);
+            [("""
+            @"back\slash"
+            """, 13), ("""
+            @"\e"
+            """, 5)]);
     }
 
     [TestMethod]
@@ -359,7 +563,13 @@ public class CSharpTerminalsTests
     {
         AssertAll(
             CSharpTerminals.VerbatimStringLiteral(),
-            [("@\"line1\nline2\"", 14), ("@\"multi line\r\nliteral\"", 22)]);
+            [("""
+            @"line1
+            line2"
+            """, 14), ("""
+            @"multi line
+            literal"
+            """, 22)]);
     }
 
     [TestMethod]
@@ -367,7 +577,11 @@ public class CSharpTerminalsTests
     {
         AssertAll(
             CSharpTerminals.VerbatimStringLiteral(),
-            [("@\"{x}\"", 6), ("@\"a}b\"", 6)]);
+            [("""
+            @"{x}"
+            """, 6), ("""
+            @"a}b"
+            """, 6)]);
     }
 
     [TestMethod]
@@ -381,7 +595,11 @@ public class CSharpTerminalsTests
     {
         AssertAll(
             CSharpTerminals.VerbatimStringLiteral(),
-            [("@\"", -1), ("@\"literal", -1), ("@\"\"\"", -1)]);
+            [("""
+            @"
+            """, -1), ("@\"literal", -1), (""""
+            @"""
+            """", -1)]);
     }
 
     [TestMethod]
@@ -430,8 +648,14 @@ public class CSharpTerminalsTests
     [TestMethod]
     public void Trivia_LineComment_MatchesCommentAndTrailingNewline()
     {
-        AssertMatch(CSharpTerminals.Trivia(), "// c\nx", 5);
-        AssertMatch(CSharpTerminals.Trivia(), "// c\nx", 0, 5);
+        AssertMatch(CSharpTerminals.Trivia(), """
+            // c
+            x
+            """, 5);
+        AssertMatch(CSharpTerminals.Trivia(), """
+            // c
+            x
+            """, 0, 5);
     }
 
     [TestMethod]
@@ -474,17 +698,29 @@ public class CSharpTerminalsTests
     [TestMethod]
     public void StartPos_StringLiterals_MatchFromThatPosition()
     {
-        AssertMatch(CSharpTerminals.StringLiteral(), "x \"ab\"", 4, 2);
-        AssertMatch(CSharpTerminals.VerbatimStringLiteral(), "x @\"ab\"", 5, 2);
-        AssertMatch(CSharpTerminals.RawStringLiteral(), "x \"\"\"ab\"\"\"", 8, 2);
+        AssertMatch(CSharpTerminals.StringLiteral(), """
+            x "ab"
+            """, 4, 2);
+        AssertMatch(CSharpTerminals.VerbatimStringLiteral(), """
+            x @"ab"
+            """, 5, 2);
+        AssertMatch(CSharpTerminals.RawStringLiteral(), """"
+            x """ab"""
+            """", 8, 2);
     }
 
     [TestMethod]
     public void StartPos_MisalignedStart_Fails()
     {
-        AssertMatch(CSharpTerminals.StringLiteral(), "\"ab\"", -1, 1);
-        AssertMatch(CSharpTerminals.VerbatimStringLiteral(), "a@\"ab\"", -1, 0);
-        AssertMatch(CSharpTerminals.RawStringLiteral(), "\"ab\"\"", -1, 0);
+        AssertMatch(CSharpTerminals.StringLiteral(), """
+            "ab"
+            """, -1, 1);
+        AssertMatch(CSharpTerminals.VerbatimStringLiteral(), """
+            a@"ab"
+            """, -1, 0);
+        AssertMatch(CSharpTerminals.RawStringLiteral(), """
+            "ab""
+            """, -1, 0);
     }
 
     private static void AssertAll(Terminal terminal, (string Input, int Expected)[] cases)
@@ -498,7 +734,12 @@ public class CSharpTerminalsTests
 
     private static string Escape(string value) => value
         .Replace("\\", "\\\\")
-        .Replace("\r", "\\r")
-        .Replace("\n", "\\n")
+        .Replace("""
+
+        """, "\\r")
+        .Replace("""
+
+
+        """, "\\n")
         .Replace("\t", "\\t");
 }

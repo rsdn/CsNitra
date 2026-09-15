@@ -18,6 +18,8 @@ public interface IAstVisitor
     void Visit(OftenMissedExpressionAst node);
     void Visit(OneOrManyExpressionAst node);
     void Visit(ZeroOrManyExpressionAst node);
+    void Visit(RepeatExpressionAst node);
+    void Visit(ContextExpressionAst node);
     void Visit(AndPredicateExpressionAst node);
     void Visit(NotPredicateExpressionAst node);
     void Visit(LiteralAst node);
@@ -50,6 +52,8 @@ public abstract class AstVisitor : IAstVisitor
     public virtual void Visit(OftenMissedExpressionAst node) { }
     public virtual void Visit(OneOrManyExpressionAst node) { }
     public virtual void Visit(ZeroOrManyExpressionAst node) { }
+    public virtual void Visit(RepeatExpressionAst node) { }
+    public virtual void Visit(ContextExpressionAst node) { }
     public virtual void Visit(AndPredicateExpressionAst node) { }
     public virtual void Visit(NotPredicateExpressionAst node) { }
     public virtual void Visit(LiteralAst node) { }
@@ -169,6 +173,16 @@ public sealed partial record OneOrManyExpressionAst
 }
 
 public sealed partial record ZeroOrManyExpressionAst
+{
+    public override void Accept(IAstVisitor visitor) => visitor.Visit(this);
+}
+
+public sealed partial record RepeatExpressionAst
+{
+    public override void Accept(IAstVisitor visitor) => visitor.Visit(this);
+}
+
+public sealed partial record ContextExpressionAst
 {
     public override void Accept(IAstVisitor visitor) => visitor.Visit(this);
 }

@@ -17,6 +17,11 @@ public static class RecoveryEngine
 
         if (snapshot is not null)
         {
+            // §3.9: failure inside a strict context (a frame with Recoverable=false) — no repair
+            // candidates at all: the region cannot be soundly fixed, so the parse fails hard.
+            if (snapshot.Stack.Any(f => f.Options is { Recoverable: false }))
+                return candidates;
+
             GenerateS1(e, snapshot, input, parser, candidates);
             GenerateS2(e, snapshot, input, parser, candidates);
             GenerateS3(e, snapshot, input, parser, candidates);
@@ -197,6 +202,8 @@ public static class RecoveryEngine
                 {
                     if (t is EofTerminal or EpsilonTerminal)
                         continue;
+                    if (!t.Injectable)
+                        continue;
                     if (t.TryMatch(input, e) >= 0)
                         continue;
                     insertions.Add((e, t, Injection.Insert(t.Kind)));
@@ -221,6 +228,8 @@ public static class RecoveryEngine
                     foreach (var t in FirstSets.Get(element, calculator))
                     {
                         if (t is EofTerminal or EpsilonTerminal)
+                            continue;
+                        if (!t.Injectable)
                             continue;
                         if (t.TryMatch(input, resyncPos) >= 0)
                             continue;

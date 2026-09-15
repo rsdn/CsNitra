@@ -49,6 +49,13 @@ public abstract record Terminal(string Kind) : Rule(Kind)
     /// </returns>
     public abstract int TryMatch(string input, int startPos);
 
+    /// <summary>
+    /// Whether the recovery engine may inject this terminal as a synthetic (zero-width) token.
+    /// Context-dependent terminals override this to false: an injection bypasses <see cref="TryMatch"/>
+    /// and therefore the active-context check, so such a token cannot be conjured at an arbitrary position.
+    /// </summary>
+    public virtual bool Injectable => true;
+
     public override IEnumerable<Rule> GetSubRules<T>()
     {
         if (this is T)
@@ -171,6 +178,56 @@ public record ZeroOrMany(Rule Element, string? Kind = null) : Rule(Kind ?? nameo
         if (this is T)
             yield return this;
         foreach (var subRule in Element.GetSubRules<T>())
+            yield return subRule;
+    }
+}
+
+/// <summary>
+/// Matches its element exactly a given number of times.
+/// When <see cref="Count"/> is null, the count is read from the active <see cref="ContextScope"/>
+/// (the number of elements of the scope source) at parse time — computed repetition without
+/// duplicating rules.
+/// Example: new Repeat(new Literal("{"), 3) matches "{{{";
+/// new Repeat(new Literal("{"), null) matches D braces where D is the context count.
+/// </summary>
+/// <param name="Element">The rule to repeat</param>
+/// <param name="Count">Exact repetition count; null = read from the active ContextScope</param>
+/// <param name="Kind">Optional custom name</param>
+public sealed record Repeat(Rule Element, int? Count = null, string? Kind = null) : Rule(Kind ?? $"{Element}{{{Count?.ToString() ?? "n"}}}")
+{
+    public override Rule InlineReferences(Dictionary<string, Rule> inlineableRules) =>
+        new Repeat(Element.InlineReferences(inlineableRules), Count, Kind);
+
+    public override IEnumerable<Rule> GetSubRules<T>()
+    {
+        if (this is T)
+            yield return this;
+        foreach (var subRule in Element.GetSubRules<T>())
+            yield return subRule;
+    }
+}
+
+/// <summary>
+/// Parses <see cref="Source"/>, derives an int context argument from the number of elements of the
+/// source node, then parses <see cref="Body"/> with that argument available to
+/// <see cref="Repeat"/> rules (Count = null). The argument is carried in a thread-static slot with
+/// save/restore semantics, so nested scopes work (e.g. a nested interpolated string inside a hole).
+/// </summary>
+/// <param name="Source">The element whose matched element count becomes the context argument (e.g. a dollar-sign run)</param>
+/// <param name="Body">The part parsed with the context argument set</param>
+/// <param name="Kind">Optional custom name</param>
+public sealed record ContextScope(Rule Source, Rule Body, string? Kind = null) : Rule(Kind ?? "ContextScope")
+{
+    public override Rule InlineReferences(Dictionary<string, Rule> inlineableRules) =>
+        new ContextScope(Source.InlineReferences(inlineableRules), Body.InlineReferences(inlineableRules), Kind);
+
+    public override IEnumerable<Rule> GetSubRules<T>()
+    {
+        if (this is T)
+            yield return this;
+        foreach (var subRule in Source.GetSubRules<T>())
+            yield return subRule;
+        foreach (var subRule in Body.GetSubRules<T>())
             yield return subRule;
     }
 }

@@ -11,6 +11,9 @@ public sealed partial class CsNitraTerminals
     [Regex(@"[_\l]\w*")]
     public static partial Terminal Identifier();
 
+    [Regex(@"[0-9]+")]
+    public static partial Terminal DecimalIntegerLiteral();
+
     [Regex("""
         "([^"\\]|\\.)*"|'([^'\\]|\\.)*'
         """)]

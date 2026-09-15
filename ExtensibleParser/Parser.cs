@@ -42,6 +42,18 @@ public partial class Parser(Terminal trivia, Log? log = null)
     // Чистый кэш результата TryMatch (length >= 0 или -1); mismatch кэшируется и никогда не чистится в ходе прохода.
     private readonly Dictionary<(int Pos, Terminal Terminal), int> _terminalCache = new(TerminalComparer.KeyComparer);
 
+    // Контекстный аргумент для контекстно-зависимого парсинга (Repeat с Count = null).
+    // Устанавливается/восстанавливается ContextScope (stack-семантика, вложенные скоупы).
+    // Является функцией позиции, поэтому ключи мемо/терминального кэша не расширяются.
+    [ThreadStatic]
+    private static int? _contextCount;
+
+    public static int? ContextCount
+    {
+        get => _contextCount;
+        set => _contextCount = value;
+    }
+
     // Хуки recovery-подсистемы: реализация в Parser.Recovery.cs;
     // в сборке EnableRecovery=false (Parser.NoRecovery.cs) — тривиальные (no-op/константы).
     // Ядро (этот файл) recovery-кода не содержит: только вызовы этих хуков.
@@ -499,6 +511,8 @@ public partial class Parser(Terminal trivia, Log? log = null)
                 AndPredicate a => ParseAndPredicate(a, startPos, input),
                 NotPredicate n => ParseNotPredicate(n, startPos, input),
                 SeparatedList sl => ParseSeparatedList(sl, startPos, input),
+                Repeat r => ParseRepeat(r, startPos, input),
+                ContextScope c => ParseContextScope(c, startPos, input),
                 _ => throw new IndexOutOfRangeException($"Unsupported rule type: {rule.GetType().Name}: {rule}")
             };
         }
@@ -658,6 +672,80 @@ public partial class Parser(Terminal trivia, Log? log = null)
             return Result.Partial(new SeqNode(zeroOrMany.Kind ?? "ZeroOrMany", elements, startPos, currentPos), currentPos, maxFailPos, loopCtx);
         return Result.Success(new SeqNode(zeroOrMany.Kind ?? "ZeroOrMany", elements, startPos, currentPos), currentPos, maxFailPos);
     }
+
+    private Result ParseRepeat(Repeat repeat, int startPos, string input)
+    {
+        // No active context scope (e.g. speculative recovery probes) = cannot match.
+        var count = repeat.Count ?? ContextCount;
+        if (count is null)
+            return Result.Failure(startPos);
+
+        if (count == 0)
+            return Result.Success(new TerminalNode(repeat.Kind ?? "Repeat", startPos, startPos, 0), startPos, startPos);
+
+        var currentPos = startPos;
+        var maxFailPos = startPos;
+        var elements = new List<ISyntaxNode>();
+
+        for (var i = 0; i < count; i++)
+        {
+            var result = WithFrame(new LoopFrameLocation("Repeat", i), ExpectedFor(repeat.Element), repeat.Kind ?? "Repeat",
+                null, () => ParseAlternative(repeat.Element, currentPos, input));
+            if (result.MaxFailPos > maxFailPos)
+                maxFailPos = result.MaxFailPos;
+
+            if (!result.TryGetSuccess(out var node, out var newPos))
+                return Result.Failure(maxFailPos);
+
+            // Guard: zero-width (epsilon) element cannot satisfy a positive repetition
+            if (newPos == currentPos)
+                return Result.Failure(maxFailPos);
+
+            node = node.AssertIsNonNull();
+            elements.Add(node);
+            currentPos = newPos;
+        }
+
+        var resultNode = count == 1
+            ? elements[0]
+            : new SeqNode(repeat.Kind ?? "Repeat", elements, startPos, currentPos);
+        return Result.Success(resultNode, currentPos, maxFailPos);
+    }
+
+    private Result ParseContextScope(ContextScope scope, int startPos, string input)
+    {
+        var sourceResult = WithFrame(new SeqFrameLocation(0), ExpectedFor(scope.Source), scope.Kind ?? "ContextScope",
+            null, () => ParseAlternative(scope.Source, startPos, input));
+        if (!sourceResult.TryGetSuccess(out var sourceNode, out var sourceEnd))
+            return sourceResult;
+
+        var count = CountMatchedElements(sourceNode);
+        var previous = ContextCount;
+        ContextCount = count;
+        try
+        {
+            // §3.9: the scope body is a strict context — its leaves are context-dependent, so the
+            // recovery engine cannot soundly repair a failure inside it (hard fail instead).
+            var bodyResult = WithFrame(new SeqFrameLocation(1), ExpectedFor(scope.Body), scope.Kind ?? "ContextScope",
+                new RecoveryOptions { Recoverable = false }, () => ParseAlternative(scope.Body, sourceEnd, input));
+            if (!bodyResult.TryGetSuccess(out var bodyNode, out var bodyEnd))
+                return bodyResult;
+
+            var maxFailPos = Math.Max(sourceResult.MaxFailPos, bodyResult.MaxFailPos);
+            var node = new SeqNode(scope.Kind ?? "ContextScope", [sourceNode, bodyNode], startPos, bodyEnd);
+            return Result.Success(node, bodyEnd, maxFailPos);
+        }
+        finally
+        {
+            ContextCount = previous;
+        }
+    }
+
+    private static int CountMatchedElements(ISyntaxNode node) => node switch
+    {
+        SeqNode seq => seq.Elements.Count,
+        _ => 1
+    };
 
     private static string Preview(string input, int pos, int len = 5) => pos >= input.Length
         ? "«»"

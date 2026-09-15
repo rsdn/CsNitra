@@ -75,11 +75,21 @@ public partial class CsNitraParser
         const int Naming = 3;
         const int Predicate = 4;
         const int Postfix = 5;
-        //const int Primary = 6;
+        const int Repeat = 6;
+        //const int Primary = 7;
 
         _parser.Rules["RuleExpression"] = [
             // prefix rules (Primary)
             CsNitraTerminals.Literal(),
+            // | Context = "context" "(" RuleExpression "," RuleExpression ")"
+            new Seq([
+                new Literal("context"),
+                new Literal("("),
+                new Ref("RuleExpression", "Source"),
+                new Literal(","),
+                new Ref("RuleExpression", "Body"),
+                new Literal(")")
+            ], "Context"),
             new Seq([
                 new Ref("QualifiedIdentifier", Kind: "Ref"),
                 new Optional(
@@ -102,6 +112,8 @@ public partial class CsNitraParser
             ], "SeparatedList"),
 
             // postfix rules (operators)
+            // | Repeat = RuleExpression "{" RepeatCount "}"
+            new Seq([new ReqRef("RuleExpression", Precedence: Repeat), new Literal("{"), new Ref("RepeatCount"), new Literal("}")], "Repeat"),
             new Seq([new ReqRef("RuleExpression", Precedence: Postfix), new Literal("??")], "OftenMissed"),
             new Seq([new ReqRef("RuleExpression", Precedence: Postfix), new Literal("+")], "OneOrMany"),
             new Seq([new ReqRef("RuleExpression", Precedence: Postfix), new Literal("*")], "ZeroOrMany"),
@@ -118,6 +130,9 @@ public partial class CsNitraParser
         _parser.Rules["Modifier"] = [new Literal("?"), new Literal("!")];
         // Count = "+" | "*";
         _parser.Rules["Count"] = [new Literal("+"), new Literal("*")];
+
+        // RepeatCount = DecimalIntegerLiteral | "n";
+        _parser.Rules["RepeatCount"] = [CsNitraTerminals.DecimalIntegerLiteral(), new Literal("n")];
 
         _parser.BuildTdoppRules();
     }

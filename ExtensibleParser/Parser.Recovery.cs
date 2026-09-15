@@ -200,7 +200,7 @@ public partial class Parser
         return isRecoveryPos ? tdoppRule.RecoveryPostfix : tdoppRule.Postfix;
     }
     private partial Result? InjectionAt(int pos, Terminal terminal) =>
-        _injections.TryGetValue((pos, terminal), out var injection) ? CreateInjectedResult(injection, pos) : null;
+        terminal.Injectable && _injections.TryGetValue((pos, terminal), out var injection) ? CreateInjectedResult(injection, pos) : null;
     private partial bool AcceptEpsilonMatch(Rule prefix) =>
         prefix is RecoveryRule rc && (rc.Options is null || rc.Options.Recoverable);
     private partial Result? ParseRecoveryRuleType(Rule rule, int startPos, string input) =>

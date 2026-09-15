@@ -70,6 +70,8 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
             OftenMissedExpressionAst a => new OftenMissed(GenerateExpression(a.Expression), a.Kind ?? "Error"),
             OneOrManyExpressionAst a => new OneOrMany(GenerateExpression(a.Element), a.Kind),
             ZeroOrManyExpressionAst a => new ZeroOrMany(GenerateExpression(a.Element), a.Kind),
+            RepeatExpressionAst a => new Repeat(GenerateExpression(a.Element), a.Count, a.Kind),
+            ContextExpressionAst a => new ContextScope(GenerateExpression(a.Source), GenerateExpression(a.Body), a.Kind),
             AndPredicateExpressionAst a => GenerateAndPredicate(a),
             NotPredicateExpressionAst a => GenerateNotPredicate(a),
             LiteralAst a => Naming.IsValidIdentifier(a.Value)
@@ -97,7 +99,7 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
     }
 
     private Rule GenerateSequenceExpression(FlattenSequenceExpressionAst seq) =>
-        new Seq(seq.Elements.Select(GenerateExpression).ToArray(), seq.Kind.AssertIsNonNull());
+        new Seq(seq.Elements.Select(GenerateExpression).ToArray(), seq.Kind ?? "Seq");
 
     private Rule GenerateAndPredicate(AndPredicateExpressionAst node) =>
         new AndPredicate(GenerateExpression(node.Expression));
