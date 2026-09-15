@@ -41,6 +41,7 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
             {
                 NamedAlternativeAst named => GenerateExpression(named.Expression),
                 AnonymousAlternativeAst anon => GenerateAnonymousAlternative(anon),
+                AnonymousLiteralAlternativeAst anonLiteral => GenerateExpression(anonLiteral.Literal),
                 _ => throw new InvalidOperationException($"Unknown alternative type: {alternative.GetType()}")
             };
 

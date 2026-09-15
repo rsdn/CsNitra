@@ -11,6 +11,7 @@ public interface IAstVisitor
     void Visit(SimpleRuleStatementAst node);
     void Visit(NamedAlternativeAst node);
     void Visit(AnonymousAlternativeAst node);
+    void Visit(AnonymousLiteralAlternativeAst node);
     void Visit(SequenceExpressionAst node);
     void Visit(NamedExpressionAst node);
     void Visit(OptionalExpressionAst node);
@@ -41,6 +42,7 @@ public abstract class AstVisitor : IAstVisitor
     public virtual void Visit(SimpleRuleStatementAst node) { }
     public virtual void Visit(NamedAlternativeAst node) { }
     public virtual void Visit(AnonymousAlternativeAst node) { }
+    public virtual void Visit(AnonymousLiteralAlternativeAst node) { }
     public virtual void Visit(SequenceExpressionAst node) { }
     public virtual void Visit(FlattenSequenceExpressionAst flattenSequenceExpressionAst) { }
     public virtual void Visit(NamedExpressionAst node) { }
@@ -121,6 +123,11 @@ public sealed partial record NamedAlternativeAst
 }
 
 public sealed partial record AnonymousAlternativeAst
+{
+    public override void Accept(IAstVisitor visitor) => visitor.Visit(this);
+}
+
+public sealed partial record AnonymousLiteralAlternativeAst
 {
     public override void Accept(IAstVisitor visitor) => visitor.Visit(this);
 }

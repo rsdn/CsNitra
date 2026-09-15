@@ -1,7 +1,217 @@
-Grammar = Statement*;
+Grammar = CompilationUnit;
 
-Statement = "var" Identifier "=" Expression ";";
+CompilationUnit = NamespaceMember*;
 
-Expression =
-    | Identifier
-    | Number;
+NamespaceMember =
+    | UsingDirective
+    | ExternAliasDirective
+    | NamespaceDeclaration
+    | TypeDeclaration;
+
+UsingDirective =
+    | AliasUsingDirective = "using" TypeName "=" QualifiedName ";"
+    | OpenUsingDirective = "using" QualifiedName ";";
+
+ExternAliasDirective = "extern" "alias" TypeName ";";
+
+NamespaceDeclaration = "namespace" QualifiedName "{" NamespaceBody "}" ";"?;
+
+NamespaceBody = NamespaceMember*;
+
+QualifiedName = TypeName NamespaceSegment*;
+
+TypeName = !ReservedKeyword Identifier;
+
+NamespaceSegment = "." TypeName;
+
+TypeDeclaration =
+    | ClassDeclaration
+    | StructDeclaration
+    | InterfaceDeclaration
+    | EnumDeclaration
+    | DelegateDeclaration;
+
+ClassDeclaration = Attributes? ClassModifier* "class" TypeName BaseList? ClassBody ";"?;
+
+StructDeclaration = Attributes? StructModifier* "struct" TypeName BaseList? StructBody ";"?;
+
+InterfaceDeclaration = Attributes? InterfaceModifier* "interface" TypeName BaseList? InterfaceBody ";"?;
+
+EnumDeclaration = Attributes? EnumModifier* "enum" TypeName EnumBaseList? "{" EnumMemberList? "}" ";"?;
+
+DelegateDeclaration = Attributes? DelegateModifier* "delegate" Type TypeName "(" ParameterList? ")" ";";
+
+ClassModifier =
+    | "public"
+    | "private"
+    | "protected"
+    | "internal"
+    | "abstract"
+    | "sealed"
+    | "unsafe";
+
+StructModifier =
+    | "public"
+    | "private"
+    | "protected"
+    | "internal"
+    | "abstract"
+    | "unsafe";
+
+InterfaceModifier =
+    | "public"
+    | "private"
+    | "protected"
+    | "internal"
+    | "unsafe";
+
+EnumModifier =
+    | "public"
+    | "private"
+    | "protected"
+    | "internal";
+
+DelegateModifier =
+    | "public"
+    | "private"
+    | "protected"
+    | "internal"
+    | "unsafe";
+
+BaseList = ":" (Type; ",")+;
+
+EnumBaseList = ":" Type;
+
+ClassBody = "{" "}";
+
+StructBody = "{" "}";
+
+InterfaceBody = "{" "}";
+
+EnumMemberList = (EnumMember; "," : ?)+;
+
+EnumMember = Attributes? TypeName EnumMemberValue?;
+
+EnumMemberValue = "=" Constant;
+
+ParameterList = (Parameter; ",")+;
+
+Parameter = Attributes? ParameterModifier* Type TypeName;
+
+ParameterModifier =
+    | "ref"
+    | "out"
+    | "params";
+
+Attributes = AttributeList*;
+
+AttributeList = "[" (Attribute; "," : ?)+ "]";
+
+Attribute = AttributeName AttributeArgumentList?;
+
+AttributeName = TypeName NamespaceSegment*;
+
+AttributeArgumentList = "(" (AttributeArgument; ",")* ")";
+
+AttributeArgument =
+    | NamedAttributeArgument = TypeName "=" Constant
+    | Constant;
+
+Constant =
+    | "true"
+    | "false"
+    | StringLiteral
+    | VerbatimStringLiteral
+    | CharLiteral
+    | UnaryConstant = UnarySign Constant
+    | DecimalConstant = DecimalIntegerLiteral IntegerSuffix?
+    | HexConstant = HexIntegerLiteral IntegerSuffix?;
+
+UnarySign =
+    | Plus = "+"
+    | Minus = "-";
+
+Type = Identifier;
+
+ReservedKeyword =
+    | "abstract"
+    | "__arglist"
+    | "as"
+    | "base"
+    | "bool"
+    | "break"
+    | "byte"
+    | "case"
+    | "catch"
+    | "char"
+    | "checked"
+    | "class"
+    | "const"
+    | "continue"
+    | "decimal"
+    | "default"
+    | "delegate"
+    | "do"
+    | "double"
+    | "else"
+    | "enum"
+    | "event"
+    | "explicit"
+    | "extern"
+    | "false"
+    | "finally"
+    | "fixed"
+    | "float"
+    | "for"
+    | "foreach"
+    | "goto"
+    | "if"
+    | "implicit"
+    | "in"
+    | "int"
+    | "interface"
+    | "internal"
+    | "is"
+    | "lock"
+    | "long"
+    | "__makeref"
+    | "namespace"
+    | "new"
+    | "null"
+    | "object"
+    | "operator"
+    | "out"
+    | "override"
+    | "params"
+    | "private"
+    | "protected"
+    | "public"
+    | "readonly"
+    | "ref"
+    | "__reftype"
+    | "__refvalue"
+    | "return"
+    | "sbyte"
+    | "sealed"
+    | "short"
+    | "sizeof"
+    | "stackalloc"
+    | "static"
+    | "string"
+    | "struct"
+    | "switch"
+    | "this"
+    | "throw"
+    | "true"
+    | "try"
+    | "typeof"
+    | "uint"
+    | "ulong"
+    | "unchecked"
+    | "unsafe"
+    | "ushort"
+    | "using"
+    | "virtual"
+    | "void"
+    | "volatile"
+    | "while";

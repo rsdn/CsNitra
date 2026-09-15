@@ -19,7 +19,8 @@ public static class CsNitraGrammarText
 
         Alternative =
             | NamedAlternative = "|" Identifier "=" RuleExpression
-            | AnonymousAlternative = "|" QualifiedIdentifier;
+            | AnonymousAlternative = "|" QualifiedIdentifier
+            | AnonymousLiteral = "|" Literal;
 
         precedence Primary, Postfix, Predicate, Naming, Optional, Sequence;
 

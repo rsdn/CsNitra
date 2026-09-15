@@ -92,7 +92,7 @@ public sealed class WordLiteralTests
 
         Assert.AreEqual("\"public\"", word.ToString());
         Assert.AreEqual("public", word.Kind);
-        Assert.AreEqual("KwPublic", new WordLiteral("public", "KwPublic").Kind);
+        Assert.AreEqual("CustomKind", new WordLiteral("public", "CustomKind").Kind);
     }
 
     [TestMethod]

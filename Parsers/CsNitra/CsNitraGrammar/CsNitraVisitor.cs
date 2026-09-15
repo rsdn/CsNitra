@@ -60,6 +60,7 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
                 "SimpleRule" => ProcessSimpleRuleStatement(children, startPos, endPos),
                 "NamedAlternative" => ProcessNamedAlternative(children, startPos, endPos),
                 "AnonymousAlternative" => ProcessAnonymousAlternative(children, startPos, endPos),
+                "AnonymousLiteral" => ProcessAnonymousLiteralAlternative(children, startPos, endPos),
                 "Sequence" => ProcessSequenceExpression(children, startPos, endPos),
                 "Named" => ProcessNamedExpression(children, startPos, endPos),
                 "Optional" => ProcessOptionalExpression(children, startPos, endPos),
@@ -72,6 +73,7 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
                 "PrecedenceWithAssociativity" => ProcessPrecedenceWithAssociativity(children, startPos, endPos),
                 "Group" => ProcessGroupExpression(children, startPos, endPos),
                 "SeparatedList" => ProcessSeparatedListExpression(children, startPos, endPos),
+                "SeparatorModifier" => ProcessSeparatorModifier(children, startPos, endPos),
                 "Usings" => ProcessAstList<UsingAst>(children, startPos, endPos),
                 "Statements" => ProcessAstList<StatementAst>(children, startPos, endPos),
                 "Alternatives" => ProcessAstList<AlternativeAst>(children, startPos, endPos),
@@ -134,6 +136,12 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
     {
         [Literal pipe, QualifiedIdentifierAst ruleRef] => new AnonymousAlternativeAst(pipe, ruleRef, startPos, endPos),
         _ => throw new InvalidOperationException("Expected NamedAlternative")
+    };
+
+    private CsNitraAst ProcessAnonymousLiteralAlternative(List<CsNitraAst> children, int startPos, int endPos) => children switch
+    {
+        [Literal pipe, LiteralAst literal] => new AnonymousLiteralAlternativeAst(pipe, literal, startPos, endPos),
+        _ => throw new InvalidOperationException("Expected AnonymousLiteral alternative")
     };
 
     private CsNitraAst ProcessRuleStatement(List<CsNitraAst> children, int startPos, int endPos) => children switch
@@ -239,6 +247,12 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
         [Literal opening, RuleExpressionAst element, Literal semicolon, RuleExpressionAst separator, Some<CsNitraAst>(Literal modifier), Literal closing, Literal count] =>
             new SeparatedListExpressionAst(element, separator, modifier, count, startPos, endPos),
         _ => throw new InvalidOperationException($"Expected SeparatedList expression. But fond [{string.Join(", ", children.Select(x => x!.ToString()))}]")
+    };
+
+    private CsNitraAst ProcessSeparatorModifier(List<CsNitraAst> children, int startPos, int endPos) => children switch
+    {
+        [_, Literal modifier] => modifier,
+        _ => throw new InvalidOperationException($"Expected SeparatorModifier. But fond [{string.Join(", ", children.Select(x => x!.ToString()))}]")
     };
 
     private CsNitraAst ProcessAstList<T>(ListNode node) where T : CsNitraAst

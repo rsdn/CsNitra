@@ -8,10 +8,10 @@ namespace CSharpGrammarTests;
 public class CSharpParserTests
 {
     [TestMethod]
-    public void Parse_SingleStatement_Succeeds()
+    public void Parse_SingleUsingDirective_Succeeds()
     {
         var parser = CreateParser();
-        var input = "var x = 1;";
+        var input = "using System;";
 
         var result = parser.Parse(input, "Grammar", out var triviaLength);
 
@@ -25,10 +25,32 @@ public class CSharpParserTests
     }
 
     [TestMethod]
-    public void Parse_MultipleStatements_Succeeds()
+    public void Parse_MultipleDeclarations_Succeeds()
     {
         var parser = CreateParser();
-        var input = "var x = 1; var y = x;";
+        var input = """
+            using System;
+            using Collections = System.Collections;
+            namespace N
+            {
+                public abstract class C : D
+                {
+                }
+                struct S
+                {
+                }
+                interface I
+                {
+                }
+                enum E : int
+                {
+                    A,
+                    B = 5,
+                    C = -2
+                }
+                delegate int F(string name, ref int x);
+            }
+            """;
 
         var result = parser.Parse(input, "Grammar", out _);
 
@@ -40,14 +62,43 @@ public class CSharpParserTests
     }
 
     [TestMethod]
-    public void Parse_MalformedStatement_ProducesRecoveryDiagnostics()
+    public void Parse_AttributeWithStringConstant_Succeeds()
+    {
+        var parser = CreateParser();
+        var input = "[Attr(\"x\")] class C { }";
+
+        var result = parser.Parse(input, "Grammar", out _);
+
+        Assert.IsNull(parser.Parser.ErrorInfo);
+        Assert.IsTrue(result.TryGetSuccess(out var node, out var end),
+            $"Expected success, error at pos {parser.Parser.ErrorPos}");
+        Assert.IsNotNull(node);
+        Assert.AreEqual(input.Length, end);
+    }
+
+    [TestMethod]
+    public void Parse_MalformedDeclaration_ProducesRecoveryDiagnostics()
     {
         var parser = CreateParser();
 
-        parser.Parse("var x = ;", "Grammar", out _);
+        parser.Parse("class C {", "Grammar", out _);
 
         Assert.IsTrue(parser.Parser.RecoveryDiagnostics.Count > 0,
             "Expected recovery diagnostics for malformed input");
+    }
+
+    [TestMethod]
+    public void Parse_KeywordPrefixIdentifier_FailsOrRecovers()
+    {
+        var parser = CreateParser();
+        var input = "usingx;";
+
+        var result = parser.Parse(input, "Grammar", out _);
+
+        Assert.IsFalse(
+            result.TryGetSuccess(out _, out var end) && end == input.Length
+                && parser.Parser.RecoveryDiagnostics.Count == 0,
+            "'usingx;' must not parse cleanly as 'using x;' (WordLiteral whole-word semantics)");
     }
 
     [TestMethod]
@@ -62,6 +113,6 @@ public class CSharpParserTests
     private static CSharpParser CreateParser() =>
         new(
             EmbeddedGrammar.LoadCs1Grammar(),
-            SmokeTestTerminals.Trivia(),
-            [SmokeTestTerminals.Identifier(), SmokeTestTerminals.Number()]);
+            CSharpTerminals.Trivia(),
+            CSharpTerminals.GetAll());
 }

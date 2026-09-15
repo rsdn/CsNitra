@@ -119,6 +119,16 @@ public sealed partial record AnonymousAlternativeAst(
     public override string ToString() => RuleRef.ToString();
 }
 
+public sealed partial record AnonymousLiteralAlternativeAst(
+    Literal Pipe,
+    LiteralAst Literal,
+    int StartPos,
+    int EndPos
+) : AlternativeAst(StartPos, EndPos)
+{
+    public override string ToString() => Literal.ToString();
+}
+
 public abstract partial record RuleExpressionAst(int StartPos, int EndPos, string? Kind = null) : CsNitraAst(StartPos, EndPos)
 {
     public RuleExpressionAst() : this(StartPos: 0, EndPos: 0, Kind: null) { }

@@ -21,8 +21,8 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
   - [~] T1.2.5 Ревёрк: raw-строки (N≥3 кавычки) + raw-интерполированные (D≥1 `$`, дыры) + тесты
 - [~] T1.3 Грамматика: compilation unit, `using`, `extern alias`, `namespace` (block), namespace-члены (class/struct/enum/interface/delegate — заголовки)
   - [~] T1.3.1 Ревёрк: version-purity + обязательные символы + нативные литералы вместо Kw*
-    - [~] T1.3.1.1 Фреймворк: `WordLiteral` + RuleGenerator (identifier-подобные литералы текста грамматики = whole-word)
-    - [ ] T1.3.1.2 `Cs1.grammar`: Kw* → нативные литералы; удалить 82 Kw-терминала; завершить верификацию дефектов
+    - [✅] T1.3.1.1 Фреймворк: `WordLiteral` + RuleGenerator (identifier-подобные литералы текста грамматики = whole-word)
+    - [✅] T1.3.1.2 `Cs1.grammar`: Kw* → нативные литералы; удалить 82 Kw-терминала; завершить верификацию дефектов (extern alias, модификаторы, trailing-запятые, Cs1-keywords)
   - [ ] T1.3.2 Тесты (примеры из Roslyn + простые кейсы)
 - [ ] T1.4 Грамматика: типы C# 1.0 (преопределённые, квалифицированные, массивы, указатели) + тесты
 

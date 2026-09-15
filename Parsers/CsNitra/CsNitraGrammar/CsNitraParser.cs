@@ -64,8 +64,10 @@ public partial class CsNitraParser
         _parser.Rules["Alternative"] = [
             // | NamedAlternative = "|" Identifier "=" RuleExpression
             new Seq([new Literal("|"), CsNitraTerminals.Identifier(), new Literal("="), new Ref("RuleExpression")], "NamedAlternative"),
-            // | AnonymousAlternative = "|" QualifiedIdentifier;
+            // | AnonymousAlternative = "|" QualifiedIdentifier
             new Seq([new Literal("|"), new Ref("QualifiedIdentifier")], "AnonymousAlternative"),
+            // | AnonymousLiteral = "|" Literal
+            new Seq([new Literal("|"), CsNitraTerminals.Literal()], "AnonymousLiteral"),
         ];
 
         const int Sequence = 1;
