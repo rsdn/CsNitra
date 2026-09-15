@@ -44,7 +44,7 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 - [ ] T3.4 CS5: `async`/`await`
 - [ ] T3.5 CS6: `?.`, expression-bodied члены, `nameof`, binary literals (интерполяция — T3.5.1–T3.5.2, выполняется раньше остальных пунктов плана)
   - [✅] T3.5.1 Дизайн: правила интерполяции (3 уровня $) для семейств regular/verbatim/raw → `docs/InterpolatedStringGrammar.md` (семантика из Roslyn Lexer + образец `C:\RSDN\nitra\...\CS6Literals.nitra`)
-  - [ ] T3.5.2 Реализация: грамматические правила интерполяции + временное правило Expression + удаление сканер-терминалов (`InterpolatedStringLiteral`, `RawInterpolatedStringLiteral`, hole-скан) и их тестов
+  - [✅] T3.5.2 Реализация: грамматические правила интерполяции + временное правило Expression + удаление сканер-терминалов (`InterpolatedStringLiteral`, `RawInterpolatedStringLiteral`, hole-скан) и их тестов
   - [ ] T3.5.3 CS6: `?.`, expression-bodied члены, `nameof`, binary literals (итерация CS6)
 - [ ] T3.6 CS7: кортежи, pattern matching, локальные функции, `out var`, `ref`-возврат/локальные, разделители цифр, `throw`-выражение, `ref readonly`
 - [ ] T3.7 CS7.1–7.2: `default`, `in`, `ref struct`, type/constant patterns
@@ -88,3 +88,5 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 - T1.3.2: движок отклоняет epsilon-совпадение именованных правил — пустое тело namespace обходится `NamespaceBody?`; пустой ввод (start rule) — в бэклоге движка (D1).
 - **Решение пользователя**: строковые литералы переписываются ДО остальных пунктов плана: сначала T3.5.1–T3.5.2 (интерполяция = грамматические правила, 3 уровня $), затем продолжение плана с T1.4. T3.5 расщеплён: T3.5.1 дизайн, T3.5.2 реализация строк, T3.5.3 — остальные фичи CS6 (итерация CS6).
 - T3.5.1: верификация оркестратора нашла дефект дизайна — движок пропускает trailing trivia после КАЖДОГО терминала (включая литералы, `Literal : Terminal`), а `TriviaTerminal` ест все whitespace/newlines → внутри грамматической строки newlines «прозрачны»: ветки MultiLine/SingleLine raw мертвы, 4 расхождения accept/reject (грамматика более permisсивна: CS1039/CS8997/CS9002/CS9000). Исправлено в дизайне (один контентный цикл, жадные text-раны, §6.3/§7.5). Учтено в T3.5.2.
+- T3.5.2: первая сессия субагента умерла (пустой результат, progress-файл-каркас); ретрай по состоянию на диске. Найден дефект: D=3 raw-дыры закрывались 4 скобками — опечатка была и в дизайне (§2.7), исправлена в реализации И в дизайн-документе (дыра уровня D закрывается D скобками). Убраны 2 отладочных теста.
+- T3.5.2: отклонения от дизайна (задокументированы в progress): `PostfixOp` через `SeparatedList` (не имена анонимных групп); `VerbatimInterpolatedPrefix` — отдельное правило (нет `|` внутри группы); char-литералы в `!`-предикатах → string-литералы (язык поддерживает только double-quoted).

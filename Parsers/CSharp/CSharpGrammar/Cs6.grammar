@@ -1,0 +1,83 @@
+// Cs6.grammar — C# 6: интерполированные строки (T3.5.2).
+// Правила интерполяции по дизайну docs/InterpolatedStringGrammar.md (§2.3–2.8).
+// Выражения дыр — временное Expression из Cs1.grammar (T2.3 заменит).
+
+// === D=1 regular: $"..." ===
+InterpolatedStringLiteral = "$\"" InterpolatedRegularPart* "\"";
+
+InterpolatedRegularPart =
+    | Hole = InterpolatedHole1
+    | OpenBraceEscape = "{{"
+    | CloseBraceEscape = "}}"
+    | Escape = InterpolatedRegularEscape
+    | Text = InterpolatedRegularText;
+
+InterpolatedHole1 = "{" Expression RegularFormat? "}";
+RegularFormat = ":" RegularFormatText;
+
+// === D=1 verbatim: $@"..." / @$"..." ===
+// Отклонение от дизайна: группа ( "$@\"" | "@$\"" ) не выразима в языке
+// текстовых грамматик (нет | внутри группы) — вынесено в отдельное правило.
+VerbatimInterpolatedPrefix =
+    | "$@\""
+    | "@$\"";
+
+VerbatimInterpolatedStringLiteral = VerbatimInterpolatedPrefix VerbatimInterpolatedPart* "\"";
+
+VerbatimInterpolatedPart =
+    | Hole = VerbatimHole1
+    | OpenBraceEscape = "{{"
+    | CloseBraceEscape = "}}"
+    | QuoteEscape = "\"" "\""
+    | Text = InterpolatedVerbatimText;
+
+VerbatimHole1 = "{" Expression VerbatimFormat? "}";
+VerbatimFormat = ":" VerbatimFormatText;
+
+// === D=1 raw: $"""...""" ===
+RawInterpolatedStringLiteral = "$" "\"\"\"" RawPart1* "\"\"\"";
+
+RawPart1 =
+    | Hole = RawHole1
+    | Quote1 = "\"" !"\""
+    | Quote2 = "\"" "\"" !"\""
+    | Text = InterpolatedRawText;
+
+RawHole1 = "{" Expression RawFormat? "}";
+RawFormat = ":" RawFormatText;
+
+// === D=2 raw: $$"""...""" ===
+RawInterpolatedStringLiteral2 = "$$" "\"\"\"" RawPart2* "\"\"\"";
+
+RawPart2 =
+    | HoleB = "{{{" Expression RawFormat? "}}"
+    | HoleA = "{{" Expression RawFormat? "}}"
+    | OpenBrace1 = "{" !"{"
+    | CloseBrace1 = "}" !"}"
+    | Quote1 = "\"" !"\""
+    | Quote2 = "\"" "\"" !"\""
+    | Text = InterpolatedRawText;
+
+// === D=3 raw: $$$"""...""" ===
+RawInterpolatedStringLiteral3 = "$$$" "\"\"\"" RawPart3* "\"\"\"";
+
+RawPart3 =
+    | HoleC = "{{{{{" Expression RawFormat? "}}}"
+    | HoleB = "{{{{" Expression RawFormat? "}}}"
+    | HoleA = "{{{" Expression RawFormat? "}}}"
+    | OpenBrace2 = "{{" !"{"
+    | OpenBrace1 = "{" !"{"
+    | CloseBrace2 = "}}" !"}"
+    | CloseBrace1 = "}" !"}"
+    | Quote1 = "\"" !"\""
+    | Quote2 = "\"" "\"" !"\""
+    | Text = InterpolatedRawText;
+
+// === Подключение к Expression (T0.3: повторное имя = добавление альтернатив) ===
+// Строки — prefix-альтернативы TDOPP-правила Expression (не саморекурсивны).
+Expression =
+    | InterpolatedStringLiteral
+    | VerbatimInterpolatedStringLiteral
+    | RawInterpolatedStringLiteral
+    | RawInterpolatedStringLiteral2
+    | RawInterpolatedStringLiteral3;

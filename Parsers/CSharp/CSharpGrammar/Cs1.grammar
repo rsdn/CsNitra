@@ -215,3 +215,58 @@ ReservedKeyword =
     | "void"
     | "volatile"
     | "while";
+
+// === ВРЕМЕННОЕ (T3.5.1) — T2.3 заменит на полную TDOPP-таблицу C# 1.0 ===
+precedence
+    Unary, Multiplicative, Additive, Relational, Equality,
+    LogicalAnd, LogicalXor, LogicalOr, CondAnd, CondOr,
+    Conditional, Assignment, Comma;
+
+Expression =
+    | PrimaryExpr   = Primary PostfixOp*
+    | UnaryPlus     = "+"  Expression : Unary
+    | UnaryMinus    = "-"  Expression : Unary
+    | UnaryNot      = "!"  Expression : Unary
+    | UnaryBitNot   = "~"  Expression : Unary
+    | PreInc        = "++" Expression : Unary
+    | PreDec        = "--" Expression : Unary
+    | Mul           = Expression "*"  Expression : Multiplicative
+    | Div           = Expression "/"  Expression : Multiplicative
+    | Mod           = Expression "%"  Expression : Multiplicative
+    | Add           = Expression "+"  Expression : Additive
+    | Sub           = Expression "-"  Expression : Additive
+    | Less          = Expression "<"  Expression : Relational
+    | Greater       = Expression ">"  Expression : Relational
+    | LessEq        = Expression "<=" Expression : Relational
+    | GreaterEq     = Expression ">=" Expression : Relational
+    | Equal         = Expression "==" Expression : Equality
+    | NotEqual      = Expression "!=" Expression : Equality
+    | BitAnd        = Expression "&"  Expression : LogicalAnd
+    | BitXor        = Expression "^"  Expression : LogicalXor
+    | BitOr         = Expression "|"  Expression : LogicalOr
+    | And           = Expression "&&" Expression : CondAnd
+    | Or            = Expression "||" Expression : CondOr
+    | Conditional   = Expression "?" Expression ":" Expression : Conditional
+    | Assign        = Expression "="  Expression : Assignment, right
+    | Comma         = Expression ","  Expression : Comma;
+
+Primary =
+    | "true"
+    | "false"
+    | "null"
+    | "this"
+    | Identifier
+    | StringLiteral
+    | VerbatimStringLiteral
+    | CharLiteral
+    | DecInt  = DecimalIntegerLiteral IntegerSuffix?
+    | HexInt  = HexIntegerLiteral  IntegerSuffix?
+    | Real    = DecimalRealLiteral Exponent? RealSuffix?
+    | Parens  = "(" Expression ")";
+
+PostfixOp =
+    | MemberAccess = "." Identifier
+    | Indexer      = "[" (Expression; ",")* "]"
+    | Invocation   = "(" (Expression; ",")* ")"
+    | PostInc      = "++"
+    | PostDec      = "--";

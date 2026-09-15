@@ -338,9 +338,9 @@ RawPart2 =
 RawInterpolatedStringLiteral3 = "$$$" "\"\"\"" RawPart3* "\"\"\"";
 
 RawPart3 =
-    | HoleC = "{{{{{" Expression RawFormat? "}}}}"   // K=5: 2 литер. + дыра
-    | HoleB = "{{{{"  Expression RawFormat? "}}}}"   // K=4: 1 литер. + дыра
-    | HoleA = "{{{"   Expression RawFormat? "}}}}"   // K=3: дыра
+    | HoleC = "{{{{{" Expression RawFormat? "}}}"   // K=5: 2 литер. + дыра
+    | HoleB = "{{{{"  Expression RawFormat? "}}}"   // K=4: 1 литер. + дыра
+    | HoleA = "{{{"   Expression RawFormat? "}}}"   // K=3: дыра
     | OpenBrace2 = "{{" !"{"                          // K=2: литер.
     | OpenBrace1 = "{"  !"{"                          // K=1: литер.
     | CloseBrace2 = "}}" !'}'                         // M=2: литер.
