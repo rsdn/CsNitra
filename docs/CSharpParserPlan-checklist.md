@@ -14,8 +14,8 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 
 - [~] T1.1 (Исследование, субагент + roslyn MCP) Карта Roslyn → `docs/RoslynGrammarMap.md`
 - [~] T1.2 Терминалы C# (идентификатор, числа, char/строки, пунктуация, trivia/комментарии)
-  - [~] T1.2.1 Реализация `CSharpTerminals` в CSharpGrammar
-  - [ ] T1.2.2 Тесты терминалов
+  - [✅] T1.2.1 Реализация `CSharpTerminals` в CSharpGrammar
+  - [~] T1.2.2 Тесты терминалов
 - [ ] T1.3 Грамматика: compilation unit, `using`, `extern alias`, `namespace` (block), namespace-члены (class/struct/enum/interface/delegate — заголовки) + тесты
 - [ ] T1.4 Грамматика: типы C# 1.0 (преопределённые, квалифицированные, массивы, указатели) + тесты
 
@@ -53,3 +53,5 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 - T0.1: убран redundant `<Compile Include="MiniC\MiniCGrammar.cs" />` из ParserTests.csproj (NETSDK1022, дублирование SDK-глоба) — чинил билд всего решения.
 - T0.3.2: пипованные альтернативы в CsNitra-грамматике обязаны быть именованными (`| Name = Expr` или RuleRef) — `Rule = | "a";` не парсится. Учитывать во всех `CsN.grammar`.
 - T0.3.2: при верификации один раз упал 1 тест ParserTests (имя не зафиксировано); 10+ последующих прогонов (полный набор + новые тесты по отдельности) — зелёные. Вероятно, изолированный флейк; наблюдать.
+- T1.2.1: сбой оборудования убил субагента после написания файла, до верификации; ретрай по progress-файлу починил `and`→`&&` в boolean-контекстах + `record` для `TriviaTerminal`.
+- T1.2.1: в реальном C# НЕТ восьеричных литералов (Roslyn Lexer.cs — только hex/binary); `OctalIntegerLiteral` создан, но по умолчанию не используется грамматикой (риск равной длины с decimal).
