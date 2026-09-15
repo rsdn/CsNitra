@@ -23,7 +23,7 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
   - [✅] T1.3.1 Ревёрк: version-purity + обязательные символы + нативные литералы вместо Kw*
     - [✅] T1.3.1.1 Фреймворк: `WordLiteral` + RuleGenerator (identifier-подобные литералы текста грамматики = whole-word)
     - [✅] T1.3.1.2 `Cs1.grammar`: Kw* → нативные литералы; удалить 82 Kw-терминала; завершить верификацию дефектов (extern alias, модификаторы, trailing-запятые, Cs1-keywords)
-  - [ ] T1.3.2 Тесты (примеры из Roslyn + простые кейсы)
+  - [~] T1.3.2 Тесты: прогон всего репозитория Roslyn, отбор тестов для Cs1 (в рамках текущей грамматики)
 - [ ] T1.4 Грамматика: типы C# 1.0 (преопределённые, квалифицированные, массивы, указатели) + тесты
 
 ## Этап 2 — C# 1.0: члены и тела
@@ -39,7 +39,7 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 - [ ] T3.3 CS4: `dynamic`, именованные/опциональные аргументы, `params`-массив, constraint `new`
 - [ ] T3.4 CS5: `async`/`await`
 - [ ] T3.5 CS6: интерполяция (ГРАММАТИЧЕСКИЕ правила, дыра = `{ Expression }`), `?.`, expression-bodied члены, `nameof`, binary literals
-  - [~] T3.5.1 Дизайн: 3 варианта $-правил ($/$$/$$$) → `docs/InterpolatedStringGrammar.md` (по образцу `C:\RSDN\nitra\...\CS6Literals.nitra` + Roslyn)
+  - [ ] T3.5.1 Дизайн: 3 варианта $-правил ($/$$/$$$) → `docs/InterpolatedStringGrammar.md` (по образцу `C:\RSDN\nitra\...\CS6Literals.nitra` + Roslyn)
   - [ ] T3.5.2 Реализация CS6-грамматики по дизайну + удаление интерполированных сканер-терминалов (`InterpolatedStringLiteral`, `RawInterpolatedStringLiteral`, hole-скан) и их тестов
 - [ ] T3.6 CS7: кортежи, pattern matching, локальные функции, `out var`, `ref`-возврат/локальные, разделители цифр, `throw`-выражение, `ref readonly`
 - [ ] T3.7 CS7.1–7.2: `default`, `in`, `ref struct`, type/constant patterns

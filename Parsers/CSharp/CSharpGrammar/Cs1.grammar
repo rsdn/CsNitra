@@ -14,7 +14,7 @@ UsingDirective =
 
 ExternAliasDirective = "extern" "alias" TypeName ";";
 
-NamespaceDeclaration = "namespace" QualifiedName "{" NamespaceBody "}" ";"?;
+NamespaceDeclaration = "namespace" QualifiedName "{" NamespaceBody? "}" ";"?;
 
 NamespaceBody = NamespaceMember*;
 
