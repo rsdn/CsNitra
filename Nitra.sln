@@ -65,6 +65,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "CSharp", "CSharp", "{BBB0FD
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CSharpGrammar", "Parsers\CSharp\CSharpGrammar\CSharpGrammar.csproj", "{BBC993E8-B297-4018-B5AE-20DBB5E394E6}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CSharpGrammarTests", "Tests\CSharpGrammarTests\CSharpGrammarTests.csproj", "{80C1380D-60CF-4855-9774-4C709BB669DD}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -201,6 +203,14 @@ Global
 		{BBC993E8-B297-4018-B5AE-20DBB5E394E6}.Release|Any CPU.Build.0 = Release|Any CPU
 		{BBC993E8-B297-4018-B5AE-20DBB5E394E6}.Release|x64.ActiveCfg = Release|Any CPU
 		{BBC993E8-B297-4018-B5AE-20DBB5E394E6}.Release|x64.Build.0 = Release|Any CPU
+		{80C1380D-60CF-4855-9774-4C709BB669DD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{80C1380D-60CF-4855-9774-4C709BB669DD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{80C1380D-60CF-4855-9774-4C709BB669DD}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{80C1380D-60CF-4855-9774-4C709BB669DD}.Debug|x64.Build.0 = Debug|Any CPU
+		{80C1380D-60CF-4855-9774-4C709BB669DD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{80C1380D-60CF-4855-9774-4C709BB669DD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{80C1380D-60CF-4855-9774-4C709BB669DD}.Release|x64.ActiveCfg = Release|Any CPU
+		{80C1380D-60CF-4855-9774-4C709BB669DD}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -226,6 +236,7 @@ Global
 		{909EA726-FD66-4857-94B9-587D2665B14D} = {4318483A-5409-4282-8D0B-62D10DB6A8D4}
 		{BBB0FD44-042F-47F0-8484-0E0BB075DFA1} = {CAB1ED79-7BF8-4523-A747-DB4DB117D1D3}
 		{BBC993E8-B297-4018-B5AE-20DBB5E394E6} = {BBB0FD44-042F-47F0-8484-0E0BB075DFA1}
+		{80C1380D-60CF-4855-9774-4C709BB669DD} = {BFC5E780-F61A-4D8B-84BF-939EB831FD84}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {1CFBB9ED-FF57-4990-B1C7-F31EB1F3BDAB}

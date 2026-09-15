@@ -1,0 +1,17 @@
+﻿<Project Sdk="MSTest.Sdk/3.6.4">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>preview</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseVSTest>true</UseVSTest>
+    <RootNamespace>
+    </RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Parsers\CSharp\CSharpGrammar\CSharpGrammar.csproj" />
+    <ProjectReference Include="..\..\ExtensibleParser\ExtensibleParser.csproj" />
+    <ProjectReference Include="..\..\Regex\Regex\Regex.csproj" OutputItemType="Analyzer" />
+    <ProjectReference Include="..\..\TerminalGenerator\TerminalGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>

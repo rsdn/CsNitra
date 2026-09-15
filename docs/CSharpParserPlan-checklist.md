@@ -4,8 +4,8 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 
 ## Этап 0 — Инфраструктура
 
-- [~] T0.1 Проект `Parsers/CSharp/CSharpGrammar`, добавить в `Nitra.sln`, оболочка `CSharpParser` (сборка `Parser` из текста грамматики)
-- [ ] T0.2 Тестовый проект `Tests/CSharpGrammarTests` (MSTest, net8.0) + зелёный smoke-тест
+- [✅] T0.1 Проект `Parsers/CSharp/CSharpGrammar`, добавить в `Nitra.sln`, оболочка `CSharpParser` (сборка `Parser` из текста грамматики)
+- [~] T0.2 Тестовый проект `Tests/CSharpGrammarTests` (MSTest, net8.0) + зелёный smoke-тест
 - [ ] T0.3 Слияние версий: повторное имя правила в более новом файле = добавление альтернатив; изменения в CsNitraGrammar (RuleGenerator/TypeChecker) + метациркулярные тесты
 
 ## Этап 1 — C# 1.0: compilation unit → типы
