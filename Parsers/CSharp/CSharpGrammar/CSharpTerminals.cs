@@ -36,6 +36,10 @@ public sealed partial class CSharpTerminals
 
     public static Terminal VerbatimStringLiteral() => _verbatimStringLiteral;
 
+    public static Terminal RawStringLiteral() => _rawStringLiteral;
+
+    public static Terminal RawInterpolatedStringLiteral() => _rawInterpolatedStringLiteral;
+
     [Regex(@"'([^'\n\\]|\\.)'")]
     public static partial Terminal CharLiteral();
 
@@ -234,6 +238,8 @@ public sealed partial class CSharpTerminals
         StringLiteral(),
         InterpolatedStringLiteral(),
         VerbatimStringLiteral(),
+        RawStringLiteral(),
+        RawInterpolatedStringLiteral(),
         CharLiteral(),
         KwAbstract(),
         KwAlias(),
@@ -327,6 +333,10 @@ public sealed partial class CSharpTerminals
 
     private static readonly Terminal _verbatimStringLiteral = new VerbatimStringLiteralTerminal();
 
+    private static readonly Terminal _rawStringLiteral = new RawStringLiteralTerminal();
+
+    private static readonly Terminal _rawInterpolatedStringLiteral = new RawInterpolatedStringLiteralTerminal();
+
     private sealed record StringLiteralTerminal : Terminal
     {
         public StringLiteralTerminal() : base("StringLiteral")
@@ -367,6 +377,30 @@ public sealed partial class CSharpTerminals
             => StringLiteralScanner.TryScanVerbatimString(input, startPos);
 
         public override string ToString() => "VerbatimStringLiteral";
+    }
+
+    private sealed record RawStringLiteralTerminal : Terminal
+    {
+        public RawStringLiteralTerminal() : base("RawStringLiteral")
+        {
+        }
+
+        public override int TryMatch(string input, int startPos)
+            => StringLiteralScanner.TryScanRawString(input, startPos);
+
+        public override string ToString() => "RawStringLiteral";
+    }
+
+    private sealed record RawInterpolatedStringLiteralTerminal : Terminal
+    {
+        public RawInterpolatedStringLiteralTerminal() : base("RawInterpolatedStringLiteral")
+        {
+        }
+
+        public override int TryMatch(string input, int startPos)
+            => StringLiteralScanner.TryScanRawInterpolatedString(input, startPos);
+
+        public override string ToString() => "RawInterpolatedStringLiteral";
     }
 
     private sealed record TriviaTerminal : Terminal

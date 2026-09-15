@@ -229,9 +229,13 @@ public class CSharpTerminalsTests
     }
 
     [TestMethod]
-    public void StringLiteral_RawStringQuotes_FailsUntilT125()
+    public void StringLiteral_RawStringQuotes_Fails()
     {
-        AssertMatch(CSharpTerminals.StringLiteral(), "\"\"\"" + "x" + "\"\"\"", -1);
+        // Version purity: the plain StringLiteral matches only 1-quote strings;
+        // 3+ quote runs belong to RawStringLiteral.
+        AssertAll(
+            CSharpTerminals.StringLiteral(),
+            [("\"\"\"x\"\"\"", -1), ("\"\"\"\"\"\"x\"\"\"\"\"\"", -1)]);
     }
 
     [TestMethod]
@@ -423,9 +427,17 @@ public class CSharpTerminalsTests
     }
 
     [TestMethod]
-    public void InterpolatedStringLiteral_RawInterpolated_FailsUntilT125()
+    public void InterpolatedStringLiteral_RawInterpolatedPrefix_Fails()
     {
-        AssertMatch(CSharpTerminals.InterpolatedStringLiteral(), "$$" + "\"\"\"" + "x" + "\"\"\"", -1);
+        // Version purity: '$' + 3+ quotes is raw-interpolated (RawInterpolatedStringLiteral);
+        // the regular terminal only matches $" / $@" / @$".
+        AssertAll(
+            CSharpTerminals.InterpolatedStringLiteral(),
+            [
+                ("$$" + "\"\"\"" + "x" + "\"\"\"", -1),
+                ("$" + "\"\"\"" + "{x}" + "\"\"\"", -1),
+                ("$$$" + "\"\"\"" + "x" + "\"\"\"", -1)
+            ]);
     }
 
     [TestMethod]
@@ -450,6 +462,234 @@ public class CSharpTerminalsTests
                 (@"$""abc""", -1),
                 ("$", -1)
             ]);
+    }
+
+    [TestMethod]
+    public void RawStringLiteral_QuotedText_Matches()
+    {
+        AssertAll(
+            CSharpTerminals.RawStringLiteral(),
+            [
+                ("\"\"\"abc\"\"\"", 9),
+                ("\"\"\"a\"b\"\"\"", 9),
+                ("\"\"\"a\"\"b\"\"\"", 10),
+                ("\"\"\" \"\"\"", 7),
+                ("\"\"\"\t\"\"\"", 7),
+                ("\"\"\"{x}\"\"\"", 9),
+                ("\"\"\"\"" + "ab" + "\"\"\"\"", 10)
+            ]);
+    }
+
+    [TestMethod]
+    public void RawStringLiteral_MultiLine_Matches()
+    {
+        AssertAll(
+            CSharpTerminals.RawStringLiteral(),
+            [
+                ("\"\"\"\nabc\n\"\"\"", 11),
+                ("\"\"\"\n\n\"\"\"", 8),
+                ("\"\"\"\r\nabc\r\n\"\"\"", 13),
+                ("\"\"\"\n  \n\"\"\"", 10),
+                ("\"\"\"\r\n  abc\r\n     def\r\n  \"\"\"", 27),
+                ("\"\"\"\n\"\"\n\"\"\"", 10),
+                ("\"\"\"\"" + "  \n\"\"\"\n\"\"\"\"", 15)
+            ]);
+    }
+
+    [TestMethod]
+    public void RawStringLiteral_QuoteRunRules_Matches()
+    {
+        // A quote run >= N ends the string and the ENTIRE run is the close (Roslyn keeps the
+        // excess quotes in the token; CS8998/CS9000 are semantic errors we do not emit).
+        AssertAll(
+            CSharpTerminals.RawStringLiteral(),
+            [
+                ("\"\"\"" + "a" + "\"\"\"\"" + "b" + "\"\"\"", 8),
+                ("\"\"\"" + "a" + "\"\"\"\"", 8),
+                ("\"\"\"" + "a" + "\"\"\"\"\"", 9),
+                ("\"\"\"\nabc\"\"\"\n\"\"\"", 10),
+                ("\"\"\"\nabc\n\"\"\"\"\"", 13),
+                ("\"\"\"  \na\"\"\"", 10)
+            ]);
+    }
+
+    [TestMethod]
+    public void RawStringLiteral_UnterminatedOrEmpty_Fails()
+    {
+        AssertAll(
+            CSharpTerminals.RawStringLiteral(),
+            [
+                ("\"\"\"abc\"\"", -1),
+                ("\"\"\"abc", -1),
+                ("\"\"\"", -1),
+                ("\"\"\"\"", -1),
+                ("\"\"\"\"\"\"", -1),
+                ("\"\"\"\nabc", -1),
+                ("\"\"\"abc\ndef\"\"\"", -1),
+                ("\"\"\"\n\"\"\"", -1),
+                ("\"\"\"\n  \"\"\"", -1),
+                ("\"\"abc\"\"", -1),
+                ("abc", -1)
+            ]);
+    }
+
+    [TestMethod]
+    public void RawStringLiteral_NonRawPrefix_Fails()
+    {
+        AssertAll(
+            CSharpTerminals.RawStringLiteral(),
+            [
+                ("$" + "\"\"\"x\"\"\"", -1),
+                ("@" + "\"\"\"x\"\"\"", -1),
+                ("x", -1)
+            ]);
+    }
+
+    [TestMethod]
+    public void RawInterpolatedStringLiteral_DollarCounts_Matches()
+    {
+        AssertAll(
+            CSharpTerminals.RawInterpolatedStringLiteral(),
+            [
+                (@"$""""""{x}""""""", 10),
+                (@"$$""""""{{x}}""""""", 13),
+                (@"$$$""""""{{{some}}}""""""", 19),
+                (@"$$$$""""""{{{{x}}}}""""""", 19),
+                (@"$$$"""""" ..... {{{some}}} ../ """"""", 31)
+            ]);
+    }
+
+    [TestMethod]
+    public void RawInterpolatedStringLiteral_LiteralBraceRuns_Matches()
+    {
+        // '{' runs shorter than D are plain content (not holes, not errors).
+        AssertAll(
+            CSharpTerminals.RawInterpolatedStringLiteral(),
+            [
+                (@"$$""""""{x}""""""", 11),
+                (@"$$""""""x}y""""""", 11),
+                (@"$$$""""""{{x}}""""""", 14),
+                (@"$$$""""""{{{{x}}}}""""""", 18)
+            ]);
+    }
+
+    [TestMethod]
+    public void RawInterpolatedStringLiteral_HoleBraceSurplus_Matches()
+    {
+        // '{' run D..2D-1: first K-D braces are literal content, last D open the hole;
+        // close run D..2D-1: first D close the hole, the rest is literal content.
+        AssertAll(
+            CSharpTerminals.RawInterpolatedStringLiteral(),
+            [
+                (@"$""""""{}""""""", 9),
+                (@"$$""""""{{{x}}}""""""", 15),
+                (@"$$$"""""" {{{some}}} """"""", 21)
+            ]);
+    }
+
+    [TestMethod]
+    public void RawInterpolatedStringLiteral_FormatSpecifier_Matches()
+    {
+        AssertAll(
+            CSharpTerminals.RawInterpolatedStringLiteral(),
+            [
+                (@"$""""""{x:0}""""""", 12),
+                (@"$""""""{x:}""""""", 11),
+                (@"$$""""""{{x:f2}}""""""", 16)
+            ]);
+    }
+
+    [TestMethod]
+    public void RawInterpolatedStringLiteral_NestedLiteralsInHole_Matches()
+    {
+        AssertAll(
+            CSharpTerminals.RawInterpolatedStringLiteral(),
+            [
+                (@"$""""""{""a""}""""""", 12),
+                (@"$""""""{@""a""}""""""", 13),
+                (@"$""""""{""""""a""""""}""""""", 16),
+                (@"$""""""{$""a""}""""""", 13),
+                (@"$""""""{@$""a{b}""}""""""", 17),
+                (@"$""""""{$$""""""{{0}}""""""}""""""", 22),
+                (@"$""""""{'}'}""""""", 12),
+                (@"$""""""{""}""}""""""", 12),
+                (@"$""""""{@""}""}""""""", 13),
+                (@"$""""""{""""""}""""""}""""""", 16),
+                ("$\"\"\"{a // c\nb}\"\"\"", 17),
+                (@"$""""""{ /* c } */ x }""""""", 22)
+            ]);
+    }
+
+    [TestMethod]
+    public void RawInterpolatedStringLiteral_MultiLine_Matches()
+    {
+        AssertAll(
+            CSharpTerminals.RawInterpolatedStringLiteral(),
+            [
+                ("$\"\"\"\n{x}\n\"\"\"", 12),
+                ("$\"\"\"\n\n{x}\n\"\"\"", 13),
+                ("$\"\"\"\n  {x}\n  \"\"\"", 16),
+                ("$\"\"\"\n{x\n}\n\"\"\"", 13),
+                ("$\"\"\"\n{x}\n{y}\n\"\"\"", 16)
+            ]);
+    }
+
+    [TestMethod]
+    public void RawInterpolatedStringLiteral_BraceRunErrors_Fails()
+    {
+        AssertAll(
+            CSharpTerminals.RawInterpolatedStringLiteral(),
+            [
+                (@"$""""""{{x}}""""""", -1),
+                ("$$" + "\"\"\"" + "{{{{x}}}}" + "\"\"\"", -1),
+                ("$" + "\"\"\"" + "{x}}}" + "\"\"\"", -1),
+                (@"$$""""""{x}}""""""", -1),
+                (@"$$""""""{{{x}""""""", -1),
+                ("$$" + "\"\"\"" + "{{{x}}}}" + "\"\"\"", -1),
+                ("$$" + "\"\"\"" + "{{x}}}}" + "\"\"\"", -1),
+                (@"$""""""{x""""""", -1),
+                (@"$""""""{x", -1),
+                (@"$$""""""{x", -1)
+            ]);
+    }
+
+    [TestMethod]
+    public void RawInterpolatedStringLiteral_UnterminatedOrEmpty_Fails()
+    {
+        AssertAll(
+            CSharpTerminals.RawInterpolatedStringLiteral(),
+            [
+                (@"$""""""{x}", -1),
+                ("$\"\"\"\n{x}", -1),
+                ("$\"\"\"\n\"\"\"", -1),
+                (@"$""""""x", -1),
+                (@"$$""x""""""", -1),
+                ("$$$\"\"", -1),
+                (@"$""x""", -1),
+                ("$$", -1),
+                ("x", -1)
+            ]);
+    }
+
+    [TestMethod]
+    public void InterpolatedStringLiteral_NestedRawInHole_Matches()
+    {
+        // Holes contain full C# of the same language version: raw (and raw-interpolated)
+        // strings nest through the regular interpolated terminal too.
+        AssertAll(
+            CSharpTerminals.InterpolatedStringLiteral(),
+            [
+                (@"$""{ """"""a"""""" }""", 14),
+                (@"$""{ $""""""{x}"""""" }""", 17),
+                ("$@\"{ " + "\"\"\"" + "\na\nb\n" + "\"\"\"" + " }\"", 19)
+            ]);
+    }
+
+    [TestMethod]
+    public void InterpolatedStringLiteral_NestedSingleLineRawWithNewline_Fails()
+    {
+        // A single-line raw string cannot contain a newline (CS8997), so the hole is broken.
+        AssertMatch(CSharpTerminals.InterpolatedStringLiteral(), "$@\"{ " + "\"\"\"" + "a\nb" + "\"\"\"" + " }\"", -1);
     }
 
     [TestMethod]
@@ -601,6 +841,8 @@ public class CSharpTerminalsTests
         AssertMatch(CSharpTerminals.InterpolatedStringLiteral(), "x $\"{{a}}\"", 8, 2);
         AssertMatch(CSharpTerminals.InterpolatedStringLiteral(), "x @$\"{a}\"", 7, 2);
         AssertMatch(CSharpTerminals.VerbatimStringLiteral(), "x @\"ab\"", 5, 2);
+        AssertMatch(CSharpTerminals.RawStringLiteral(), "x \"\"\"ab\"\"\"", 8, 2);
+        AssertMatch(CSharpTerminals.RawInterpolatedStringLiteral(), "x $\"\"\"{a}\"\"\"", 10, 2);
     }
 
     [TestMethod]
@@ -609,6 +851,8 @@ public class CSharpTerminalsTests
         AssertMatch(CSharpTerminals.StringLiteral(), "\"ab\"", -1, 1);
         AssertMatch(CSharpTerminals.InterpolatedStringLiteral(), "$\"ab\"", -1, 1);
         AssertMatch(CSharpTerminals.VerbatimStringLiteral(), "a@\"ab\"", -1, 0);
+        AssertMatch(CSharpTerminals.RawStringLiteral(), "\"ab\"\"", -1, 0);
+        AssertMatch(CSharpTerminals.RawInterpolatedStringLiteral(), "$\"ab\"", -1, 0);
     }
 
     private static void AssertAll(Terminal terminal, (string Input, int Expected)[] cases)

@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace CSharpGrammar;
 
 internal static class StringLiteralScanner
@@ -16,9 +18,37 @@ internal static class StringLiteralScanner
             return -1;
 
         if (pos + 2 < input.Length && input[pos + 1] == '"' && input[pos + 2] == '"')
-            return TryScanRawString(input, pos);
+            return -1;
 
         return ToLength(pos, TryScanStringContents(input, pos + 1, StringKind.Normal, dollarCount: 0, quoteCount: 1));
+    }
+
+    // Raw string (CS11): opening quote run N >= 3, no '$'. pos at the first '"'.
+    public static int TryScanRawString(string input, int pos)
+    {
+        if (pos >= input.Length || input[pos] != '"')
+            return -1;
+
+        var quoteCount = CountRun(input, pos, '"');
+        if (quoteCount < 3)
+            return -1;
+
+        return TryScanRawContents(input, pos, dollarCount: 0, quoteStart: pos, quoteCount);
+    }
+
+    // Raw interpolated string (CS11): '$' run D >= 1 then quote run N >= 3. pos at the first '$'.
+    public static int TryScanRawInterpolatedString(string input, int pos)
+    {
+        if (pos >= input.Length || input[pos] != '$')
+            return -1;
+
+        var dollarCount = CountRun(input, pos, '$');
+        var quoteStart = pos + dollarCount;
+        var quoteCount = CountRun(input, quoteStart, '"');
+        if (quoteCount < 3)
+            return -1;
+
+        return TryScanRawContents(input, pos, dollarCount, quoteStart, quoteCount);
     }
 
     public static int TryScanInterpolatedString(string input, int pos)
@@ -28,7 +58,7 @@ internal static class StringLiteralScanner
 
         var next = input[pos + 1];
         if (next == '$')
-            return TryScanRawInterpolatedString(input, pos);
+            return -1;
 
         if (next == '@')
         {
@@ -39,7 +69,14 @@ internal static class StringLiteralScanner
         }
 
         if (next == '"')
+        {
+            // $ followed by a 3+ quote run is raw-interpolated, not a regular interpolated
+            // string (ScanOpenQuote matches only a 1-2 quote run for the Normal kind).
+            if (CountRun(input, pos + 1, '"') >= 3)
+                return -1;
+
             return ToLength(pos, TryScanStringContents(input, pos + 2, StringKind.Normal, dollarCount: 1, quoteCount: 1));
+        }
 
         return -1;
     }
@@ -77,11 +114,57 @@ internal static class StringLiteralScanner
 
     private static int ToLength(int start, int absoluteEnd) => absoluteEnd < 0 ? -1 : absoluteEnd - start;
 
-    // T1.2.5 extension point: raw string (3+ opening quotes). pos at the first '"'.
-    private static int TryScanRawString(string input, int pos) => -1;
+    // Single/multi-line decision: whitespace after the opening quotes followed by a newline
+    // makes the literal multi-line (the newline is part of the open-quote section); otherwise
+    // single-line with content starting right after the quotes.
+    private static int TryScanRawContents(string input, int start, int dollarCount, int quoteStart, int quoteCount)
+    {
+        var afterQuotes = quoteStart + quoteCount;
+        var afterWhitespace = ConsumeWhitespace(input, afterQuotes);
 
-    // T1.2.5 extension point: raw interpolated string (2+ '$' then 3+ quotes). pos at the first '$'.
-    private static int TryScanRawInterpolatedString(string input, int pos) => -1;
+        if (afterWhitespace < input.Length && IsNewLine(input[afterWhitespace]))
+        {
+            var contentStart = SkipNewLine(input, afterWhitespace);
+            if (IsIllegalEmptyMultiLineRaw(input, contentStart, quoteCount))
+                return -1;
+
+            return ToLength(start, TryScanStringContents(input, contentStart, StringKind.MultiLineRaw, dollarCount, quoteCount));
+        }
+
+        return ToLength(start, TryScanStringContents(input, afterQuotes, StringKind.SingleLineRaw, dollarCount, quoteCount));
+    }
+
+    // Multi-line raw strings must contain at least one line of content: whitespace followed
+    // by a quote run >= N right after the opening newline is illegal (CS9002).
+    private static bool IsIllegalEmptyMultiLineRaw(string input, int contentStart, int quoteCount)
+    {
+        var q = ConsumeWhitespace(input, contentStart);
+        return CountRun(input, q, '"') >= quoteCount;
+    }
+
+    private static int CountRun(string input, int pos, char ch)
+    {
+        var length = input.Length;
+        var count = 0;
+        while (pos + count < length && input[pos + count] == ch)
+            count++;
+        return count;
+    }
+
+    private static int ConsumeWhitespace(string input, int pos)
+    {
+        var length = input.Length;
+        while (pos < length && IsRawWhitespace(input[pos]))
+            pos++;
+        return pos;
+    }
+
+    private static int SkipNewLine(string input, int pos)
+        => pos + 1 < input.Length && input[pos] == '\r' && input[pos + 1] == '\n' ? pos + 2 : pos + 1;
+
+    private static bool IsRawWhitespace(char ch)
+        => ch is ' ' or '\t' or '\v' or '\f' or '\u00A0' or '\uFEFF' or '\u001A'
+        || (ch > 255 && CharUnicodeInfo.GetUnicodeCategory(ch) == UnicodeCategory.SpaceSeparator);
 
     private static int TryScanStringContents(string input, int pos, StringKind kind, int dollarCount, int quoteCount)
     {
@@ -94,6 +177,16 @@ internal static class StringLiteralScanner
 
             if (!allowNewline && IsNewLine(ch))
                 return -1;
+
+            // Multi-line raw: a line starting (after whitespace) with a quote run >= N is the
+            // closing line; the entire run is the close.
+            if (kind is StringKind.MultiLineRaw && IsNewLine(ch))
+            {
+                var closePos = ConsumeWhitespace(input, SkipNewLine(input, pos));
+                var closeQuoteCount = CountRun(input, closePos, '"');
+                if (closeQuoteCount >= quoteCount)
+                    return closePos + closeQuoteCount;
+            }
 
             switch (ch)
             {
@@ -109,7 +202,14 @@ internal static class StringLiteralScanner
                         return pos + 1;
                     }
 
-                    return -1;
+                    // Raw: a quote run shorter than N is content; a run >= N ends the string
+                    // and the entire run is the close (excess quotes are a semantic error).
+                    var quoteRun = CountRun(input, pos, '"');
+                    if (quoteRun >= quoteCount)
+                        return pos + quoteRun;
+
+                    pos += quoteRun;
+                    continue;
                 case '\\' when kind is StringKind.Normal:
                     {
                         var end = TryScanEscape(input, pos, out var codePoint);
@@ -141,7 +241,33 @@ internal static class StringLiteralScanner
                             continue;
                         }
 
-                        return -1;
+                        // Raw-interpolated: '{' run K < D is content; D <= K < 2D opens a hole
+                        // (first K-D braces are literal content, last D open the hole);
+                        // K >= 2D is an error (CS9006).
+                        var openBraceCount = CountRun(input, pos, '{');
+                        if (openBraceCount < dollarCount)
+                        {
+                            pos += openBraceCount;
+                            continue;
+                        }
+
+                        if (openBraceCount >= 2 * dollarCount)
+                            return -1;
+
+                        var holeStart = pos + openBraceCount - dollarCount;
+                        var rawHoleEnd = TryScanHoleBalancedText(
+                            input, holeStart + dollarCount, endingChar: '}', isHole: true, kind, dollarCount, quoteCount);
+                        if (rawHoleEnd < 0 || input[rawHoleEnd] != '}')
+                            return -1;
+
+                        // Hole close run: exactly D ends the hole; surplus is re-processed as
+                        // content, where a run >= D is an error (CS9007) - hence M < 2D.
+                        var closeBraceCount = CountRun(input, rawHoleEnd, '}');
+                        if (closeBraceCount < dollarCount || closeBraceCount >= 2 * dollarCount)
+                            return -1;
+
+                        pos = rawHoleEnd + dollarCount;
+                        continue;
                     }
                 case '}' when dollarCount > 0:
                     {
@@ -157,7 +283,14 @@ internal static class StringLiteralScanner
                             return -1;
                         }
 
-                        return -1;
+                        // Raw-interpolated: a '}' run shorter than D is content; a run >= D is
+                        // an error (CS9007).
+                        var rawCloseBraceCount = CountRun(input, pos, '}');
+                        if (rawCloseBraceCount >= dollarCount)
+                            return -1;
+
+                        pos += rawCloseBraceCount;
+                        continue;
                     }
                 default:
                     pos++;
@@ -195,6 +328,8 @@ internal static class StringLiteralScanner
                         }
 
                         var end = TryScanInterpolatedString(input, pos);
+                        if (end < 0)
+                            end = TryScanRawInterpolatedString(input, pos);
                         if (end < 0)
                             return -1;
 
@@ -300,7 +435,20 @@ internal static class StringLiteralScanner
     }
 
     private static int TryScanNestedLiteral(string input, int pos)
-        => input[pos] == '\'' ? ToLength(pos, TryScanCharLiteral(input, pos)) : TryScanPlainString(input, pos);
+        => input[pos] == '\'' ? ToLength(pos, TryScanCharLiteral(input, pos)) : TryScanPlainOrRawString(input, pos);
+
+    // Holes contain full C# of the same language version, so a 3+ quote run inside a hole is a
+    // nested raw string, not a plain one.
+    private static int TryScanPlainOrRawString(string input, int pos)
+    {
+        if (pos >= input.Length || input[pos] != '"')
+            return -1;
+
+        if (pos + 2 < input.Length && input[pos + 1] == '"' && input[pos + 2] == '"')
+            return TryScanRawString(input, pos);
+
+        return ToLength(pos, TryScanStringContents(input, pos + 1, StringKind.Normal, dollarCount: 0, quoteCount: 1));
+    }
 
     private static int TryScanCharLiteral(string input, int pos)
     {
