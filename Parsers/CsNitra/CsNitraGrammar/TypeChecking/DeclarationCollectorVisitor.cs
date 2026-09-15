@@ -11,8 +11,8 @@ internal sealed class DeclarationCollectorVisitor(
         precedenceDependencies.Add(new(node.Precedences.ToArray(), new(node.StartPos, node.EndPos)));
 
     public override void Visit(RuleStatementAst node) =>
-        context.GlobalScope.AddSymbol(new RuleSymbol(node.Name, context.Source, node, simpleRuleStatement: null));
+        context.GlobalScope.AddSymbol(new RuleSymbol(node.Name, context.Source, node));
 
     public override void Visit(SimpleRuleStatementAst node) =>
-        context.GlobalScope.AddSymbol(new RuleSymbol(node.Name, context.Source, ruleStatement: null, node));
+        context.GlobalScope.AddSymbol(new RuleSymbol(node.Name, context.Source, node));
 }

@@ -19,7 +19,14 @@ public sealed partial record Scope
 
     public void AddSymbol(PrecedenceSymbol symbol) => _precedences[symbol.Name.Value] = symbol;
 
-    public void AddSymbol(RuleSymbol symbol) => _rules[symbol.Name.Value] = symbol;
+    public void AddSymbol(RuleSymbol symbol)
+    {
+        if (_rules.TryGetValue(symbol.Name.Value, out var existing))
+            foreach (var statement in symbol.Statements)
+                existing.AddStatement(statement);
+        else
+            _rules[symbol.Name.Value] = symbol;
+    }
 
     public void AddSymbol(TerminalSymbol symbol) => _terminals[symbol.Name.Value] = symbol;
 

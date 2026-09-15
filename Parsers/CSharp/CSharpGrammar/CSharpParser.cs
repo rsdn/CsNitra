@@ -15,6 +15,17 @@ public sealed class CSharpParser
         Parser = Build(grammarText, trivia, terminals, path);
     }
 
+    public CSharpParser(IReadOnlyList<(string Text, string Path)> grammars, Terminal trivia, IEnumerable<Terminal> terminals)
+    {
+        if (grammars.Count == 0)
+            throw new ArgumentException("At least one grammar file is required", nameof(grammars));
+
+        var parser = new Parser(trivia);
+        parser.BuildFromTexts(grammars, terminals);
+        parser.BuildTdoppRules();
+        Parser = parser;
+    }
+
     public Result Parse(string input, string startRule, out int triviaLength) =>
         Parser.Parse(input, startRule, out triviaLength);
 

@@ -11,10 +11,24 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
     public void GenerateRules()
     {
         foreach (var ruleSymbol in globalScope.GetAllRules())
-            if (ruleSymbol.RuleStatement != null)
-                parser.Rules[ruleSymbol.Name.Value] = GenerateRuleFromStatement(ruleSymbol.RuleStatement);
-            else if (ruleSymbol.SimpleRuleStatement != null)
-                parser.Rules[ruleSymbol.Name.Value] = new[] { GenerateSimpleRule(ruleSymbol.SimpleRuleStatement) };
+        {
+            var alternatives = new List<Rule>();
+
+            foreach (var statement in ruleSymbol.Statements)
+            {
+                switch (statement)
+                {
+                    case RuleStatementAst rule:
+                        alternatives.AddRange(GenerateRuleFromStatement(rule));
+                        break;
+                    case SimpleRuleStatementAst simple:
+                        alternatives.Add(GenerateSimpleRule(simple));
+                        break;
+                }
+            }
+
+            parser.Rules[ruleSymbol.Name.Value] = alternatives.ToArray();
+        }
     }
 
     private Rule[] GenerateRuleFromStatement(RuleStatementAst node)

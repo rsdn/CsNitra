@@ -45,15 +45,19 @@ public sealed class PrecedenceDependency
 
 public sealed class RuleSymbol : Symbol
 {
-    public RuleStatementAst? RuleStatement { get; }
-    public SimpleRuleStatementAst? SimpleRuleStatement { get; }
+    private readonly List<StatementAst> _statements = new();
 
-    public RuleSymbol(Identifier name, Source source, RuleStatementAst? ruleStatement, SimpleRuleStatementAst? simpleRuleStatement)
+    public IReadOnlyList<StatementAst> Statements => _statements;
+    public RuleStatementAst? RuleStatement => _statements.OfType<RuleStatementAst>().FirstOrDefault();
+    public SimpleRuleStatementAst? SimpleRuleStatement => _statements.OfType<SimpleRuleStatementAst>().FirstOrDefault();
+
+    public RuleSymbol(Identifier name, Source source, StatementAst statement)
         : base(name, source)
     {
-        RuleStatement = ruleStatement;
-        SimpleRuleStatement = simpleRuleStatement;
+        _statements.Add(statement);
     }
+
+    public void AddStatement(StatementAst statement) => _statements.Add(statement);
 
     public override string ToString() => $"Rule({Name.Value})";
 }
