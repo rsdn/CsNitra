@@ -28,7 +28,7 @@ public class CsNitraVisitor(string input) : ISyntaxVisitor
     private static string UnescapeString(string value)
     {
         if (value.Length >= 2)
-            return value[1..^1].Replace("\\\"", "\"").Replace("\\\\", "\\");
+            return value[1..^1].Replace("\\\"", "\"").Replace("\\'", "'").Replace("\\\\", "\\");
         return value;
     }
 

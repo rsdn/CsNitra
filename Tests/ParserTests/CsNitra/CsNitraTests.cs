@@ -57,6 +57,37 @@ public class CsNitraTests
         }
     }
 
+    [TestMethod]
+    public void ShouldParseSingleQuotedLiterals()
+    {
+        var grammarText = """"
+            Rule =
+                | '"""'
+                | 'it\'s';
+            """";
+        var result = new CsNitraParser().Parse<GrammarAst>(grammarText);
+
+        if (result is Failed(var error))
+            Assert.Fail(error.GetErrorText());
+
+        if (result is not Success<GrammarAst>(var ast))
+        {
+            Assert.Fail("result is not success");
+            return;
+        }
+
+        var rule = ast.Statements.OfType<RuleStatementAst>().Single(r => r.Name.Value == "Rule");
+        Assert.AreEqual(2, rule.Alternatives.Count);
+
+        var first = rule.Alternatives[0] as AnonymousLiteralAlternativeAst
+            ?? throw new InvalidOperationException("Expected AnonymousLiteralAlternativeAst");
+        Assert.AreEqual("\"\"\"", first.Literal.Value);
+
+        var second = rule.Alternatives[1] as AnonymousLiteralAlternativeAst
+            ?? throw new InvalidOperationException("Expected AnonymousLiteralAlternativeAst");
+        Assert.AreEqual("it's", second.Literal.Value);
+    }
+
     private static bool IsGrammarRule(SimpleRuleStatementAst simple) => simple.Name.Value == "Grammar" && simple.Expression.ToString() == "Usings=«Using*» Statements=«Statement*»";
 
     private static string GetGrammarText() =>

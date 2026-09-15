@@ -12,7 +12,7 @@ public sealed partial class CsNitraTerminals
     public static partial Terminal Identifier();
 
     [Regex("""
-        "([^"\\]|\\.)*"
+        "([^"\\]|\\.)*"|'([^'\\]|\\.)*'
         """)]
     public static partial Terminal Literal();
 }
