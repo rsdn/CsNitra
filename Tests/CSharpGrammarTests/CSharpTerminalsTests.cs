@@ -1,4 +1,4 @@
-using CSharpGrammar;
+﻿using CSharpGrammar;
 using ExtensibleParser;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -18,7 +18,7 @@ public class CSharpTerminalsTests
     [TestMethod]
     public void Identifier_UnicodeLetterStart_Matches()
     {
-        AssertMatch(CSharpTerminals.Identifier(), "ф", 1);
+        AssertMatch(CSharpTerminals.Identifier(), "С„", 1);
     }
 
     [TestMethod]
@@ -154,7 +154,64 @@ public class CSharpTerminalsTests
     {
         AssertAll(
             CSharpTerminals.StringLiteral(),
-            [("\"hello\"", 7), ("\"a\\\"b\"", 6), ("\"\\\\n\"", 5), ("\"\"", 2)]);
+            [("\"\"", 2), ("\"abc\"", 5), ("\"hello\"", 7), ("\"a\\\"b\"", 6), ("\"\\\\\"", 4), ("\"\\\\n\"", 5)]);
+    }
+
+    [TestMethod]
+    public void StringLiteral_SimpleEscapes_Matches()
+    {
+        AssertAll(
+            CSharpTerminals.StringLiteral(),
+            [
+                ("\"\\\"\"", 4),
+                ("\"\\\'\"", 4),
+                ("\"\\\\\"", 4),
+                ("\"\\0\"", 4),
+                ("\"\\a\"", 4),
+                ("\"\\b\"", 4),
+                ("\"\\f\"", 4),
+                ("\"\\n\"", 4),
+                ("\"\\r\"", 4),
+                ("\"\\t\"", 4),
+                ("\"\\v\"", 4)
+            ]);
+    }
+
+    [TestMethod]
+    public void StringLiteral_UnicodeEscapes_Matches()
+    {
+        AssertAll(
+            CSharpTerminals.StringLiteral(),
+            [
+                ("\"\\x4\"", 5),
+                ("\"\\x41\"", 6),
+                ("\"\\x0041\"", 8),
+                ("\"\\u0041\"", 8),
+                ("\"\\U00000041\"", 12),
+                ("\"\\U00010000\"", 12),
+                ("\"\\U00010FFF\"", 12),
+                ("\"a\\n\\x41\\u0041\"", 15)
+            ]);
+    }
+
+    [TestMethod]
+    public void StringLiteral_InvalidEscape_Fails()
+    {
+        AssertAll(
+            CSharpTerminals.StringLiteral(),
+            [
+                ("\"\\$\"", -1),
+                ("\"\\q\"", -1),
+                ("\"\\e\"", -1),
+                ("\"\\x\"", -1),
+                ("\"\\xZZ\"", -1),
+                ("\"\\u\"", -1),
+                ("\"\\u12\"", -1),
+                ("\"\\u12G4\"", -1),
+                ("\"\\U\"", -1),
+                ("\"\\U1234567\"", -1),
+                ("\"\\U12345678\"", -1)
+            ]);
     }
 
     [TestMethod]
@@ -162,7 +219,167 @@ public class CSharpTerminalsTests
     {
         AssertAll(
             CSharpTerminals.StringLiteral(),
-            [("\"a", -1), ("\"a\nb\"", -1)]);
+            [
+                ("\"abc", -1),
+                ("\"a\nb\"", -1),
+                ("\"a\rb\"", -1),
+                ("\"\\", -1),
+                ("\"\\x", -1)
+            ]);
+    }
+
+    [TestMethod]
+    public void StringLiteral_RawStringQuotes_FailsUntilT125()
+    {
+        AssertMatch(CSharpTerminals.StringLiteral(), "\"\"\"" + "x" + "\"\"\"", -1);
+    }
+
+    [TestMethod]
+    public void InterpolatedStringLiteral_PrefixForms_Matches()
+    {
+        AssertAll(
+            CSharpTerminals.InterpolatedStringLiteral(),
+            [
+                (@"$""""", 3),
+                (@"$""abc""", 6),
+                (@"$@""x{y}z""", 9)
+            ]);
+    }
+
+    [TestMethod]
+    public void InterpolatedStringLiteral_AtPrefixOrder_FailsUntilT124()
+    {
+        AssertMatch(CSharpTerminals.InterpolatedStringLiteral(), @"@$""x{y}""", -1);
+    }
+
+    [TestMethod]
+    public void InterpolatedStringLiteral_HolesAndEscapedBraces_Matches()
+    {
+        AssertAll(
+            CSharpTerminals.InterpolatedStringLiteral(),
+            [
+                (@"$""{{x}}""", 8),
+                (@"$""{x}""", 6),
+                (@"$""{{{some}}}""", 13),
+                (@"$""{a { b } c}""", 14),
+                (@"$""{f(a, b)}""", 12),
+                (@"$""{[1, 2]}""", 11),
+                ("$\"{a\nb}\"", 8),
+                ("$\"{a // c\nb}\"", 13),
+                (@"$""{ /* c */ x }""", 16),
+                (@"$""{ /* c } */ x }""", 18)
+            ]);
+    }
+
+    [TestMethod]
+    public void InterpolatedStringLiteral_NestedLiteralsInHole_Matches()
+    {
+        AssertAll(
+            CSharpTerminals.InterpolatedStringLiteral(),
+            [
+                (@"$""{s = ""}""}""", 12),
+                (@"$""{c = '}'}""", 12),
+                (@"$""{ @""a b"" }""", 13),
+                (@"$""{ $""a{b}c"" }""", 15),
+                (@"$""{ $@""x{y}z"" }""", 16),
+                (@"$@""a""""b""", 8)
+            ]);
+    }
+
+    [TestMethod]
+    public void InterpolatedStringLiteral_EscapesInContent_Matches()
+    {
+        AssertAll(
+            CSharpTerminals.InterpolatedStringLiteral(),
+            [
+                ("$\"a\\\"b\"", 7),
+                (@"$""\\n""", 6)
+            ]);
+    }
+
+    [TestMethod]
+    public void InterpolatedStringLiteral_FormatSpecifier_Matches()
+    {
+        AssertAll(
+            CSharpTerminals.InterpolatedStringLiteral(),
+            [
+                (@"$""{x:0}""", 8),
+                (@"$""{x:}""", 7)
+            ]);
+    }
+
+    [TestMethod]
+    public void InterpolatedStringLiteral_InvalidHoleOrBrace_Fails()
+    {
+        AssertAll(
+            CSharpTerminals.InterpolatedStringLiteral(),
+            [
+                ("$\"}\"", -1),
+                ("$\"}{\"", -1),
+                ("$\"{a\"", -1),
+                ("$\"{a", -1),
+                ("$\"{inner \"}\"", -1),
+                ("$\"{\"a\" + {b}\"", -1),
+                ("$\"{#if X}\"", -1),
+                ("$\"{a]b}\"", -1),
+                ("$\"{a)b}\"", -1),
+                ("$\"{x:{}}\"", -1),
+                ("$\"{ /* c } x }\"", -1)
+            ]);
+    }
+
+    [TestMethod]
+    public void InterpolatedStringLiteral_EscapedCurly_Fails()
+    {
+        AssertAll(
+            CSharpTerminals.InterpolatedStringLiteral(),
+            [
+                ("$\"\\u007B\"", -1),
+                ("$\"\\x7D\"", -1),
+                ("$\"\\U0000007B\"", -1)
+            ]);
+    }
+
+    [TestMethod]
+    public void InterpolatedStringLiteral_UnterminatedOrRawNewline_Fails()
+    {
+        AssertAll(
+            CSharpTerminals.InterpolatedStringLiteral(),
+            [
+                ("$\"abc", -1),
+                ("$\"a\nb\"", -1),
+                ("$\"a\rb\"", -1)
+            ]);
+    }
+
+    [TestMethod]
+    public void InterpolatedStringLiteral_RawInterpolated_FailsUntilT125()
+    {
+        AssertMatch(CSharpTerminals.InterpolatedStringLiteral(), "$$" + "\"\"\"" + "x" + "\"\"\"", -1);
+    }
+
+    [TestMethod]
+    public void InterpolatedStringLiteral_BadPrefix_Fails()
+    {
+        AssertAll(
+            CSharpTerminals.InterpolatedStringLiteral(),
+            [
+                ("$", -1),
+                ("$@x", -1),
+                ("$x", -1),
+                ("x", -1)
+            ]);
+    }
+
+    [TestMethod]
+    public void StringLiteral_AtInterpolatedPrefix_Fails()
+    {
+        AssertAll(
+            CSharpTerminals.StringLiteral(),
+            [
+                (@"$""abc""", -1),
+                ("$", -1)
+            ]);
     }
 
     [TestMethod]
@@ -259,9 +476,18 @@ public class CSharpTerminalsTests
     }
 
     [TestMethod]
+    public void StartPos_StringLiterals_MatchFromThatPosition()
+    {
+        AssertMatch(CSharpTerminals.StringLiteral(), "x \"ab\"", 4, 2);
+        AssertMatch(CSharpTerminals.InterpolatedStringLiteral(), "x $\"{a}\"", 6, 2);
+        AssertMatch(CSharpTerminals.InterpolatedStringLiteral(), "x $\"{{a}}\"", 8, 2);
+    }
+
+    [TestMethod]
     public void StartPos_MisalignedStart_Fails()
     {
         AssertMatch(CSharpTerminals.StringLiteral(), "\"ab\"", -1, 1);
+        AssertMatch(CSharpTerminals.InterpolatedStringLiteral(), "$\"ab\"", -1, 1);
     }
 
     private static void AssertAll(Terminal terminal, (string Input, int Expected)[] cases)

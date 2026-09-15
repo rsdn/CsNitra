@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using ExtensibleParser;
 
 namespace CSharpGrammar;
@@ -29,10 +30,9 @@ public sealed partial class CSharpTerminals
     [Regex(@"[fFdDmM]")]
     public static partial Terminal RealSuffix();
 
-    [Regex("""
-        "([^"\n\\]|\\.)*"
-        """)]
-    public static partial Terminal StringLiteral();
+    public static Terminal StringLiteral() => _stringLiteral;
+
+    public static Terminal InterpolatedStringLiteral() => _interpolatedStringLiteral;
 
     [Regex("""
         @"(""|[^"])*"
@@ -42,9 +42,315 @@ public sealed partial class CSharpTerminals
     [Regex(@"'([^'\n\\]|\\.)'")]
     public static partial Terminal CharLiteral();
 
+    public static Terminal KwAbstract() => Kw("KwAbstract", "abstract");
+
+    public static Terminal KwAlias() => Kw("KwAlias", "alias");
+
+    public static Terminal KwArglist() => Kw("KwArglist", "__arglist");
+
+    public static Terminal KwAs() => Kw("KwAs", "as");
+
+    public static Terminal KwBase() => Kw("KwBase", "base");
+
+    public static Terminal KwBool() => Kw("KwBool", "bool");
+
+    public static Terminal KwBreak() => Kw("KwBreak", "break");
+
+    public static Terminal KwByte() => Kw("KwByte", "byte");
+
+    public static Terminal KwCase() => Kw("KwCase", "case");
+
+    public static Terminal KwCatch() => Kw("KwCatch", "catch");
+
+    public static Terminal KwChar() => Kw("KwChar", "char");
+
+    public static Terminal KwChecked() => Kw("KwChecked", "checked");
+
+    public static Terminal KwClass() => Kw("KwClass", "class");
+
+    public static Terminal KwConst() => Kw("KwConst", "const");
+
+    public static Terminal KwContinue() => Kw("KwContinue", "continue");
+
+    public static Terminal KwDecimal() => Kw("KwDecimal", "decimal");
+
+    public static Terminal KwDefault() => Kw("KwDefault", "default");
+
+    public static Terminal KwDelegate() => Kw("KwDelegate", "delegate");
+
+    public static Terminal KwDo() => Kw("KwDo", "do");
+
+    public static Terminal KwDouble() => Kw("KwDouble", "double");
+
+    public static Terminal KwElse() => Kw("KwElse", "else");
+
+    public static Terminal KwEnum() => Kw("KwEnum", "enum");
+
+    public static Terminal KwEvent() => Kw("KwEvent", "event");
+
+    public static Terminal KwExplicit() => Kw("KwExplicit", "explicit");
+
+    public static Terminal KwExtern() => Kw("KwExtern", "extern");
+
+    public static Terminal KwFalse() => Kw("KwFalse", "false");
+
+    public static Terminal KwFinally() => Kw("KwFinally", "finally");
+
+    public static Terminal KwFixed() => Kw("KwFixed", "fixed");
+
+    public static Terminal KwFloat() => Kw("KwFloat", "float");
+
+    public static Terminal KwFor() => Kw("KwFor", "for");
+
+    public static Terminal KwForeach() => Kw("KwForeach", "foreach");
+
+    public static Terminal KwGoto() => Kw("KwGoto", "goto");
+
+    public static Terminal KwIf() => Kw("KwIf", "if");
+
+    public static Terminal KwImplicit() => Kw("KwImplicit", "implicit");
+
+    public static Terminal KwIn() => Kw("KwIn", "in");
+
+    public static Terminal KwInt() => Kw("KwInt", "int");
+
+    public static Terminal KwInterface() => Kw("KwInterface", "interface");
+
+    public static Terminal KwInternal() => Kw("KwInternal", "internal");
+
+    public static Terminal KwIs() => Kw("KwIs", "is");
+
+    public static Terminal KwLock() => Kw("KwLock", "lock");
+
+    public static Terminal KwLong() => Kw("KwLong", "long");
+
+    public static Terminal KwMakeref() => Kw("KwMakeref", "__makeref");
+
+    public static Terminal KwNamespace() => Kw("KwNamespace", "namespace");
+
+    public static Terminal KwNew() => Kw("KwNew", "new");
+
+    public static Terminal KwNull() => Kw("KwNull", "null");
+
+    public static Terminal KwObject() => Kw("KwObject", "object");
+
+    public static Terminal KwOperator() => Kw("KwOperator", "operator");
+
+    public static Terminal KwOut() => Kw("KwOut", "out");
+
+    public static Terminal KwOverride() => Kw("KwOverride", "override");
+
+    public static Terminal KwParams() => Kw("KwParams", "params");
+
+    public static Terminal KwPrivate() => Kw("KwPrivate", "private");
+
+    public static Terminal KwProtected() => Kw("KwProtected", "protected");
+
+    public static Terminal KwPublic() => Kw("KwPublic", "public");
+
+    public static Terminal KwReadonly() => Kw("KwReadonly", "readonly");
+
+    public static Terminal KwRef() => Kw("KwRef", "ref");
+
+    public static Terminal KwReftype() => Kw("KwReftype", "__reftype");
+
+    public static Terminal KwRefvalue() => Kw("KwRefvalue", "__refvalue");
+
+    public static Terminal KwReturn() => Kw("KwReturn", "return");
+
+    public static Terminal KwSbyte() => Kw("KwSbyte", "sbyte");
+
+    public static Terminal KwSealed() => Kw("KwSealed", "sealed");
+
+    public static Terminal KwShort() => Kw("KwShort", "short");
+
+    public static Terminal KwSizeof() => Kw("KwSizeof", "sizeof");
+
+    public static Terminal KwStackalloc() => Kw("KwStackalloc", "stackalloc");
+
+    public static Terminal KwStatic() => Kw("KwStatic", "static");
+
+    public static Terminal KwString() => Kw("KwString", "string");
+
+    public static Terminal KwStruct() => Kw("KwStruct", "struct");
+
+    public static Terminal KwSwitch() => Kw("KwSwitch", "switch");
+
+    public static Terminal KwThis() => Kw("KwThis", "this");
+
+    public static Terminal KwThrow() => Kw("KwThrow", "throw");
+
+    public static Terminal KwTrue() => Kw("KwTrue", "true");
+
+    public static Terminal KwTry() => Kw("KwTry", "try");
+
+    public static Terminal KwTypeof() => Kw("KwTypeof", "typeof");
+
+    public static Terminal KwUInt() => Kw("KwUInt", "uint");
+
+    public static Terminal KwUlong() => Kw("KwUlong", "ulong");
+
+    public static Terminal KwUnchecked() => Kw("KwUnchecked", "unchecked");
+
+    public static Terminal KwUnsafe() => Kw("KwUnsafe", "unsafe");
+
+    public static Terminal KwUshort() => Kw("KwUshort", "ushort");
+
+    public static Terminal KwUsing() => Kw("KwUsing", "using");
+
+    public static Terminal KwVirtual() => Kw("KwVirtual", "virtual");
+
+    public static Terminal KwVoid() => Kw("KwVoid", "void");
+
+    public static Terminal KwVolatile() => Kw("KwVolatile", "volatile");
+
+    public static Terminal KwWhile() => Kw("KwWhile", "while");
+
+    private static readonly object _keywordLock = new();
+
+    private static readonly Dictionary<string, KeywordTerminal> _keywords = new();
+
+    private static KeywordTerminal Kw(string kind, string word)
+    {
+        lock (_keywordLock)
+        {
+            if (!_keywords.TryGetValue(kind, out var terminal))
+            {
+                _keywords[kind] = terminal = new KeywordTerminal(kind, word);
+            }
+            return terminal;
+        }
+    }
+
     public static Terminal Trivia() => _trivia;
 
+    public static IReadOnlyList<Terminal> GetAll() => [
+        Trivia(),
+        Identifier(),
+        DecimalIntegerLiteral(),
+        HexIntegerLiteral(),
+        OctalIntegerLiteral(),
+        IntegerSuffix(),
+        DecimalRealLiteral(),
+        Exponent(),
+        RealSuffix(),
+        StringLiteral(),
+        InterpolatedStringLiteral(),
+        VerbatimStringLiteral(),
+        CharLiteral(),
+        KwAbstract(),
+        KwAlias(),
+        KwArglist(),
+        KwAs(),
+        KwBase(),
+        KwBool(),
+        KwBreak(),
+        KwByte(),
+        KwCase(),
+        KwCatch(),
+        KwChar(),
+        KwChecked(),
+        KwClass(),
+        KwConst(),
+        KwContinue(),
+        KwDecimal(),
+        KwDefault(),
+        KwDelegate(),
+        KwDo(),
+        KwDouble(),
+        KwElse(),
+        KwEnum(),
+        KwEvent(),
+        KwExplicit(),
+        KwExtern(),
+        KwFalse(),
+        KwFinally(),
+        KwFixed(),
+        KwFloat(),
+        KwFor(),
+        KwForeach(),
+        KwGoto(),
+        KwIf(),
+        KwImplicit(),
+        KwIn(),
+        KwInt(),
+        KwInterface(),
+        KwInternal(),
+        KwIs(),
+        KwLock(),
+        KwLong(),
+        KwMakeref(),
+        KwNamespace(),
+        KwNew(),
+        KwNull(),
+        KwObject(),
+        KwOperator(),
+        KwOut(),
+        KwOverride(),
+        KwParams(),
+        KwPrivate(),
+        KwProtected(),
+        KwPublic(),
+        KwReadonly(),
+        KwRef(),
+        KwReftype(),
+        KwRefvalue(),
+        KwReturn(),
+        KwSbyte(),
+        KwSealed(),
+        KwShort(),
+        KwSizeof(),
+        KwStackalloc(),
+        KwStatic(),
+        KwString(),
+        KwStruct(),
+        KwSwitch(),
+        KwThis(),
+        KwThrow(),
+        KwTrue(),
+        KwTry(),
+        KwTypeof(),
+        KwUInt(),
+        KwUlong(),
+        KwUnchecked(),
+        KwUnsafe(),
+        KwUshort(),
+        KwUsing(),
+        KwVirtual(),
+        KwVoid(),
+        KwVolatile(),
+        KwWhile()
+    ];
+
     private static readonly Terminal _trivia = new TriviaTerminal();
+
+    private static readonly Terminal _stringLiteral = new StringLiteralTerminal();
+
+    private static readonly Terminal _interpolatedStringLiteral = new InterpolatedStringLiteralTerminal();
+
+    private sealed record StringLiteralTerminal : Terminal
+    {
+        public StringLiteralTerminal() : base("StringLiteral")
+        {
+        }
+
+        public override int TryMatch(string input, int startPos)
+            => StringLiteralScanner.TryScanPlainString(input, startPos);
+
+        public override string ToString() => "StringLiteral";
+    }
+
+    private sealed record InterpolatedStringLiteralTerminal : Terminal
+    {
+        public InterpolatedStringLiteralTerminal() : base("InterpolatedStringLiteral")
+        {
+        }
+
+        public override int TryMatch(string input, int startPos)
+            => StringLiteralScanner.TryScanInterpolatedString(input, startPos);
+
+        public override string ToString() => "InterpolatedStringLiteral";
+    }
 
     private sealed record TriviaTerminal : Terminal
     {
@@ -111,5 +417,35 @@ public sealed partial class CSharpTerminals
         }
 
         public override string ToString() => "Trivia";
+    }
+
+    private sealed record KeywordTerminal : Terminal
+    {
+        public KeywordTerminal(string kind, string word) : base(kind)
+        {
+            Word = word;
+        }
+
+        public string Word { get; }
+
+        public override int TryMatch(string input, int startPos)
+        {
+            var wordLength = Word.Length;
+            if (startPos + wordLength > input.Length)
+                return -1;
+
+            for (var i = 0; i < wordLength; i++)
+            {
+                if (input[startPos + i] != Word[i])
+                    return -1;
+            }
+
+            var endPos = startPos + wordLength;
+            return endPos < input.Length && IsIdentifierPart(input[endPos]) ? -1 : wordLength;
+        }
+
+        private static bool IsIdentifierPart(char c) => c == '_' || char.IsLetterOrDigit(c);
+
+        public override string ToString() => Word;
     }
 }
