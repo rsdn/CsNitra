@@ -5,22 +5,22 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 ## Этап 0 — Инфраструктура
 
 - [✅] T0.1 Проект `Parsers/CSharp/CSharpGrammar`, добавить в `Nitra.sln`, оболочка `CSharpParser` (сборка `Parser` из текста грамматики)
-- [~] T0.2 Тестовый проект `Tests/CSharpGrammarTests` (MSTest, net8.0) + зелёный smoke-тест
+- [✅] T0.2 Тестовый проект `Tests/CSharpGrammarTests` (MSTest, net8.0) + зелёный smoke-тест
 - [✅] T0.3 Слияние версий: повторное имя правила в более новом файле = добавление альтернатив
   - [✅] T0.3.1 Реализация: слияние нескольких текстов грамматики (TypeChecker/RuleGenerator + API `CSharpParser`)
   - [✅] T0.3.2 Метациркулярные тесты слияния
 
 ## Этап 1 — C# 1.0: compilation unit → типы
 
-- [~] T1.1 (Исследование, субагент + roslyn MCP) Карта Roslyn → `docs/RoslynGrammarMap.md`
-- [~] T1.2 Терминалы C# (идентификатор, числа, char/строки, пунктуация, trivia/комментарии)
+- [✅] T1.1 (Исследование, субагент + roslyn MCP) Карта Roslyn → `docs/RoslynGrammarMap.md`
+- [✅] T1.2 Терминалы C# (идентификатор, числа, char/строки, пунктуация, trivia/комментарии)
   - [✅] T1.2.1 Реализация `CSharpTerminals` в CSharpGrammar (строки — переделаны в T1.2.3–T1.2.5)
   - [✅] T1.2.2 Тесты терминалов (тесты строк переписаны в T1.2.3–T1.2.5)
   - [✅] T1.2.3 Ревёрк: обычные строки `"..."` + интерполированные `$"..."` — общий $-совместимый рекурсивный матчер + тесты
   - [✅] T1.2.4 Ревёрк: verbatim `@"..."` + `$@"..."/@$"..."` (на общем ядре) + тесты
-  - [~] T1.2.5 Ревёрк: raw-строки (N≥3 кавычки) + raw-интерполированные (D≥1 `$`, дыры) + тесты
+  - [✅] T1.2.5 Ревёрк: raw-строки (N≥3 кавычки) + raw-интерполированные (D≥1 `$`, дыры) + тесты (интерполированная часть заменится грамматикой в T3.5)
 - [~] T1.3 Грамматика: compilation unit, `using`, `extern alias`, `namespace` (block), namespace-члены (class/struct/enum/interface/delegate — заголовки)
-  - [~] T1.3.1 Ревёрк: version-purity + обязательные символы + нативные литералы вместо Kw*
+  - [✅] T1.3.1 Ревёрк: version-purity + обязательные символы + нативные литералы вместо Kw*
     - [✅] T1.3.1.1 Фреймворк: `WordLiteral` + RuleGenerator (identifier-подобные литералы текста грамматики = whole-word)
     - [✅] T1.3.1.2 `Cs1.grammar`: Kw* → нативные литералы; удалить 82 Kw-терминала; завершить верификацию дефектов (extern alias, модификаторы, trailing-запятые, Cs1-keywords)
   - [ ] T1.3.2 Тесты (примеры из Roslyn + простые кейсы)
@@ -38,7 +38,9 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 - [ ] T3.2 CS3: лямбды, auto-свойства, object/collection initializers, extension methods, анонимные типы, LINQ-запросы
 - [ ] T3.3 CS4: `dynamic`, именованные/опциональные аргументы, `params`-массив, constraint `new`
 - [ ] T3.4 CS5: `async`/`await`
-- [ ] T3.5 CS6: интерполяция, `?.`, expression-bodied члены, `nameof`, binary literals
+- [ ] T3.5 CS6: интерполяция (ГРАММАТИЧЕСКИЕ правила, дыра = `{ Expression }`), `?.`, expression-bodied члены, `nameof`, binary literals
+  - [~] T3.5.1 Дизайн: 3 варианта $-правил ($/$$/$$$) → `docs/InterpolatedStringGrammar.md` (по образцу `C:\RSDN\nitra\...\CS6Literals.nitra` + Roslyn)
+  - [ ] T3.5.2 Реализация CS6-грамматики по дизайну + удаление интерполированных сканер-терминалов (`InterpolatedStringLiteral`, `RawInterpolatedStringLiteral`, hole-скан) и их тестов
 - [ ] T3.6 CS7: кортежи, pattern matching, локальные функции, `out var`, `ref`-возврат/локальные, разделители цифр, `throw`-выражение, `ref readonly`
 - [ ] T3.7 CS7.1–7.2: `default`, `in`, `ref struct`, type/constant patterns
 - [ ] T3.8 CS8: switch expressions, using declarations, `..`/`^`, `??=`, NRT-аннотации, default interface members
@@ -54,6 +56,10 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 - [ ] T4.1 Тесты разбитого кода (recovery-тесты Roslyn, согласование с `ExtensibleParser/Recovery`)
 - [ ] T4.2 Производительность: бенчмарк, анализ горячих точек
 - [ ] T4.3 Перенос сборки грамматики в Roslyn source generator
+
+## Этап 5 — Парсер: передача контекста
+
+- [ ] T5.1 Дообработка парсера/мета-грамматики: параметризуемые правила (`Content(int localCount)`), вычисление по узлу (`Count(Dollars)`), повторение с вычисленным счётчиком (`'{'{localCount}`) — общее правило raw-интерполяции вместо 3 ручных вариантов (см. план, Этап 5)
 
 ## Deviations
 
