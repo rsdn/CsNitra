@@ -13,7 +13,9 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 ## Этап 1 — C# 1.0: compilation unit → типы
 
 - [~] T1.1 (Исследование, субагент + roslyn MCP) Карта Roslyn → `docs/RoslynGrammarMap.md`
-- [ ] T1.2 Терминалы C# (идентификатор, числа, char/строки, пунктуация, trivia/комментарии) + тесты
+- [~] T1.2 Терминалы C# (идентификатор, числа, char/строки, пунктуация, trivia/комментарии)
+  - [~] T1.2.1 Реализация `CSharpTerminals` в CSharpGrammar
+  - [ ] T1.2.2 Тесты терминалов
 - [ ] T1.3 Грамматика: compilation unit, `using`, `extern alias`, `namespace` (block), namespace-члены (class/struct/enum/interface/delegate — заголовки) + тесты
 - [ ] T1.4 Грамматика: типы C# 1.0 (преопределённые, квалифицированные, массивы, указатели) + тесты
 
