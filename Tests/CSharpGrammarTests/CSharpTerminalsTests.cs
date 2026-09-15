@@ -247,9 +247,79 @@ public class CSharpTerminalsTests
     }
 
     [TestMethod]
-    public void InterpolatedStringLiteral_AtPrefixOrder_FailsUntilT124()
+    public void InterpolatedStringLiteral_AtPrefixOrder_Matches()
     {
-        AssertMatch(CSharpTerminals.InterpolatedStringLiteral(), @"@$""x{y}""", -1);
+        AssertAll(
+            CSharpTerminals.InterpolatedStringLiteral(),
+            [
+                (@"@$""""", 4),
+                (@"@$""x{y}""", 8),
+                (@"@$""{{x}}""", 9),
+                (@"@$""a {x} b""", 11),
+                (@"@$""{""""}""}", 8),
+                (@"@$""}}""", 6)
+            ]);
+    }
+
+    [TestMethod]
+    public void InterpolatedStringLiteral_VerbatimHolesAndBraces_Matches()
+    {
+        AssertAll(
+            CSharpTerminals.InterpolatedStringLiteral(),
+            [
+                (@"$@""""", 4),
+                (@"$@""abc""", 7),
+                (@"$@""{x}""", 7),
+                (@"$@""{{x}}""", 9),
+                (@"$@""a {x} b""", 11),
+                (@"$@""{""""}""}", 8),
+                (@"$@""}}""", 6),
+                (@"$@""{x:0}""", 9),
+                (@"$@""{x:}""", 8)
+            ]);
+    }
+
+    [TestMethod]
+    public void InterpolatedStringLiteral_VerbatimNewlinesAndBackslash_Matches()
+    {
+        AssertAll(
+            CSharpTerminals.InterpolatedStringLiteral(),
+            [
+                (@"$@""a\nb""", 8),
+                (@"$@""a\rb""", 8),
+                (@"$@""\{x}""", 8),
+                (@"$@""\""", 5)
+            ]);
+    }
+
+    [TestMethod]
+    public void InterpolatedStringLiteral_VerbatimNestedLiteralsInHole_Matches()
+    {
+        AssertAll(
+            CSharpTerminals.InterpolatedStringLiteral(),
+            [
+                (@"$@""{s = ""a""""b""}""", 16),
+                (@"$@""{ @""a}b"" }""", 14),
+                (@"$@""{ @$""a{b}"" }""", 16),
+                (@"$@""{@$""{$""{0}""}""}""", 18)
+            ]);
+    }
+
+    [TestMethod]
+    public void InterpolatedStringLiteral_VerbatimInvalidBraceOrHole_Fails()
+    {
+        AssertAll(
+            CSharpTerminals.InterpolatedStringLiteral(),
+            [
+                (@"$@""{x""", -1),
+                (@"@$""{x""", -1),
+                (@"$@""}""", -1),
+                (@"@$""}""", -1),
+                (@"$@""}x""", -1),
+                (@"$@""a", -1),
+                (@"@$""a", -1),
+                (@"$@""{x:""a""}""", -1)
+            ]);
     }
 
     [TestMethod]
@@ -383,17 +453,65 @@ public class CSharpTerminalsTests
     }
 
     [TestMethod]
+    public void VerbatimStringLiteral_QuotedText_Matches()
+    {
+        AssertAll(
+            CSharpTerminals.VerbatimStringLiteral(),
+            [("@\"\"", 3), ("@\"abc\"", 6), ("@\"literal\"", 10)]);
+    }
+
+    [TestMethod]
     public void VerbatimStringLiteral_DoubledQuotes_Matches()
     {
         AssertAll(
             CSharpTerminals.VerbatimStringLiteral(),
-            [("@\"a\"\"b\"", 7), ("@\"x\"", 4)]);
+            [("@\"a\"\"b\"", 7), ("@\"\"\"\"", 5), ("@\"a\"\"\"", 6), ("@\"x\"", 4)]);
+    }
+
+    [TestMethod]
+    public void VerbatimStringLiteral_BackslashIsLiteralContent_Matches()
+    {
+        AssertAll(
+            CSharpTerminals.VerbatimStringLiteral(),
+            [("@\"back\\slash\"", 13), ("@\"\\e\"", 5)]);
+    }
+
+    [TestMethod]
+    public void VerbatimStringLiteral_NewlinesAllowed_Matches()
+    {
+        AssertAll(
+            CSharpTerminals.VerbatimStringLiteral(),
+            [("@\"line1\nline2\"", 14), ("@\"multi line\r\nliteral\"", 22)]);
+    }
+
+    [TestMethod]
+    public void VerbatimStringLiteral_BracesArePlainContent_Matches()
+    {
+        AssertAll(
+            CSharpTerminals.VerbatimStringLiteral(),
+            [("@\"{x}\"", 6), ("@\"a}b\"", 6)]);
+    }
+
+    [TestMethod]
+    public void VerbatimStringLiteral_ExactBoundary_MatchesPrefixOnly()
+    {
+        AssertMatch(CSharpTerminals.VerbatimStringLiteral(), "@\"a\" + 1", 4);
     }
 
     [TestMethod]
     public void VerbatimStringLiteral_Unterminated_Fails()
     {
-        AssertMatch(CSharpTerminals.VerbatimStringLiteral(), "@\"", -1);
+        AssertAll(
+            CSharpTerminals.VerbatimStringLiteral(),
+            [("@\"", -1), ("@\"literal", -1), ("@\"\"\"", -1)]);
+    }
+
+    [TestMethod]
+    public void VerbatimStringLiteral_NonStringAfterAt_Fails()
+    {
+        AssertAll(
+            CSharpTerminals.VerbatimStringLiteral(),
+            [("@$x", -1), ("@$", -1), ("@x", -1)]);
     }
 
     [TestMethod]
@@ -481,6 +599,8 @@ public class CSharpTerminalsTests
         AssertMatch(CSharpTerminals.StringLiteral(), "x \"ab\"", 4, 2);
         AssertMatch(CSharpTerminals.InterpolatedStringLiteral(), "x $\"{a}\"", 6, 2);
         AssertMatch(CSharpTerminals.InterpolatedStringLiteral(), "x $\"{{a}}\"", 8, 2);
+        AssertMatch(CSharpTerminals.InterpolatedStringLiteral(), "x @$\"{a}\"", 7, 2);
+        AssertMatch(CSharpTerminals.VerbatimStringLiteral(), "x @\"ab\"", 5, 2);
     }
 
     [TestMethod]
@@ -488,6 +608,7 @@ public class CSharpTerminalsTests
     {
         AssertMatch(CSharpTerminals.StringLiteral(), "\"ab\"", -1, 1);
         AssertMatch(CSharpTerminals.InterpolatedStringLiteral(), "$\"ab\"", -1, 1);
+        AssertMatch(CSharpTerminals.VerbatimStringLiteral(), "a@\"ab\"", -1, 0);
     }
 
     private static void AssertAll(Terminal terminal, (string Input, int Expected)[] cases)

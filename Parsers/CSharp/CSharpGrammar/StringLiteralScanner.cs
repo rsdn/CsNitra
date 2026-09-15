@@ -52,6 +52,14 @@ internal static class StringLiteralScanner
         return ToLength(pos, TryScanStringContents(input, pos + 2, StringKind.Verbatim, dollarCount: 0, quoteCount: 1));
     }
 
+    public static int TryScanAtInterpolatedString(string input, int pos)
+    {
+        if (pos + 2 >= input.Length || input[pos] != '@' || input[pos + 1] != '$' || input[pos + 2] != '"')
+            return -1;
+
+        return ToLength(pos, TryScanStringContents(input, pos + 3, StringKind.Verbatim, dollarCount: 1, quoteCount: 1));
+    }
+
     public static int TryScanAtString(string input, int pos)
     {
         if (pos + 1 >= input.Length || input[pos] != '@')
@@ -62,12 +70,7 @@ internal static class StringLiteralScanner
             return TryScanVerbatimString(input, pos);
 
         if (next == '$')
-        {
-            if (pos + 2 >= input.Length || input[pos + 2] != '"')
-                return -1;
-
-            return ToLength(pos, TryScanStringContents(input, pos + 3, StringKind.Verbatim, dollarCount: 1, quoteCount: 1));
-        }
+            return TryScanAtInterpolatedString(input, pos);
 
         return -1;
     }

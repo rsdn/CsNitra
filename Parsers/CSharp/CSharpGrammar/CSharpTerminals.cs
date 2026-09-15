@@ -34,10 +34,7 @@ public sealed partial class CSharpTerminals
 
     public static Terminal InterpolatedStringLiteral() => _interpolatedStringLiteral;
 
-    [Regex("""
-        @"(""|[^"])*"
-        """)]
-    public static partial Terminal VerbatimStringLiteral();
+    public static Terminal VerbatimStringLiteral() => _verbatimStringLiteral;
 
     [Regex(@"'([^'\n\\]|\\.)'")]
     public static partial Terminal CharLiteral();
@@ -328,6 +325,8 @@ public sealed partial class CSharpTerminals
 
     private static readonly Terminal _interpolatedStringLiteral = new InterpolatedStringLiteralTerminal();
 
+    private static readonly Terminal _verbatimStringLiteral = new VerbatimStringLiteralTerminal();
+
     private sealed record StringLiteralTerminal : Terminal
     {
         public StringLiteralTerminal() : base("StringLiteral")
@@ -347,9 +346,27 @@ public sealed partial class CSharpTerminals
         }
 
         public override int TryMatch(string input, int startPos)
-            => StringLiteralScanner.TryScanInterpolatedString(input, startPos);
+        {
+            var length = StringLiteralScanner.TryScanInterpolatedString(input, startPos);
+            if (length >= 0)
+                return length;
+
+            return StringLiteralScanner.TryScanAtInterpolatedString(input, startPos);
+        }
 
         public override string ToString() => "InterpolatedStringLiteral";
+    }
+
+    private sealed record VerbatimStringLiteralTerminal : Terminal
+    {
+        public VerbatimStringLiteralTerminal() : base("VerbatimStringLiteral")
+        {
+        }
+
+        public override int TryMatch(string input, int startPos)
+            => StringLiteralScanner.TryScanVerbatimString(input, startPos);
+
+        public override string ToString() => "VerbatimStringLiteral";
     }
 
     private sealed record TriviaTerminal : Terminal
