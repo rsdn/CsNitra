@@ -71,7 +71,9 @@ public sealed class RuleGenerator(Scope globalScope, Parser parser)
             ZeroOrManyExpressionAst a => new ZeroOrMany(GenerateExpression(a.Element), a.Kind),
             AndPredicateExpressionAst a => GenerateAndPredicate(a),
             NotPredicateExpressionAst a => GenerateNotPredicate(a),
-            LiteralAst a => new EP.Literal(a.Value, a.Kind),
+            LiteralAst a => Naming.IsValidIdentifier(a.Value)
+                ? new EP.WordLiteral(a.Value, a.Kind)
+                : new EP.Literal(a.Value, a.Kind),
             GroupExpressionAst a => GenerateExpression(a.Expression),
             SeparatedListExpressionAst a => GenerateSeparatedList(a),
             _ => throw new InvalidOperationException($"Unknown expression type: {expression.GetType()}")

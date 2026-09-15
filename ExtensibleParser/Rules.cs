@@ -62,7 +62,7 @@ public abstract record Terminal(string Kind) : Rule(Kind)
 /// </summary>
 /// <param name="Value">The exact string to match</param>
 /// <param name="Kind">Optional custom name for this literal</param>
-public sealed record Literal(string Value, string? Kind = null) : Terminal(Kind ?? Value)
+public record Literal(string Value, string? Kind = null) : Terminal(Kind ?? Value)
 {
     public override Rule InlineReferences(Dictionary<string, Rule> inlineableRules) => this;
 
@@ -75,6 +75,33 @@ public sealed record Literal(string Value, string? Kind = null) : Terminal(Kind 
     {
         if (this is T)
             yield return this;
+    }
+}
+
+/// <summary>
+/// A terminal that matches a literal string value as a whole word: the value must match exactly
+/// AND the raw character immediately after the match (no trivia skip) must not be an
+/// identifier-continuation character (letter, digit, or '_'). End of input satisfies the boundary.
+/// Example: new WordLiteral("using") matches "using" in "using x;" but not in "usingx".
+/// Inherits from <see cref="Literal"/> so terminal identity (by Value) is preserved in the
+/// terminal cache, injection layer, and first/follow sets.
+/// </summary>
+/// <param name="Value">The exact string to match as a whole word</param>
+/// <param name="Kind">Optional custom name for this literal</param>
+public sealed record WordLiteral(string Value, string? Kind = null) : Literal(Value, Kind)
+{
+    public override string ToString() => $"\"{Value}\"";
+
+    public override int TryMatch(string input, int startPos) =>
+        input.AsSpan(startPos).StartsWith(Value.AsSpan(), StringComparison.Ordinal) && !IsIdentifierPart(input, startPos + Value.Length) ? Value.Length : -1;
+
+    private static bool IsIdentifierPart(string input, int pos)
+    {
+        if (pos >= input.Length)
+            return false;
+
+        var c = input[pos];
+        return c == '_' || char.IsLetterOrDigit(c);
     }
 }
 
