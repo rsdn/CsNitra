@@ -1,0 +1,49 @@
+# CSharpParserPlan — execution checklist
+
+Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `docs/CSharpParserPlan-progress<subpoint>.md`.
+
+## Этап 0 — Инфраструктура
+
+- [~] T0.1 Проект `Parsers/CSharp/CSharpGrammar`, добавить в `Nitra.sln`, оболочка `CSharpParser` (сборка `Parser` из текста грамматики)
+- [ ] T0.2 Тестовый проект `Tests/CSharpGrammarTests` (MSTest, net8.0) + зелёный smoke-тест
+- [ ] T0.3 Слияние версий: повторное имя правила в более новом файле = добавление альтернатив; изменения в CsNitraGrammar (RuleGenerator/TypeChecker) + метациркулярные тесты
+
+## Этап 1 — C# 1.0: compilation unit → типы
+
+- [ ] T1.1 (Исследование, субагент + roslyn MCP) Карта Roslyn → `docs/RoslynGrammarMap.md`
+- [ ] T1.2 Терминалы C# (идентификатор, числа, char/строки, пунктуация, trivia/комментарии) + тесты
+- [ ] T1.3 Грамматика: compilation unit, `using`, `extern alias`, `namespace` (block), namespace-члены (class/struct/enum/interface/delegate — заголовки) + тесты
+- [ ] T1.4 Грамматика: типы C# 1.0 (преопределённые, квалифицированные, массивы, указатели) + тесты
+
+## Этап 2 — C# 1.0: члены и тела
+
+- [ ] T2.1 Члены: поля, свойства, методы, конструкторы, деструкторы, операторы, индексаторы, события, модификаторы, атрибуты + тесты
+- [ ] T2.2 Операторы/выражения-вызовы: if/while/for/foreach/switch/try/using/lock/check/return/goto/throw/block/empty + тесты
+- [ ] T2.3 Выражения C# 1: TDOPP-таблица приоритетов, литералы, `new`, приведение, `is`/`as`, `.`/`[]`/`()`, пре/постфиксы + тесты
+
+## Этап 3 — Версии CS2–CS14
+
+- [ ] T3.1 CS2: дженерики + constraints, `var`, анонимные методы, `partial`, sealed override
+- [ ] T3.2 CS3: лямбды, auto-свойства, object/collection initializers, extension methods, анонимные типы, LINQ-запросы
+- [ ] T3.3 CS4: `dynamic`, именованные/опциональные аргументы, `params`-массив, constraint `new`
+- [ ] T3.4 CS5: `async`/`await`
+- [ ] T3.5 CS6: интерполяция, `?.`, expression-bodied члены, `nameof`, binary literals
+- [ ] T3.6 CS7: кортежи, pattern matching, локальные функции, `out var`, `ref`-возврат/локальные, разделители цифр, `throw`-выражение, `ref readonly`
+- [ ] T3.7 CS7.1–7.2: `default`, `in`, `ref struct`, type/constant patterns
+- [ ] T3.8 CS8: switch expressions, using declarations, `..`/`^`, `??=`, NRT-аннотации, default interface members
+- [ ] T3.9 CS9: records, `with {}`, init-only, top-level statements, static abstract в интерфейсах
+- [ ] T3.10 CS10: file-scoped `namespace`, `global using`
+- [ ] T3.11 CS11: raw-строки, generic attributes, `required`, `params Span<T>`
+- [ ] T3.12 CS12: primary constructors (классы), collection expressions, list patterns, `not`/`and`/`or`
+- [ ] T3.13 CS13: extension members, `field`, `event field`
+- [ ] T3.14 CS14: `ref`-поля + остаток фич по данным T1.1
+
+## Этап 4 — Закаливание
+
+- [ ] T4.1 Тесты разбитого кода (recovery-тесты Roslyn, согласование с `ExtensibleParser/Recovery`)
+- [ ] T4.2 Производительность: бенчмарк, анализ горячих точек
+- [ ] T4.3 Перенос сборки грамматики в Roslyn source generator
+
+## Deviations
+
+(пока нет)

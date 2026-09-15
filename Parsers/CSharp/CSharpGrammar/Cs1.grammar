@@ -1,0 +1,7 @@
+Grammar = Statement*;
+
+Statement = "var" Identifier "=" Expression ";";
+
+Expression =
+    | Identifier
+    | Number;

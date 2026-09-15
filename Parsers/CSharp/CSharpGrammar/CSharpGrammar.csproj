@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>netstandard2.0</TargetFramework>
+        <ImplicitUsings>disable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <LangVersion>preview</LangVersion>
+        <RootNamespace>CSharpGrammar</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\ExtensibleParser\ExtensibleParser.csproj" />
+        <ProjectReference Include="..\..\CsNitra\CsNitraGrammar\CsNitraGrammar.csproj" />
+        <ProjectReference Include="..\..\..\Regex\Regex\Regex.csproj" OutputItemType="Analyzer" />
+        <ProjectReference Include="..\..\..\TerminalGenerator\TerminalGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <EmbeddedResource Include="Cs1.grammar" />
+    </ItemGroup>
+
+    <Import Project="..\..\..\Shared\Shared.projitems" Label="Shared" />
+
+</Project>
