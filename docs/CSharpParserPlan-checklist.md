@@ -6,9 +6,9 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 
 - [✅] T0.1 Проект `Parsers/CSharp/CSharpGrammar`, добавить в `Nitra.sln`, оболочка `CSharpParser` (сборка `Parser` из текста грамматики)
 - [~] T0.2 Тестовый проект `Tests/CSharpGrammarTests` (MSTest, net8.0) + зелёный smoke-тест
-- [~] T0.3 Слияние версий: повторное имя правила в более новом файле = добавление альтернатив
-  - [~] T0.3.1 Реализация: слияние нескольких текстов грамматики (TypeChecker/RuleGenerator + API `CSharpParser`)
-  - [ ] T0.3.2 Метациркулярные тесты слияния
+- [✅] T0.3 Слияние версий: повторное имя правила в более новом файле = добавление альтернатив
+  - [✅] T0.3.1 Реализация: слияние нескольких текстов грамматики (TypeChecker/RuleGenerator + API `CSharpParser`)
+  - [✅] T0.3.2 Метациркулярные тесты слияния
 
 ## Этап 1 — C# 1.0: compilation unit → типы
 
@@ -48,4 +48,6 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 
 ## Deviations
 
-(пока нет)
+- T0.1: убран redundant `<Compile Include="MiniC\MiniCGrammar.cs" />` из ParserTests.csproj (NETSDK1022, дублирование SDK-глоба) — чинил билд всего решения.
+- T0.3.2: пипованные альтернативы в CsNitra-грамматике обязаны быть именованными (`| Name = Expr` или RuleRef) — `Rule = | "a";` не парсится. Учитывать во всех `CsN.grammar`.
+- T0.3.2: при верификации один раз упал 1 тест ParserTests (имя не зафиксировано); 10+ последующих прогонов (полный набор + новые тесты по отдельности) — зелёные. Вероятно, изолированный флейк; наблюдать.
