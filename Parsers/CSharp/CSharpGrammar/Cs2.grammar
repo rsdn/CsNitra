@@ -1,0 +1,73 @@
+// Cs2.grammar — C# 2.0: generics (type-level) (T3.1.1.1).
+// Generic type names (C<T>, C<T,U>, qualified N.List<T>), type-parameter lists on type
+// declarations (class/struct/interface/delegate), and variance (in/out).
+//
+// T0.3 merge semantics: re-declaring a rule name APPENDS alternatives (declaration order across
+// files); it does NOT modify the Cs1 alternative. The engine is longest-match-wins and an
+// equal-length tie resolves to the FIRST alternative (Cs1, loaded first). So a re-declared Cs2
+// alternative is reachable only when it is MUTUALLY EXCLUSIVE with the Cs1 one.
+//
+// REQUIRED-new-construct principle: the Cs2 re-declared alternative REQUIRES the new construct,
+// so it cannot match the same input at the same length as the Cs1 alternative.
+//   TypeName: Cs1 = !ReservedKeyword Identifier (non-generic); Cs2 = !ReservedKeyword Identifier
+//   TypeArgumentList (generic, REQUIRED). `C` -> Cs1 (Cs2 fails: no "<"); `C<T>` -> Cs2 (longer).
+//   No tie.
+//
+// Boundary decision D1 (declarations): the merged TypeName is longest-match, so in a declaration
+// context it GREEDILY consumes `C<T>` as a generic type name. Consequences:
+//   * a non-variance generic declaration (`class C<T> { }`) is matched by the Cs1 ClassDeclaration
+//     (greedy TypeName + ClassBody); the Cs2 ClassDeclaration (TypeName + REQUIRED TypeParameterList)
+//     then sees `{` where it needs `<` and fails. Only one alternative matches -> no tie.
+//   * a variance declaration (`interface I<in T>`, `delegate void D<out T>(T x);`) is matched by the
+//     Cs2 alternative: the greedy TypeName cannot consume `<in T>` (in/out are reserved -> not a Type
+//     -> not a TypeArgumentList), so TypeName stops at the name and the REQUIRED TypeParameterList
+//     matches `<in T>`. The Cs1 alternative fails (body/base-list sees `<`). Only one matches -> no tie.
+// In every case the Cs1 and Cs2 alternatives are mutually exclusive (never an equal-length tie):
+// whenever the greedy TypeName leaves a `<...>` for the TypeParameterList, that `<...>` is not a
+// TypeArgumentList, so the Cs1 body/base-list cannot follow it. Full hand-traces in this file's
+// progress doc (docs/CSharpParserPlan-progressT3.1.1.1.md).
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp/Portable/Parser/LanguageParser.cs):
+//   ParseTypeParameterList (6104): "<" (TypeParameter,)+ ">" (requireOneElement, allowTrailingSeparator:false).
+//   ParseTypeParameter (6155): [attributes] (in|out)? identifier.
+//   ParseTypeArgumentList (6545): "<" (Type,)+ ">".
+//   Declaration position — class/struct/interface (1824) and delegate (5844): name, then
+//   TypeParameterList, then (delegate: parameter list / class etc.: base list), then body.
+//   Variance in/out are reserved keywords (already in Cs1 ReservedKeyword), so neither can be a
+//   TypeName and they disambiguate cleanly in TypeParameter = VarianceModifier? TypeName.
+//
+// CS2-only: no default type parameters `= ...` (CS4), no method type parameters / constraints
+// (T3.1.1.2). Variance on non-interface/delegate is a binder concern (parser accepts, binder rejects).
+
+// === Generic type name (T3.1.1.1). Re-declares Cs1 TypeName; the Cs2 alternative REQUIRES the
+// TypeArgumentList, so it is mutually exclusive with the Cs1 non-generic alternative (no tie). ===
+TypeName = !ReservedKeyword Identifier TypeArgumentList;
+
+// Type argument list: "<" (Type,)+ ">". Arguments are full Types, so C<int[]> and C<Foo<T>> work.
+// Roslyn ParseTypeArgumentList (LanguageParser.cs:6545).
+TypeArgumentList = "<" (Type; ",")+ ">";
+
+// === Type parameter list on type declarations (T3.1.1.1). Roslyn ParseTypeParameterList (6104). ===
+TypeParameterList = "<" (TypeParameter; ",")+ ">";
+
+// Type parameter: [variance] name. Roslyn ParseTypeParameter (6155): (in|out)? identifier.
+TypeParameter = VarianceModifier? TypeName;
+
+// Variance modifier: in | out. Both are reserved keywords (Cs1 ReservedKeyword), so neither can be
+// a TypeName; the `?` keeps the modifier unambiguous in TypeParameter (a bare in/out cannot be
+// consumed by TypeName). Named union (the meta-grammar does not allow `|` inside a group).
+VarianceModifier =
+    | "in"
+    | "out";
+
+// === Re-declared type declarations (T3.1.1.1): TypeParameterList REQUIRED. ===
+// The Cs2 alternative REQUIRES the TypeParameterList in the Roslyn position (after the name, before
+// the base list / parameter list). Reachable for the variance case; for the non-variance case the
+// Cs1 alternative (greedy TypeName) wins (Boundary decision D1 above). Mutually exclusive either way.
+ClassDeclaration = Attributes? ClassModifier* "class" TypeName TypeParameterList BaseList? ClassBody ";"?;
+
+StructDeclaration = Attributes? StructModifier* "struct" TypeName TypeParameterList BaseList? StructBody ";"?;
+
+InterfaceDeclaration = Attributes? InterfaceModifier* "interface" TypeName TypeParameterList BaseList? InterfaceBody ";"?;
+
+DelegateDeclaration = Attributes? DelegateModifier* "delegate" Type TypeName TypeParameterList "(" ParameterList? ")" ";";

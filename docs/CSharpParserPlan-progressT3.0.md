@@ -1,6 +1,6 @@
 # T3.0 — Versioning infrastructure (merged grammar up to a version)
 
-Status: in progress.
+Status: done.
 
 ## Goal
 Test-only infrastructure to load a merged C# grammar up to a given version
@@ -73,5 +73,12 @@ later Stage-3 task, not T3.0).
 - `docs/CSharpParserPlan-progressT3.0.md` (this file)
 
 ## Verification
-- [ ] `dotnet build Nitra.sln --no-incremental` → 0 errors
-- [ ] `dotnet test Tests/CSharpGrammarTests` (fresh build) → all green
+- [x] `dotnet build Nitra.sln --no-incremental` → **success, 0 errors / 0 warnings**.
+- [x] `dotnet test Tests/CSharpGrammarTests` (fresh build) → **772 passed / 0 failed / 3 skipped** (total 775).
+  - Baseline before T3.0: 766 passed / 0 failed / 3 skipped (total 769). Delta = +6 new tests.
+  - Filtered run of `CSharpVersionInfrastructureTests` → **6 passed / 0 failed**.
+  - Pre-existing Cs6 interpolated + Cs11 raw-string tests (which use the multi-text constructor) remain green.
+
+## Working-tree hygiene
+- Staged (T3.0 only): `EmbeddedGrammar.cs`, `CSharpVersionTestHelper.cs`, `CSharpVersionInfrastructureTests.cs`, this progress file.
+- No `.csproj`/`.grammar`/engine files touched. The pre-existing `docs/CSharpParserPlan-checklist.md` modification was NOT made by T3.0 and left unstaged.

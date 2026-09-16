@@ -18,31 +18,34 @@ public class CSharpVersionInfrastructureTests
     }
 
     [TestMethod]
-    public void LoadGrammarUpTo_6_YieldsCs1Cs6InOrder()
+    public void LoadGrammarUpTo_6_YieldsCs1Cs2Cs6InOrder()
     {
         var grammars = EmbeddedGrammar.LoadGrammarUpTo(6);
-        Assert.AreEqual(2, grammars.Count);
-        Assert.AreEqual("Cs1.grammar", grammars[0].Path);
-        Assert.AreEqual("Cs6.grammar", grammars[1].Path);
-    }
-
-    [TestMethod]
-    public void LoadGrammarUpTo_11_YieldsCs1Cs6Cs11InOrder()
-    {
-        var grammars = EmbeddedGrammar.LoadGrammarUpTo(11);
         Assert.AreEqual(3, grammars.Count);
         Assert.AreEqual("Cs1.grammar", grammars[0].Path);
-        Assert.AreEqual("Cs6.grammar", grammars[1].Path);
-        Assert.AreEqual("Cs11.grammar", grammars[2].Path);
+        Assert.AreEqual("Cs2.grammar", grammars[1].Path);
+        Assert.AreEqual("Cs6.grammar", grammars[2].Path);
     }
 
     [TestMethod]
-    public void LoadGrammarUpTo_3_YieldsOnlyExistingFiles()
+    public void LoadGrammarUpTo_11_YieldsCs1Cs2Cs6Cs11InOrder()
     {
-        // Cs2/Cs3 do not exist yet; only existing files <= 3 are included (Cs1).
-        var grammars = EmbeddedGrammar.LoadGrammarUpTo(3);
-        Assert.AreEqual(1, grammars.Count);
+        var grammars = EmbeddedGrammar.LoadGrammarUpTo(11);
+        Assert.AreEqual(4, grammars.Count);
         Assert.AreEqual("Cs1.grammar", grammars[0].Path);
+        Assert.AreEqual("Cs2.grammar", grammars[1].Path);
+        Assert.AreEqual("Cs6.grammar", grammars[2].Path);
+        Assert.AreEqual("Cs11.grammar", grammars[3].Path);
+    }
+
+    [TestMethod]
+    public void LoadGrammarUpTo_4_YieldsOnlyExistingFiles()
+    {
+        // Cs3/Cs4 do not exist; only existing files <= 4 are included (Cs1, Cs2).
+        var grammars = EmbeddedGrammar.LoadGrammarUpTo(4);
+        Assert.AreEqual(2, grammars.Count);
+        Assert.AreEqual("Cs1.grammar", grammars[0].Path);
+        Assert.AreEqual("Cs2.grammar", grammars[1].Path);
     }
 
     [TestMethod]
