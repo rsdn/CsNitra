@@ -74,11 +74,16 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
   - [✅] T3.3.2 Named arguments (`M(x: 5)`, `M(x: 5, y: 6)`, порядок не важен) → `Cs4.grammar` + тесты
   - [✅] T3.3.3 Optional parameters (`void M(int x = 5)`, `void M(int x = 5, int y = 6)`) → `Cs4.grammar` + тесты
 - [✅] T3.4 CS5: `async`/`await` → `Cs5.grammar` + тесты
-- [ ] T3.5 CS6: `?.`, expression-bodied члены, `nameof`, binary literals (интерполяция — T3.5.1–T3.5.2, выполняется раньше остальных пунктов плана)
+- [✅] T3.5 CS6: `?.`, expression-bodied члены, `nameof`, binary literals (интерполяция — T3.5.1–T3.5.2, выполняется раньше остальных пунктов плана)
   - [✅] T3.5.1 Дизайн: правила интерполяции (3 уровня $) для семейств regular/verbatim/raw → `docs/InterpolatedStringGrammar.md` (семантика из Roslyn Lexer + образец `C:\RSDN\nitra\...\CS6Literals.nitra`)
   - [✅] T3.5.2 Реализация: грамматические правила интерполяции + временное правило Expression + удаление сканер-терминалов (`InterpolatedStringLiteral`, `RawInterpolatedStringLiteral`, hole-скан) и их тестов
   - [✅] T3.5.3 CS6: `?.`, expression-bodied члены, `nameof`, binary literals (итерация CS6)
 - [ ] T3.6 CS7: кортежи, pattern matching, локальные функции, `out var`, `ref`-возврат/локальные, разделители цифр, `throw`-выражение, `ref readonly`
+  - [✅] T3.6.1 Кортежи: tuple-типы (`(int, string)`), tuple-литералы (`(1, "a")`), deconstruction (`var (x, y) = t`), `Item1`-доступ → `Cs7.grammar` + тесты (D1: unnamed tuple literal version-purity blocked — Cs1 Parens+Comma)
+  - [ ] T3.6.2 Pattern matching: declaration patterns (`is int x`), type/constant patterns, discard `_`, guard `when`, `switch` с паттернами → `Cs7.grammar` + тесты
+  - [ ] T3.6.3 Локальные функции: `void M() { void N() { } N(); }` (в т.ч. `async`/`static`/generics) → `Cs7.grammar` + тесты
+  - [ ] T3.6.4 `out var` + `ref`-возврат/локальные + `ref readonly` (ref-семантика) → `Cs7.grammar` + тесты
+  - [ ] T3.6.5 Разделители цифр (`1_000_000`) + `throw` как выражение (`x = c ? throw e : 5`) → `Cs7.grammar` + тесты
 - [ ] T3.7 CS7.1–7.2: `default`, `in`, `ref struct`, type/constant patterns
 - [ ] T3.8 CS8: switch expressions, using declarations, `..`/`^`, `??=`, NRT-аннотации, default interface members
 - [ ] T3.9 CS9: records, `with {}`, init-only, top-level statements, static abstract в интерфейсах

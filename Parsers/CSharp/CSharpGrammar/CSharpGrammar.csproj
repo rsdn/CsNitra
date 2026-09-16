@@ -22,6 +22,7 @@
         <EmbeddedResource Include="Cs4.grammar" />
         <EmbeddedResource Include="Cs5.grammar" />
         <EmbeddedResource Include="Cs6.grammar" />
+        <EmbeddedResource Include="Cs7.grammar" />
         <EmbeddedResource Include="Cs11.grammar" />
     </ItemGroup>
 

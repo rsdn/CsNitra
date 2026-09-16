@@ -1,0 +1,80 @@
+// Cs7.grammar — C# 7.0: tuples (T3.6.1).
+//
+// T0.3 merge semantics: re-declaring a rule name APPENDS alternatives (declaration order across
+// files); it does NOT modify the Cs1 alternative. The engine is longest-match-wins and an
+// equal-length tie resolves to the FIRST alternative (declaration order, Parser.cs:296-316). So a
+// re-declared Cs7 alternative is reachable only when it is MUTUALLY EXCLUSIVE with the existing ones.
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp/Portable/Parser/LanguageParser.cs):
+//   * Tuple type — ParseTupleType (7920): "(" (ParseTupleElement,)+ ")" (list.Count < 2 ->
+//     ERR_TupleTooFewElements). ParseTupleElement (7954): ParseType() + (IsTrueIdentifier() ?
+//     ParseIdentifierToken() : null) — the element NAME comes AFTER the type (`int a` = type int,
+//     name a). Entered from ParseUnderlyingType (7989) when the current token is "(".
+//   * Tuple literal — ParseCastOrParenExpressionOrTuple (12828): "(" + first expression, then if
+//     next is "," (12858) or first is Identifier + ":" (12866) -> ParseTupleExpressionTail (12882):
+//     firstArg + ("," + argument)* (list.Count < 2 -> ERR_TupleTooFewElements). Each argument is an
+//     expression, optionally with a name colon (Identifier ":" Expression, 12892-12897).
+//   * Deconstruction — IsPossibleDeconstructionLeft (12231): "var" + "(" + ScanDesignator (12246) +
+//     "="; ScanDesignator = identifier | "(" designator ("," designator)* ")". The deconstruction
+//     ASSIGNMENT "(x, y) = t;" is an assignment EXPRESSION (ParseExpressionContinued, 11532) whose
+//     LHS is a parenthesized variable designation — an EXPRESSION, not a separate statement.
+//   * Item1 access — a regular member access ("." Identifier), handled by the Cs1 MemberAccess
+//     postfix (Cs1.grammar:723). No change needed.
+//
+// CS7 only.
+
+// === Tuple type (C# 7.0). Re-declares Cs1 Type; the tuple-type alternative REQUIRES a comma
+// (>= 2 elements), so it is mutually exclusive with a parenthesized type (a single type in parens,
+// which is not a valid C# type — `(int)` is not a Type). Roslyn ParseTupleType (7920). ===
+Type =
+    | TupleType = "(" TupleTypeElement ("," TupleTypeElement)+ ")";
+
+// A tuple type element: Type + optional name (Identifier). Roslyn ParseTupleElement (7954): the
+// name comes AFTER the type (`int a` = type int, name a). The name is a true identifier
+// (!ReservedKeyword). `int a` -> Type=int, name=a; `int` -> Type=int, no name.
+TupleTypeElement = Type !ReservedKeyword Identifier?;
+
+// === Tuple literal (C# 7.0). Re-declares Cs1 Primary (append, T0.3 merge). The tuple literal
+// REQUIRES a comma (>= 2 elements). Roslyn ParseCastOrParenExpressionOrTuple (12828) +
+// ParseTupleExpressionTail (12882). ===
+//
+// Disambiguation with the Cs1 Parens ("(" Expression ")", Cs1.grammar:707):
+//   * NAMED elements `(a: 1, b: 2)`: Parens FAILS (`a: 1` is not an Expression — ":" is not a
+//     binary operator), so the TupleLiteral is the SOLE match. Clean version-purity (rejects at v6).
+//   * UNNAMED elements `(1, 2)`: Parens MATCHES (the inner Expression absorbs the "," via the Comma
+//     operator, bp 1, applicable at minPrecedence 0) as a parenthesized COMMA EXPRESSION, at the same
+//     length as the TupleLiteral. The FIRST (Cs1 Parens) wins the tie -> parsed as a comma expression,
+//     NOT a tuple literal. Consequence: the UNNAMED tuple literal PARSES at v6 (as a comma
+//     expression), so its version-purity negative is BLOCKED (progress doc, Deviation D1). The
+//     TupleLiteral alternative is dead for unnamed elements but used for named elements.
+Primary =
+    | TupleLiteral = "(" TupleLiteralElement ("," TupleLiteralElement)+ ")";
+
+// A tuple literal element: an optional name (Identifier ":") + an Expression. Roslyn
+// ParseTupleExpressionTail (12892-12897). The Expression is `Expression : Comma` (minPrecedence 1)
+// so it does NOT absorb the "," separator (the TDOPP Comma fix, T3.3.2). Named union (the
+// meta-grammar forbids `|` inside a group). Longest-match: `a: 1` -> NamedTupleElement (longer);
+// `1` -> PositionalTupleElement (NamedTupleElement fails: 1 is not an Identifier).
+TupleLiteralElement =
+    | NamedTupleElement      = !ReservedKeyword Identifier ":" Expression : Comma
+    | PositionalTupleElement = Expression : Comma;
+
+// === Deconstruction (C# 7.0). Re-declares Cs1 LocalVariableDeclaration (append, T0.3 merge). ===
+// The deconstruction DECLARATION `var (x, y) = t;` REQUIRES the "(" after "var" (the
+// DeconstructionVariableList), so it is MUTUALLY EXCLUSIVE with the Cs2 "var" declaration
+// (VariableDeclarator = identifier, which fails on "(") and the Cs1 Type-based declaration (var is
+// reserved, not a Type). Roslyn IsPossibleDeconstructionLeft (12231) + ScanDesignator (12246).
+//
+// The deconstruction ASSIGNMENT `(x, y) = t;` is an assignment EXPRESSION (Roslyn
+// ParseExpressionContinued, 11532) whose LHS is a parenthesized variable designation. In this
+// grammar it is ALREADY parsed at every version via the Cs1 ExpressionStatement (as an Assign whose
+// LHS is a parenthesized comma expression) — no new rule is required for it to parse (verified:
+// parses at v6). It is NOT a separate statement rule here (progress doc, Deviation D2).
+LocalVariableDeclaration =
+    | DeconstructionDeclaration = "var" DeconstructionVariableList "=" Expression ";";
+
+// The deconstruction variable list: "(" identifier ("," identifier)* ")". Roslyn ScanDesignator
+// (12246) is recursive (nested deconstruction `((x, y), z)`); this grammar models the FLAT list
+// required by the task (a documented simplification — nested deconstruction is out of scope, D3).
+// Each element is a true identifier.
+DeconstructionVariableList = "(" !ReservedKeyword Identifier ("," !ReservedKeyword Identifier)* ")";
