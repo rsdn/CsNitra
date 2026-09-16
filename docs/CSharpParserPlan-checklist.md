@@ -68,7 +68,7 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
   - [✅] T3.2.2 Object initializers (`new C { X = 5 }`) + collection initializers (`new List<int> { 1, 2, 3 }`) + анонимные типы (`new { X = 5 }`) → `Cs3.grammar` + тесты
   - [✅] T3.2.3 Auto-свойства (`int P { get; set; }`, `{ get; }`, initializer `= ...`) → `Cs3.grammar` + тесты
   - [✅] T3.2.4 Extension methods (`static class E { static void M(this int x) { } }`) → `Cs3.grammar` + тесты
-  - [ ] T3.2.5 LINQ query expressions (`from x in xs select x`, `where`/`orderby`/`join`/`let`/`group`) → `Cs3.grammar` + тесты
+  - [✅] T3.2.5 LINQ query expressions (`from x in xs select x`, `where`/`orderby`/`join`/`let`/`group`) → `Cs3.grammar` + тесты
 - [ ] T3.3 CS4: `dynamic`, именованные/опциональные аргументы, `params`-массив, constraint `new`
 - [ ] T3.4 CS5: `async`/`await`
 - [ ] T3.5 CS6: `?.`, expression-bodied члены, `nameof`, binary literals (интерполяция — T3.5.1–T3.5.2, выполняется раньше остальных пунктов плана)

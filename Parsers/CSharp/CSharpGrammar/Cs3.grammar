@@ -254,3 +254,156 @@ ParameterModifier =
 // MessageID.cs:728), NOT a CS3 feature. It is declared in Cs2.grammar (ClassModifier = | "static"),
 // not here. `static` is already a Cs1 MethodModifier (Cs1:293), so the `static` in `static void M(...)`
 // needs no change. NOT added to StructModifier (a struct cannot be static — CS0701).
+
+// ============================================================================
+// T3.2.5 — C# 3.0 LINQ query expressions.
+//
+// A query expression is a new EXPRESSION form (a Primary-level expression) that starts with the
+// contextual keyword `from`. It is added to Primary (re-declare, append — the same pattern as the
+// T3.2.1 LambdaExpression and Cs2's AnonymousMethod).
+//
+// Query keyword reservation (verified against the Cs1 ReservedKeyword, Cs1.grammar:537-618, and
+// Roslyn IsQueryContextualKeyword, SyntaxKindFacts.cs:1314-1335):
+//   * `in` is a RESERVED keyword (Cs1.grammar:571) — a hard keyword that can never be an identifier,
+//     so it is a plain literal in the query rules with no ambiguity.
+//   * All the other query keywords are CONTEXTUAL (plain identifiers in non-query contexts): from,
+//     where, select, group, into, orderby, join, let, on, equals, by, ascending, descending. NONE is
+//     in the Cs1 ReservedKeyword. They are used as LITERALS here and are NOT added to ReservedKeyword
+//     (that would break C# 1.0 code that uses them as identifiers, e.g. `class C { int from; }`).
+//
+// `where` is NOT reserved (absent from the Cs1 ReservedKeyword; already a WordLiteral for the Cs2
+// constraint clause, Cs2.grammar:107). A query `where` clause (an Expression in query context) does
+// NOT conflict with the Cs2 constraint-clause `where` (a `where <id> :` in a type-parameter context)
+// — they are in entirely different rule contexts (Expression vs ConstraintClause).
+//
+// Disambiguation of `from` (query vs plain identifier) — longest-match, no equal-length tie:
+//   * `from x in xs select x`: Primary tries IdentifierName (`from`, 1 name) and QueryExpression
+//     (`from x in xs select x`, longer). Longest-match -> QueryExpression.
+//   * bare `from` (no `x in ... select ...`): QueryExpression fails (FromClause needs
+//     `identifier in expression`); IdentifierName -> `from`. No tie.
+//
+// The query body is a loop of body clauses (from/join/let/where/orderby) followed by a terminal
+// select/group clause, then an optional `into` continuation (a new QueryBody). Each body clause
+// starts with a DISTINCT keyword, so the loop is unambiguous. The clause Expressions (the `in`,
+// `where`, `let`, `on`/`equals`, `select`, and `orderby` expressions) are full TDOPP Expressions;
+// they stop before the next clause keyword (no query keyword is a TDOPP binary operator). The
+// `select` expression can be a plain expression OR an anonymous type (`select new { ... }`),
+// reusing the T3.2.2 AnonymousType in NewBody.
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp/Portable/Parser/LanguageParser.cs):
+//   ParseQueryExpression (14182) -> fromClause + ParseQueryBody (14194): while-loop over
+//   from/join/let/where/orderby (14199-14221), then select-or-group (14224-14231), then optional
+//   into-continuation (14236-14238). ParseFromClause (14241): `from` + optional type (14246-14248) +
+//   identifier + `in` + ParseExpressionCore. ParseJoinClause (14274): `join` + optional type
+//   (14279-14281) + identifier + `in` + expr + `on` + expr + `equals` + expr + optional `into` id
+//   (14289-14291). ParseLetClause (14294). ParseWhereClause (14307). ParseOrderByClause (14315).
+//   ParseOrdering (14360): expr + optional (ascending|descending). ParseSelectClause (14378).
+//   ParseGroupClause (14386): `group` + expr (REQUIRED) + `by` + expr. ParseQueryContinuation
+//   (14396): `into` + id + ParseQueryBody. Syntax tests: ExpressionParsingTests.cs:2301/2334/2367/
+//   2418/2460/2503/2548/2593/2642/2690/2738/2777/2830/2886/2941/2998/3049.
+//
+// CS3 only: no query variable type parameters, no async queries (CS5), no query modifiers.
+
+// === T3.2.5: the query expression (C# 3.0 LINQ). Re-declares Primary (append, T0.3 merge) — the
+// same pattern as the T3.2.1 LambdaExpression and Cs2's AnonymousMethod. The query is a
+// Primary-level expression starting with the contextual keyword `from`. ===
+Primary =
+    | QueryExpression = FromClause QueryBody;
+
+// FromClause: `from [type] identifier in expression`. Roslyn ParseFromClause (14241-14272) allows an
+// OPTIONAL type before the identifier (`from T a in A`, 14246-14248). The meta-grammar cannot express
+// a mid-sequence optional with backtracking (ParseSeq is committed, Parser.cs:810-878: a greedy
+// `Type?` that matches `x` and then fails the following `Identifier` would fail the WHOLE sequence
+// instead of backtracking `Type?` to empty), so the two forms are a named union, mutually exclusive
+// (no equal-length tie — see the progress doc hand-traces):
+//   * FromUntyped (`from x in xs`): FromTyped fails (Type=`x`, then the following `Identifier` must
+//     match `in` — reserved — and fails); FromUntyped matches (`x` is the identifier).
+//   * FromTyped (`from T x in xs`): FromUntyped fails (`T` is the identifier, then `in` is expected
+//     but `x` is found); FromTyped matches (`T` is the type, `x` is the identifier).
+// `in` is a reserved keyword (Cs1:571), so it can never be an identifier and the boundary is clean.
+FromClause =
+    | FromTyped   = "from" Type !ReservedKeyword Identifier "in" Expression
+    | FromUntyped = "from" !ReservedKeyword Identifier "in" Expression;
+
+// QueryBody: a loop of body clauses followed by a terminal clause, then an optional `into`
+// continuation (a new QueryBody). Roslyn ParseQueryBody (14194-14239). In Roslyn the `group` clause
+// is a TERMINAL clause that must be followed by `into` (a continuation) — `group x by x.Key select x`
+// (group followed directly by `select`) is NOT valid C#. But the task REQUIRES that form to parse, so
+// `group` is given TWO roles (a documented superset of Roslyn):
+//   * as a BODY clause (QueryBodySelect): `group x by x.Key select x` (group in the loop, then a
+//     select terminal) — the task-required form.
+//   * as a TERMINAL clause (QueryBodyGroup): `group b by c into d select e` (group terminal, then an
+//     into continuation) — the Roslyn form.
+// The two alternatives are disambiguated by longest-match (no equal-length tie): a group followed by
+// `select` matches QueryBodySelect (longer, it includes the select); a group followed by `into` (or
+// end) matches only QueryBodyGroup (QueryBodySelect fails: no select after the group). A query with
+// no group matches only QueryBodySelect (QueryBodyGroup fails: no group terminal).
+QueryBody =
+    | QueryBodySelect = QueryBodyClause* SelectClause QueryContinuation?
+    | QueryBodyGroup  = QueryBodyClauseNoGroup* GroupClause QueryContinuation?;
+
+// A query body clause that MAY be a group (the Roslyn body loop from/join/let/where/orderby, plus the
+// task-required group-as-body-clause). Named union (the meta-grammar forbids `|` inside a group). Each
+// clause starts with a DISTINCT keyword, so the loop is unambiguous (no equal-length tie).
+QueryBodyClause =
+    | FromClause
+    | WhereClause
+    | LetClause
+    | JoinClause
+    | OrderByClause
+    | GroupClause;
+
+// A query body clause that is NOT a group (the Roslyn body loop: from/join/let/where/orderby). Used by
+// QueryBodyGroup, where the group is the TERMINAL clause (not a body clause).
+QueryBodyClauseNoGroup =
+    | FromClause
+    | WhereClause
+    | LetClause
+    | JoinClause
+    | OrderByClause;
+
+// WhereClause: `where` + expression (Roslyn ParseWhereClause 14307-14313).
+WhereClause = "where" Expression;
+
+// LetClause: `let` + identifier + `=` + expression (Roslyn ParseLetClause 14294-14305).
+LetClause = "let" !ReservedKeyword Identifier "=" Expression;
+
+// SelectClause: `select` + expression (Roslyn ParseSelectClause 14378-14384). The expression can be a
+// plain expression OR an anonymous type (`select new { ... }`), reusing the T3.2.2 AnonymousType in
+// NewBody.
+SelectClause = "select" Expression;
+
+// GroupClause: `group` + expression + `by` + expression (Roslyn ParseGroupClause 14386-14394). The
+// group expression is REQUIRED (ParseExpressionCore, not optional — `group b by c`, not `group by c`),
+// contradicting the task's assumption that it is optional.
+GroupClause = "group" Expression "by" Expression;
+
+// QueryContinuation: `into identifier query-body` (Roslyn ParseQueryContinuation 14396-14403). This
+// is the `into` after a SELECT or GROUP terminal clause (a NEW QueryBody). Distinct from the
+// JoinInto (which is part of the JoinClause and continues in the same body).
+QueryContinuation = "into" !ReservedKeyword Identifier QueryBody;
+
+// JoinClause: `join [type] identifier in expression on expression equals expression [into
+// identifier]`. Roslyn ParseJoinClause (14274-14292). As with FromClause, the optional type is a
+// named union (typed/untyped, mutually exclusive). The optional `into` (JoinIntoClause, 14289-14291)
+// is PART of the JoinClause (the query continues in the SAME body after it) — distinct from the
+// QueryContinuation (the `into` after a select/group, which starts a NEW body).
+JoinClause =
+    | JoinTyped   = "join" Type !ReservedKeyword Identifier "in" Expression "on" Expression "equals" Expression JoinInto?
+    | JoinUntyped = "join" !ReservedKeyword Identifier "in" Expression "on" Expression "equals" Expression JoinInto?;
+
+// Join into: `into identifier` (Roslyn JoinIntoClause 14289-14291).
+JoinInto = "into" !ReservedKeyword Identifier;
+
+// OrderByClause: `orderby ordering (, ordering)*`. Roslyn ParseOrderByClause (14315-14345).
+OrderByClause = "orderby" (Ordering; ",")+;
+
+// Ordering: `expression [ascending | descending]`. Roslyn ParseOrdering (14360-14376). The direction
+// is optional (default ascending).
+Ordering = Expression OrderingDirection?;
+
+// Ordering direction: ascending | descending (Roslyn ParseOrdering 14366-14373). Named union (the
+// meta-grammar forbids `|` inside a group).
+OrderingDirection =
+    | "ascending"
+    | "descending";
