@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using ExtensibleParser;
 
 namespace CSharpGrammar;
@@ -31,28 +30,49 @@ public sealed partial class CSharpTerminals
     public static partial Terminal RealSuffix();
 
     // Greedy run of safe raw-content chars: [^\{\}"]+ (newline allowed).
-    [Regex(@"[^\{\}""]+")]
+    [Regex("""[^\{\}"]+""")]
     public static partial Terminal InterpolatedRawText();
 
     // Greedy run of safe regular-interpolated content chars: [^\{\}\\"]+ (newline allowed).
-    [Regex(@"[^\{\}\\""]+")]
+    [Regex("""[^\{\}\\"]+""")]
     public static partial Terminal InterpolatedRegularText();
 
     // Greedy run of safe verbatim-interpolated content chars: [^\{\}"]+ (newline allowed).
-    [Regex(@"[^\{\}""]+")]
+    [Regex("""[^\{\}"]+""")]
     public static partial Terminal InterpolatedVerbatimText();
 
     // Run of raw format chars up to '}': [^}]* (empty allowed).
-    [Regex(@"[^}]*")]
+    [Regex("""[^}]*""")]
     public static partial Terminal RawFormatText();
 
-    public static Terminal StringLiteral() => _stringLiteral;
+    // One valid plain-string escape: \ + (["'\\0abfnrtv] | x hex+ | u hex4 | U00 (0 hex5 | 10 hex4))
+    // — \U value restricted to <= 0x0010FFFF. Plain groups: the regex engine has no (?:).
+    [Regex("""\\(["'\\0abfnrtv]|x[0-9a-fA-F]+|u[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]|U00(0[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]|10[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]))""")]
+    public static partial Terminal StringEscape();
 
-    public static Terminal VerbatimStringLiteral() => _verbatimStringLiteral;
+    // Greedy run of plain-string content: [^"\\<LF><CR>]+ (no newlines).
+    // LF/CR as regex escapes: the pattern value must stay free of raw control chars — the
+    // generator interpolates it into a code comment and char literals, and Roslyn treats
+    // U+0085/U+2028/U+2029 (and CR/LF) as line terminators there. U+0085/U+2028/U+2029 are
+    // inexpressible (no \u escapes in the engine) — accepted as text, see progress2.md.
+    [Regex("""[^"\\\n\r]+""")]
+    public static partial Terminal StringText();
 
-    public static Terminal RawStringLiteral() => _rawStringLiteral;
+    // Greedy run of verbatim content: [^"]+ (newline allowed).
+    [Regex("""[^"]+""")]
+    public static partial Terminal NonQuoteText();
+
+    // Raw string opening/closing quote run: a run of 3+ quotes, one [Regex] match. A single
+    // match (not OneOrMany of a quote literal) so the engine's post-terminal trivia skip
+    // cannot merge two runs separated by whitespace into one "opening" run.
+    [Regex("""""
+        """+
+        """"")]
+    public static partial Terminal RawQuoteRun();
 
     public static Terminal InterpolatedRegularEscape() => _interpolatedRegularEscape;
+
+    public static Terminal RawQuoteContent() => _rawQuoteContent;
 
     public static Terminal RawOpenBraceLiteral() => _rawOpenBraceLiteral;
 
@@ -79,13 +99,15 @@ public sealed partial class CSharpTerminals
         DecimalRealLiteral(),
         Exponent(),
         RealSuffix(),
-        StringLiteral(),
-        VerbatimStringLiteral(),
-        RawStringLiteral(),
         InterpolatedRegularText(),
         InterpolatedRegularEscape(),
         InterpolatedVerbatimText(),
         InterpolatedRawText(),
+        StringEscape(),
+        StringText(),
+        NonQuoteText(),
+        RawQuoteRun(),
+        RawQuoteContent(),
         RawOpenBraceLiteral(),
         RawCloseBraceLiteral(),
         RawHoleOpenBraces(),
@@ -97,13 +119,9 @@ public sealed partial class CSharpTerminals
 
     private static readonly Terminal _trivia = new TriviaTerminal();
 
-    private static readonly Terminal _stringLiteral = new StringLiteralTerminal();
-
-    private static readonly Terminal _verbatimStringLiteral = new VerbatimStringLiteralTerminal();
-
-    private static readonly Terminal _rawStringLiteral = new RawStringLiteralTerminal();
-
     private static readonly Terminal _interpolatedRegularEscape = new InterpolatedRegularEscapeTerminal();
+
+    private static readonly Terminal _rawQuoteContent = new RawQuoteContentTerminal();
 
     private static readonly Terminal _rawOpenBraceLiteral = new RawOpenBraceLiteralTerminal();
 
@@ -114,18 +132,6 @@ public sealed partial class CSharpTerminals
     private static readonly Terminal _regularFormatText = new RegularFormatTextTerminal();
 
     private static readonly Terminal _verbatimFormatText = new VerbatimFormatTextTerminal();
-
-    private sealed record StringLiteralTerminal : Terminal
-    {
-        public StringLiteralTerminal() : base("StringLiteral")
-        {
-        }
-
-        public override int TryMatch(string input, int startPos)
-            => StringLiteralScanner.TryScanPlainString(input, startPos);
-
-        public override string ToString() => "StringLiteral";
-    }
 
     // '\' + a valid escape sequence. \{ / \} (incl. \u007B / \u007D) and invalid escapes do
     // not match (CS1053 / invalid escape) — the hole/text cycle then fails.
@@ -151,30 +157,6 @@ public sealed partial class CSharpTerminals
         }
 
         public override string ToString() => "InterpolatedRegularEscape";
-    }
-
-    private sealed record VerbatimStringLiteralTerminal : Terminal
-    {
-        public VerbatimStringLiteralTerminal() : base("VerbatimStringLiteral")
-        {
-        }
-
-        public override int TryMatch(string input, int startPos)
-            => StringLiteralScanner.TryScanVerbatimString(input, startPos);
-
-        public override string ToString() => "VerbatimStringLiteral";
-    }
-
-    private sealed record RawStringLiteralTerminal : Terminal
-    {
-        public RawStringLiteralTerminal() : base("RawStringLiteral")
-        {
-        }
-
-        public override int TryMatch(string input, int startPos)
-            => StringLiteralScanner.TryScanRawString(input, startPos);
-
-        public override string ToString() => "RawStringLiteral";
     }
 
     // Regular format: run up to '}'. '\'-escapes (CS1053 on \{ / \} / invalid), a single '"'
@@ -259,6 +241,31 @@ public sealed partial class CSharpTerminals
         }
 
         public override string ToString() => "VerbatimFormatText";
+    }
+
+    // Raw string content quote run: a maximal run of exactly 1..2 quotes (a run of 3+ is the
+    // closing, not content). Hand-written (D1 category): "maximal run 1..2" is inexpressible
+    // declaratively — the regex engine has no negative lookahead, and a literal + !'"'
+    // predicate sees the position after the post-terminal trivia skip (a run followed by a
+    // newline and the closing run would fail the guard).
+    private sealed record RawQuoteContentTerminal : Terminal
+    {
+        public RawQuoteContentTerminal() : base("RawQuoteContent")
+        {
+        }
+
+        public override int TryMatch(string input, int startPos)
+        {
+            var pos = startPos;
+            var length = input.Length;
+            while (pos < length && input[pos] == '"')
+                pos++;
+
+            var run = pos - startPos;
+            return run is 1 or 2 ? run : -1;
+        }
+
+        public override string ToString() => "RawQuoteContent";
     }
 
     // Raw string content: a brace run of length 1..D-1, where D is the dollar count of the

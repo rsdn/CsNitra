@@ -131,6 +131,22 @@ UnarySign =
     | Plus = "+"
     | Minus = "-";
 
+// === C# 1.0: строковые литералы (декларативные; ран текста — [Regex]-терминал,
+// экрани — StringEscape; закрывающая кавычка verbatim — одиночная, !'"' = guard от ""-рана).
+// Расхождение newline-прозрачности (trivia съедает newline между элементами) — как в
+// InterpolatedStringGrammar §7.5.
+StringLiteral = "\"" StringLiteralPart* "\"";
+
+StringLiteralPart =
+    | Escape = StringEscape
+    | Text = StringText;
+
+VerbatimStringLiteral = "@\"" VerbatimLiteralPart* "\"" !'"';
+
+VerbatimLiteralPart =
+    | QuoteEscape = "\"" "\""
+    | Text = NonQuoteText;
+
 // === Типы C# 1.0 (T1.4) — семантика по Roslyn LanguageParser.ParseType/ParseTypeCore/
 // ParseUnderlyingType/ParseArrayRankSpecifier/ParsePointerTypeMods (C:\RSDN\roslyn, main).
 // Postfix-цикл Roslyn (LanguageParser.cs:7614-7676): после базового типа любое число и в любом

@@ -9,6 +9,8 @@ public static class EmbeddedGrammar
 
     public static string LoadCs6Grammar() => Load("Cs6.grammar");
 
+    public static string LoadCs11Grammar() => Load("Cs11.grammar");
+
     private static string Load(string resourceSuffix)
     {
         var assembly = typeof(CSharpParser).Assembly;
