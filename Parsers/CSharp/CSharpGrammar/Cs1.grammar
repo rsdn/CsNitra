@@ -112,6 +112,10 @@ ClassMember =
     | Method
     | Constructor
     | Destructor
+    | Operator
+    | ConversionOperator
+    | Indexer
+    | Event
     | TypeDeclaration;
 
 StructMember =
@@ -121,13 +125,19 @@ StructMember =
     | Method
     | Constructor
     | Destructor
+    | Operator
+    | ConversionOperator
+    | Indexer
+    | Event
     | TypeDeclaration;
 
-// Interface: nested types + properties (T2.1.2). No fields in C# 1.0 (progressT2.1.1 D1).
-// T2.1.3–T2.1.4 append interface methods/indexers/events (never fields).
+// Interface: nested types + properties (T2.1.2) + methods (T2.1.3) + indexers/events (T2.1.4).
+// No fields in C# 1.0 (progressT2.1.1 D1).
 InterfaceMember =
     | InterfaceMethod
     | InterfaceProperty
+    | InterfaceIndexer
+    | InterfaceEvent
     | TypeDeclaration;
 
 // Field: attributes? modifier* type variable-declarator (, variable-declarator)* ;
@@ -301,6 +311,131 @@ ConstructorModifier =
     | "extern"
     | "static"
     | "new";
+
+// === T2.1.4: operators (user-defined + conversion), indexers, events (class/struct/interface). ===
+// Roslyn LanguageParser.cs (C:\RSDN\roslyn):
+//   * User-defined operator: ParseOperatorDeclaration (3992-4190) — [ret-type] + `operator` +
+//     operator token + parenthesized param list + ( block | ";" ). The ret-type comes BEFORE
+//     `operator` (it is parsed by ParseReturnType 3314 before IsOperatorStart 3335 dispatches).
+//   * Conversion operator: TryParseConversionOperatorDeclaration (3760-3977) — (implicit|explicit) +
+//     `operator` + target Type + param list + ( block | ";" ). Order confirmed by Roslyn
+//     tests (Test/Semantic/Semantics/BetterCandidates.cs:885 `implicit operator`).
+//   * Indexer: ParseIndexerDeclaration (4192-4250) — [ret-type] + `this` + [param list] +
+//     accessor list (block for class/struct, semicolon for interface — same split as Property,
+//     T2.1.2).
+//   * Event: ParseEventDeclaration (5082-5095) — `event` + Type + name, then either a `;`
+//     (ParseEventFieldDeclaration 5222) or an accessor list (ParseEventDeclarationWithAccessors
+//     5097) with add/remove accessors (block bodies). Interface events are `;`-only (C# 1.0 has
+//     no interface event accessors with bodies).
+//
+// Disambiguation (longest-match, no ties):
+//   Operator vs Method: after `Type`, the `operator` keyword -> Operator, a TypeName -> Method.
+//   Operator vs ConversionOperator: `Type operator ...` (ret-type first) vs
+//   `(implicit|explicit) operator ...` (implicit/explicit first); mutually exclusive leading tokens.
+//   Indexer vs Property: after `Type`, the `this` keyword -> Indexer, a TypeName -> Property.
+//   Event vs everything: starts with the `event` reserved keyword (no other member does).
+//
+// OperatorSymbol set: the task's 16 C# 1.0 overloadable symbols. Roslyn's full overloadable set
+// (SyntaxKindFacts.cs:487-558) is larger, but the standalone compound-assignment operators are a
+// C# 14 feature (UserDefinedCompoundAssignmentOperatorsTests.cs:46-51) — see progressT2.1.4 D1.
+// The meta-grammar does NOT allow `|` inside a group (CsNitraParser.cs:103), so the symbol set is
+// a named union (same workaround as AccessorName T2.1.2 / ConstructorInitializerKeyword T2.1.3).
+Operator = Attributes? OperatorModifier* Type "operator" OperatorSymbol "(" ParameterList ")" MethodBody;
+
+// Conversion operator: `(implicit|explicit) operator Type (params) (Block | ";")` — the
+// implicit/explicit keyword comes BEFORE `operator` (Roslyn TryParseConversionOperatorDeclaration
+// eats implicit/explicit at 3837, then `operator` at 3873; confirmed by Roslyn tests e.g.
+// BetterCandidates.cs:885 `public static implicit operator C(A a)`). The Type after `operator` is
+// the TARGET type (e.g. `implicit operator int(A a)`). Reuses MethodBody (Block | ";").
+ConversionOperator = Attributes? OperatorModifier* ConversionKind "operator" Type "(" ParameterList ")" MethodBody;
+
+ConversionKind =
+    | "explicit"
+    | "implicit";
+
+OperatorSymbol =
+    | "+"
+    | "-"
+    | "*"
+    | "/"
+    | "%"
+    | "&"
+    | "|"
+    | "^"
+    | "~"
+    | "<"
+    | ">"
+    | "=="
+    | "!="
+    | "++"
+    | "--";
+
+// C# 1.0 operator modifiers: access + static/extern/unsafe. `static` is REQUIRED by the binder
+// (SourceUserDefinedOperatorSymbol) but NOT by the parser (Roslyn ParseModifiers is a generic loop),
+// so `OperatorModifier*` is zero-or-more (a missing `static` still parses — binder rejects).
+// virtual/override/abstract/sealed/new are not operator modifiers (operators are always static).
+OperatorModifier =
+    | "public"
+    | "private"
+    | "protected"
+    | "internal"
+    | "static"
+    | "extern"
+    | "unsafe";
+
+// Indexer (class/struct): accessors REQUIRE a block body (same split as Property, T2.1.2).
+// `Type "this" "[" ParameterList "]"` — the Type before `this` is the return type; `this` is a
+// reserved keyword (cannot be a TypeName), so Indexer vs Property disambiguate cleanly.
+Indexer = Attributes? IndexerModifier* Type "this" "[" ParameterList "]" "{" AccessorDeclaration+ "}";
+
+// Interface indexer: accessors are semicolon-terminated (no body) — valid C# 1.0.
+InterfaceIndexer = Attributes? IndexerModifier* Type "this" "[" ParameterList "]" "{" InterfaceAccessor+ "}";
+
+// C# 1.0 indexer modifiers: like property modifiers (access + static/virtual/override/new/extern/
+// sealed). `abstract` is not handled (no AbstractIndexer rule — see Boundary decision D2).
+IndexerModifier =
+    | "public"
+    | "private"
+    | "protected"
+    | "internal"
+    | "static"
+    | "virtual"
+    | "override"
+    | "new"
+    | "extern"
+    | "sealed";
+
+// Event (class/struct): simple `event Type Name;` OR `event Type Name { add { } remove { } }`.
+// EventTail splits the two forms (`|` in a group is not expressible, CsNitraParser.cs:103).
+Event = Attributes? EventModifier* "event" Type TypeName EventTail;
+
+EventTail =
+    | ";"
+    | EventAccessors = "{" EventAccessor+ "}";
+
+// Event accessor: add/remove + block body. `value` is usable in the bodies (true identifier, T2.1.2).
+EventAccessor = EventAccessorName Block;
+
+EventAccessorName =
+    | "add"
+    | "remove";
+
+// Interface event: `event Type Name;` only (C# 1.0 has NO interface event accessors with bodies).
+InterfaceEvent = Attributes? EventModifier* "event" Type TypeName ";";
+
+// C# 1.0 event modifiers: access + static/abstract/new/virtual/override/sealed. Excluded: extern/
+// unsafe (not event modifiers), const/readonly/volatile (field-only).
+EventModifier =
+    | "public"
+    | "private"
+    | "protected"
+    | "internal"
+    | "static"
+    | "abstract"
+    | "new"
+    | "virtual"
+    | "override"
+    | "sealed";
 
 EnumMemberList = (EnumMember; "," : ?)+;
 

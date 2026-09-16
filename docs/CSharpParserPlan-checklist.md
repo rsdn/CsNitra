@@ -49,7 +49,7 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
   - [~] T2.1.1 Инфраструктура членов + Field: union-правила `ClassMember`/`StructMember`/`InterfaceMember` + `ClassBody`/`StructBody`/`InterfaceBody` = member lists + member-модификаторы + Field (+ field-initializer) + тесты (класс с полями)
   - [✅] T2.1.2 Property + accessors (get/set, тела-блоки) + property-модификаторы → в union + тесты
   - [✅] T2.1.3 Method + constructor (+ `: base`/`: this`) + destructor + method-модификаторы → в union + тесты
-  - [ ] T2.1.4 Operator + indexer + event → в union + тесты
+  - [✅] T2.1.4 Operator + indexer + event → в union + тесты
   - [ ] T2.1.5 Финализация: вложенные типы как члены, base-list, version-purity, полная верификация + тесты
 
 ## Этап 3 — Версии CS2–CS14
@@ -128,3 +128,7 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 - T2.1.3: форма деструктора — **`~C() { }`** (ПУСТЫЕ скобки ОБЯЗАТЕЛЬНЫ), НЕ `~C { }`. Roslyn `ParseDestructorDeclaration` (LanguageParser.cs:3572) ест `(` + пустой ParameterList + `)`. Поправка к допущению в задаче.
 - T2.1.3: `base` был в `ReservedKeyword` без Primary-альтернативы → `base.Foo()` в теле не парсился (дефект типа D2). Исправлено: `BaseMember = "base" "." !ReservedKeyword Identifier` в `Primary` (аналог `PredefinedMember`, T2.3.3).
 - T2.1.3: `unsafe` — C# 1.0 метод-модификатор (в `MethodModifier`, 12 шт.); `ConstructorModifier` — 7 шт. (access + extern/static/new).
+- T2.1.4: конверсионный оператор — **`(implicit|explicit) operator Type`** (implicit/explicit ПЕРЕД `operator`), НЕ `operator (implicit|explicit) Type`. Roslyn `TryParseConversionOperatorDeclaration` ест implicit/explicit (3837), затем `operator` (3873). Поправка к форме в задаче (пример в задаче верен).
+- T2.1.4: `OperatorSymbol` = 16 символов из задания (`+ - * / % & | ^ ~ < > == != ++ --`). Полный overloadable-набор Roslyn больше, но standalone compound-assignment операторы — **C# 14** (UserDefinedCompoundAssignmentOperatorsTests.cs:46-51) → отложено (version-purity).
+- T2.1.4: альтернатива-ПОСЛЕДОВАТЕЛЬНОСТЬ в union-правиле ОБЯЗАНА быть именованной (`| Name = ...`): анонимная альтернатива `| Element` принимает только ОДИН элемент (QualifiedIdentifier или Literal), не sequence (CsNitraParser.cs:64-71). `EventTail`-черновик `| "{" EventAccessor+ "}"` упал на сборке грамматики; исправлено на `| EventAccessors = "{" EventAccessor+ "}"`.
+- T2.1.4: `static` на операторе — binder-требование, НЕ parse: `bool operator ==(a,b){}` (без static) парсится. `event C Changed;` парсится для любого Type (delegate-ность — binder, CS0039).
