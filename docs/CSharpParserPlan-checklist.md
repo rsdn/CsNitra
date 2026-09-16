@@ -72,7 +72,7 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 - [ ] T3.3 CS4: `dynamic`, именованные/опциональные аргументы (`params` и constraint `new` — CS1/CS2, уже есть)
   - [✅] T3.3.1 `dynamic` (тип/переменная `dynamic`, `dynamic x = ...`, `M(dynamic x)`) → `Cs4.grammar` + тесты
   - [✅] T3.3.2 Named arguments (`M(x: 5)`, `M(x: 5, y: 6)`, порядок не важен) → `Cs4.grammar` + тесты
-  - [ ] T3.3.3 Optional parameters (`void M(int x = 5)`, `void M(int x = 5, int y = 6)`) → `Cs4.grammar` + тесты
+  - [✅] T3.3.3 Optional parameters (`void M(int x = 5)`, `void M(int x = 5, int y = 6)`) → `Cs4.grammar` + тесты
 - [ ] T3.4 CS5: `async`/`await`
 - [ ] T3.5 CS6: `?.`, expression-bodied члены, `nameof`, binary literals (интерполяция — T3.5.1–T3.5.2, выполняется раньше остальных пунктов плана)
   - [✅] T3.5.1 Дизайн: правила интерполяции (3 уровня $) для семейств regular/verbatim/raw → `docs/InterpolatedStringGrammar.md` (семантика из Roslyn Lexer + образец `C:\RSDN\nitra\...\CS6Literals.nitra`)

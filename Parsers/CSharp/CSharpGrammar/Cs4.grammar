@@ -134,3 +134,68 @@ Argument =
 // (LanguageParser.cs:12581). ===
 PostfixOp =
     | NamedInvocation = "(" (Argument; ",")* ")";
+
+// ============================================================================
+// T3.3.3 — C# 4.0 optional parameters.
+//
+// An optional parameter is `Type Identifier = Expression` (a parameter whose value has a default).
+// The default value is a FULL `Expression` (Roslyn ParseParameter, LanguageParser.cs:4938:
+// `TryEatToken(EqualsToken)` + `EqualsValueClause(equalsToken, ParseExpressionCore())`). The `=` is a
+// LITERAL token (not a TDOPP operator); the default value is parsed AFTER the `=` literal.
+//
+// The Cs1 `Parameter` (Cs1.grammar:448) is `Attributes? ParameterModifier* Type TypeName` — NO default
+// value (C# 1.0 has no optional parameters). Re-declaring `Parameter` here APPENDS a new alternative
+// (T0.3 merge) that REQUIRES the new construct (`"=" Expression : Comma`), so it is MUTUALLY
+// EXCLUSIVE with the Cs1 alternative:
+//   * `int x` (no default) -> the Cs4 alternative FAILS (no `=`) -> only the Cs1 alternative matches.
+//   * `int x = 5` (default) -> the Cs1 alternative matches only the prefix `int x` (length 4); the
+//     Cs4 alternative matches `int x = 5` (length 9). Longest-match -> the Cs4 alternative. No tie.
+//
+// The `ParameterList` (Cs1:446) is a `SeparatedList` of `Parameter` separated by `,`
+// (`(Parameter; ",")+`), so the default-value expression must NOT absorb the `,` separator.
+//
+// T3.3.3 fix — the default value is `Expression : Comma`, NOT a plain `Expression` (the TDOPP Comma
+// fix from T3.3.2). A plain `Expression` is a TDOPP rule with minPrecedence 0, and the `Comma`
+// operator (binding power 1, the lowest in the Cs1 precedence list) is applicable at minPrecedence 0
+// (Parser.cs:360: `precedence > minPrecedence || (== && right)` -> `1 > 0`). So a plain `Expression`
+// greedily ABSORBS a following `,`. This is FATAL when the NEXT parameter's type is a qualified name
+// starting with an identifier (e.g. `System.String`, `Foo.Bar`): in `void M(int x = 5, System.String
+// s)` the first parameter's plain `Expression` = `5` absorbs the `,` and parses `System.String` as a
+// comma-expression RHS (a member-access expression), leaving the second parameter's identifier `s`
+// dangling -> the whole parse fails. `Expression : Comma` (a ReqRef with Precedence = Comma's binding
+// power 1, RuleGenerator.cs:90-94) raises minPrecedence to 1, so the Comma postfix is NOT applicable
+// (`1 > 1` is false) while every other operator (binding power >= 2) still is. The default value
+// therefore stops at the `,` separator. This is the same minPrecedence mechanism Cs1 already uses
+// (`Expression : Relational` in TypeIs/TypeAs, `Expression : Cast` in CastExpr) — no engine change,
+// no Cs1.grammar change.
+//
+// The default value can be `null`, a literal, a constant, a method call, or any other `Expression`
+// (e.g. `int x = Compute()`). The `=` is a literal (not the TDOPP Assignment operator, which is only
+// relevant WITHIN the default-value expression).
+//
+// Version purity: at v3 (Cs1+Cs2+Cs3, no Cs4) the Cs4 `Parameter` alternative is ABSENT, so
+// `void M(int x = 5)` REJECTS (the Cs1 `Parameter` matches only `int x`, leaving `= 5` -> the
+// ParameterList/Method fails). At v4 the alternative is present, so it parses. (Roslyn
+// OptionalParameterBeforeCSharp4, ParserErrorMessageTests.cs:6232 — CS8024 "Feature 'optional
+// parameter' is not available in C# 3".)
+//
+// The "optional parameters must come after required parameters" rule (CS1737) is a BINDER concern
+// (Roslyn ParameterHelpers.cs:888-893, in Symbols/Source) — the PARSER accepts any order.
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp/Portable/Parser/LanguageParser.cs):
+//   ParseParameter (4938): attributes + ParseParameterModifiers + ParseType(Parameter) +
+//   ParseIdentifierToken + `TryEatToken(EqualsToken)` (4981) + `EqualsValueClause(equalsToken,
+//   ParseExpressionCore())` (4988). The default value is a full Expression; the `=` is a literal.
+//   Version gate: ParserErrorMessageTests.cs:6232 (OptionalParameterBeforeCSharp4). Order rule (binder):
+//   ParameterHelpers.cs:888-893 (CS1737). Syntax tests: RoundTrippingTests.cs:1497 (multiple optional
+//   params), LambdaParameterParsingTests.cs:2485 (`= null`), DeclarationParsingTests.cs:5821 (`= 0`).
+//
+// CS4 only: `ref`/`out`/`params`/`this` optional parameters are a binder concern — the syntax is the
+// same (`ParameterModifier* Type TypeName "=" Expression : Comma`), so no separate rule is needed.
+
+// === Optional parameter (C# 4.0). Re-declares `Parameter` (append, T0.3 merge). The alternative
+// REQUIRES `"=" Expression : Comma` (the REQUIRED-new-construct), so it is mutually exclusive with
+// the Cs1 `Parameter` (no default): `int x` -> Cs1; `int x = 5` -> this (longest-match). The default
+// value is `Expression : Comma` (minPrecedence 1) so it stops at the `ParameterList` `,` separator
+// (the TDOPP Comma fix, T3.3.2). Roslyn ParseParameter (LanguageParser.cs:4938). ===
+Parameter = Attributes? ParameterModifier* Type TypeName "=" Expression : Comma;
