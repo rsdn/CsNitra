@@ -78,3 +78,54 @@ LocalVariableDeclaration =
 // required by the task (a documented simplification — nested deconstruction is out of scope, D3).
 // Each element is a true identifier.
 DeconstructionVariableList = "(" !ReservedKeyword Identifier ("," !ReservedKeyword Identifier)* ")";
+
+// === Pattern matching (C# 7.0). ===
+//
+// The Cs1 `is` operator is a TDOPP POSTFIX (a binary operator at the Relational level), the named
+// alternative `TypeIs = Expression : Relational "is" Type` (Cs1.grammar:662). The engine
+// (Parser.BuildTdoppRulesInternal, Parser.cs:123-161) turns every alternative whose FIRST element is
+// a self-Ref into a postfix operator; ParseRule (Parser.cs:223-335) applies ALL applicable postfixes
+// greedily (ContinueFromPartialPostfix, Parser.cs:337-424) and keeps the LONGEST, with equal-length
+// ties resolved to the FIRST postfix (declaration order). So a NEW `is` postfix that extends FURTHER
+// than `TypeIs` wins for the longer pattern forms, while `TypeIs` still wins the equal-length tie for
+// a bare type (`x is int`), keeping the C# 1.0 type pattern unchanged at every version.
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp/Portable/Parser/LanguageParser_Patterns.cs):
+//   * ParseTypeOrPatternForIsOperator (21-31): the `is` RHS is a pattern; "Note that the syntax `_`
+//     will be parsed as a type." (the discard in `is` becomes an IdentifierName/type).
+//   * ParsePrimaryPattern (187-252) + ParsePatternContinued (284-398): discard (UnderscoreToken,
+//     202-205), var (`var`+designation → VarPattern, 290-297), declaration (type+designation, 358-362),
+//     type (367), constant (fallback expression, 250-251).
+//   * Switch: CasePatternSwitchLabel(case, pattern, ParseWhenClause, colon) (LanguageParser.cs:10271-
+//     10275); ParseWhenClause (10704-10714) = `when` + expression, BETWEEN the pattern and the `:`.
+
+// === `is` pattern (C# 7.0). Re-declares Cs1 Expression (append, T0.3 merge) to add a NEW postfix
+// operator at the Relational level (the same level as TypeIs). For `x is int` the Cs1 TypeIs wins the
+// equal-length tie (first declaration) → the C# 1.0 type pattern is unchanged. For `x is int y` /
+// `x is 5` / `x is _` the TypeIsPattern is longer (or the sole match) → it wins. Roslyn
+// ParseTypeOrPatternForIsOperator (21). ===
+Expression =
+    | TypeIsPattern = Expression : Relational "is" Pattern;
+
+// A pattern (C# 7.0): discard, declaration (type + name), var, type, or constant (expression).
+// Longest-match disambiguates: `int y` → DeclarationPattern (longer than TypePattern `int`); `5` →
+// ConstantPattern (sole — a literal is not a Type); `var y` → VarPattern (sole — `var` is reserved,
+// not a Type/Expression); `_` → DiscardPattern (first, wins the equal-length tie); `y` (a bare
+// identifier) → TypePattern (first, wins the equal-length tie with ConstantPattern). Roslyn
+// ParsePrimaryPattern (187) + ParsePatternContinued (284).
+Pattern =
+    | DiscardPattern     = "_"
+    | DeclarationPattern = Type !ReservedKeyword Identifier
+    | VarPattern         = "var" !ReservedKeyword Identifier
+    | TypePattern        = Type
+    | ConstantPattern    = Expression;
+
+// === Pattern switch (C# 7.0). Re-declares Cs1 CaseLabel (append, T0.3 merge). The Cs1
+// CaseLabel = "case" Constant ":" (Cs1.grammar:901) handles `case 5:` / `case "a":` at every version.
+// The new PatternCaseLabel handles `case int y:` / `case var y:` / `case 5:` and the guard
+// `when Expression`. For `case 5:` the Cs1 CaseLabel wins the equal-length tie (first) → unchanged.
+// For `case int y:` / `case var y:` / `case int y when ...:` the Cs1 CaseLabel fails (not a Constant)
+// → PatternCaseLabel is the sole match. Roslyn CasePatternSwitchLabel (LanguageParser.cs:10271) +
+// ParseWhenClause (10704). The guard is BETWEEN the pattern and the `:` (an Optional). ===
+CaseLabel =
+    | PatternCaseLabel = "case" Pattern ("when" Expression)? ":";
