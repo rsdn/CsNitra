@@ -48,7 +48,7 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 - [ ] T2.1 Члены: поля, свойства, методы, конструкторы, деструкторы, операторы, индексаторы, события, модификаторы, атрибуты + тесты
   - [~] T2.1.1 Инфраструктура членов + Field: union-правила `ClassMember`/`StructMember`/`InterfaceMember` + `ClassBody`/`StructBody`/`InterfaceBody` = member lists + member-модификаторы + Field (+ field-initializer) + тесты (класс с полями)
   - [✅] T2.1.2 Property + accessors (get/set, тела-блоки) + property-модификаторы → в union + тесты
-  - [ ] T2.1.3 Method + constructor (+ `: base`/`: this`) + destructor + method-модификаторы → в union + тесты
+  - [✅] T2.1.3 Method + constructor (+ `: base`/`: this`) + destructor + method-модификаторы → в union + тесты
   - [ ] T2.1.4 Operator + indexer + event → в union + тесты
   - [ ] T2.1.5 Финализация: вложенные типы как члены, base-list, version-purity, полная верификация + тесты
 
@@ -125,3 +125,6 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 - T2.3.2: cast `(Type) expr` — декларативно, без изменения движка. `CastExpr = "(" Type ")" Expression : Cast` — TDOPP **prefix**-оператор на новом самом жёстком уровне `Cast` (выше `Unary`); операнд — ReqRef на `Cast`, поэтому не поглощает бинарные операторы: `(int) x + y` → `((int)x)+y`. Разграничение с `(expr)`: `PrimaryExpr` (с `Parens`) — первая prefix-альтернатива, longest-match + тай-брейк «первый выигрывает».
 - T2.3.2: `(int) x.y` → **`(int)(x.y)`**, НЕ `((int)x).y` (операнд каста — unary-expression, включает member-access; Roslyn `ParseSubExpression(Cast)`→`ParsePrimaryExpression`). Поправка к допущению в задаче.
 - **Мета-грамматика CsNitra: `|` ВНУТРИ группы `(...)` НЕ поддерживается** (`CsNitraParser.cs:103`: Group = `(` одно RuleExpression `)`). `("get" | "set")` собирается, но даёт **stack-overflow при парсинге** (найдено в T2.1.2). Обход: вынести в именованное union-правило (`AccessorName = | "get" | "set"`). `|` допустим только между top-level альтернативами правила. Учитывать во всех `CsN.grammar`.
+- T2.1.3: форма деструктора — **`~C() { }`** (ПУСТЫЕ скобки ОБЯЗАТЕЛЬНЫ), НЕ `~C { }`. Roslyn `ParseDestructorDeclaration` (LanguageParser.cs:3572) ест `(` + пустой ParameterList + `)`. Поправка к допущению в задаче.
+- T2.1.3: `base` был в `ReservedKeyword` без Primary-альтернативы → `base.Foo()` в теле не парсился (дефект типа D2). Исправлено: `BaseMember = "base" "." !ReservedKeyword Identifier` в `Primary` (аналог `PredefinedMember`, T2.3.3).
+- T2.1.3: `unsafe` — C# 1.0 метод-модификатор (в `MethodModifier`, 12 шт.); `ConstructorModifier` — 7 шт. (access + extern/static/new).

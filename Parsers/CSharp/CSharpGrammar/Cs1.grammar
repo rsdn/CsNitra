@@ -109,17 +109,24 @@ ClassMember =
     | Field
     | Property
     | AbstractProperty
+    | Method
+    | Constructor
+    | Destructor
     | TypeDeclaration;
 
 StructMember =
     | Field
     | Property
     | AbstractProperty
+    | Method
+    | Constructor
+    | Destructor
     | TypeDeclaration;
 
 // Interface: nested types + properties (T2.1.2). No fields in C# 1.0 (progressT2.1.1 D1).
 // T2.1.3–T2.1.4 append interface methods/indexers/events (never fields).
 InterfaceMember =
+    | InterfaceMethod
     | InterfaceProperty
     | TypeDeclaration;
 
@@ -211,6 +218,89 @@ PropertyModifier =
     | "new"
     | "extern"
     | "sealed";
+
+// === T2.1.3: methods, constructors, destructors (class/struct) + interface methods. ===
+// Roslyn LanguageParser.cs (C:\RSDN\roslyn) ParseMemberDeclarationCore (3238) dispatches by the
+// leading token: identifier + "(" -> ParseConstructorDeclaration (3509); "~" ->
+// ParseDestructorDeclaration (3572); otherwise a return Type is parsed, then method/field/property.
+//
+// Disambiguation Method vs Constructor (longest-match): a method is `Type TypeName (` (TWO names
+// before "("), a constructor is `TypeName (` (ONE name). A method always consumes >= one more name
+// token, so they cannot match the same input at the same length -> no equal-length tie:
+//   `int Foo() { }`   -> Method (Type=int, Name=Foo); Constructor fails (int is reserved, not a name).
+//   `Foo() { }`       -> Constructor (Name=Foo); Method fails (needs a 2nd name before "(", sees "(").
+//   `Point GetPoint()`-> Method (Type=Point, Name=GetPoint); Constructor fails (name followed by name).
+//
+// Disambiguation Method vs Field (longest-match): both start `Type Name`; the token after the name
+// disambiguates -> "(" -> Method, ";"/","/"=" -> Field (VariableDeclarator). Mutually exclusive, no tie:
+//   `int x = 5;`    -> Field (name followed by "=").
+//   `int Foo() { }` -> Method (name followed by "("; Field needs ";" after the name, sees "(").
+//
+// Destructor form (Roslyn ParseDestructorDeclaration 3572-3587): `~` + name + EMPTY ParameterList
+// ("(" ")") + block. C# destructors DO have empty parentheses -> `~C() { }` is the valid form;
+// `~C { }` (no parens) is INVALID (task premise corrected by Roslyn; see Boundary decision D1).
+// Attributes/modifiers before "~" are accepted (Roslyn's generic ParseModifiers 1347-1484 loop);
+// per-kind legality is a binder concern (parser-vs-binder split, consistent with T2.1.1 D2).
+//
+// ConstructorInitializer (Roslyn TryParseConstructorInitializer 3530 / ParseConstructorInitializer
+// 3544-3568): `:` + (base | this) + ArgumentList (parens required, even when empty: `: base()`).
+// This ":" is distinct from a type-declaration base list (`class C : Base` -> the ":" is after the
+// type name, before the "{"); no conflict: a constructor initializer only follows the constructor's
+// parameter list ")".
+//
+// Method body: `( Block | ";" )` is NOT expressible in the CsNitra meta-grammar (no `|` inside a
+// group, CsNitraParser.cs:103) -> named union MethodBody. A concrete `void Foo();` (semicolon body)
+// is a BINDER error, not a parse error (T1.3.1 split), so MethodBody allows both. InterfaceMethod
+// REQUIRES ";" (C# 1.0 interface methods have no body; default interface methods are CS8).
+Method = Attributes? MethodModifier* Type TypeName "(" ParameterList? ")" MethodBody;
+
+MethodBody =
+    | Block
+    | ";";
+
+Constructor = Attributes? ConstructorModifier* TypeName "(" ParameterList? ")" ConstructorInitializer? Block;
+
+ConstructorInitializer = ":" ConstructorInitializerKeyword ArgumentList;
+
+ConstructorInitializerKeyword =
+    | "base"
+    | "this";
+
+Destructor = Attributes? MethodModifier* "~" TypeName "(" ")" Block;
+
+InterfaceMethod = Attributes? MethodModifier* Type TypeName "(" ParameterList? ")" ";";
+
+// C# 1.0 method modifiers: access + static/virtual/override/abstract/new/extern/sealed/unsafe
+// (Roslyn GetModifierExcludingScoped 1286-1345; ParseModifiers 1347-1484 is a generic any-order
+// loop, so ordering is NOT enforced). `unsafe` is core C# 1.0 (no feature gate; pointer types since
+// T1.4 -> `unsafe void M() { }`, `unsafe ~C() { }`). Excluded (version-purity / wrong kind):
+// async (CS5), partial (CS2), readonly/volatile (field-only), ref (CS7.2).
+MethodModifier =
+    | "public"
+    | "private"
+    | "protected"
+    | "internal"
+    | "static"
+    | "virtual"
+    | "override"
+    | "abstract"
+    | "new"
+    | "extern"
+    | "sealed"
+    | "unsafe";
+
+// C# 1.0 constructor modifiers: access + extern/static/new. Roslyn's generic ParseModifiers loop
+// accepts any modifier before a constructor; per-kind legality is a binder concern. `new` is valid
+// on constructors (hides a base constructor). Excluded: virtual/override/abstract/sealed (not
+// constructor modifiers), unsafe (not in the task's set -> see Boundary decision D3).
+ConstructorModifier =
+    | "public"
+    | "private"
+    | "protected"
+    | "internal"
+    | "extern"
+    | "static"
+    | "new";
 
 EnumMemberList = (EnumMember; "," : ?)+;
 
@@ -465,6 +555,14 @@ Primary =
     // identifier (non-reserved). The IdentifierName guard above is untouched, so `new`/`typeof`/
     // `sizeof` still cannot be bare identifiers (requirement 3).
     | PredefinedMember = PredefinedType "." !ReservedKeyword Identifier
+    // T2.1.3: `base` is a reserved keyword (ReservedKeyword) with no Primary alternative, so
+    // `base.Foo()` in a method body (e.g. `class C : B { void M() { base.Foo(); } }`) would NOT
+    // parse (D2-type defect, like `int.Parse()`). Fix mirrors PredefinedMember (T2.3.3): `base` is a
+    // valid expression-start only when immediately followed by "." + a true identifier. `base` alone
+    // is NOT an expression (C#: `base` is only valid as `base.Member`). The IdentifierName guard above
+    // is untouched. Known boundary: `base[0]` (base indexer) does not parse (needs "."), consistent
+    // with the PredefinedMember `int[5]` boundary (T2.3.3).
+    | BaseMember = "base" "." !ReservedKeyword Identifier
     | StringLiteral
     | VerbatimStringLiteral
     | CharLiteral
