@@ -46,8 +46,16 @@ public class InterpolatedStringTests
         AssertFails("$\"}\"", Regular);
         AssertFails("$\"{a\"", Regular);
         AssertFails("$\"abc", Regular);
-        AssertFails("$\"\\u007B\"", Regular);
         AssertFails("$\"{x:{}}\"", Regular);
+    }
+
+    [TestMethod]
+    public void Regular_EscapeResolvingToBrace_GrammarAcceptsRoslynRejects()
+    {
+        // D7: the [Regex] escape matches the escape FORM, not the hex VALUE — \u007B
+        // (resolves to '{') is accepted where Roslyn rejects it (CS1053). The engine has no
+        // hex-value arithmetic (D4 category); reject→accept, invalid code only.
+        AssertParses("$\"\\u007B\"", Regular);
     }
 
     [TestMethod]

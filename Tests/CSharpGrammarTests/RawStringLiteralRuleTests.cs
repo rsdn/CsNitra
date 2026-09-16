@@ -3,10 +3,10 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace CSharpGrammarTests;
 
-// Fragment parsing of non-interpolated raw string literals (Cs11.grammar). RawStringLiteral is
-// a grammar rule, not a terminal: the opening/closing quote run is the RawQuoteRun [Regex]
-// terminal (a run of 3+), a content quote run of 1..2 is RawQuoteContent (hand-written, D1:
-// "maximal run 1..2" is inexpressible declaratively), the rest is NonQuoteText.
+// Fragment parsing of non-interpolated raw string literals (Cs11.grammar). RawStringLiteral
+// wraps the RawString [Regex] terminal: one match = opening quote run of 3+, content where
+// every quote is part of a 1..2 run (alt: single " | "" + non-quote), 1+ content (empty
+// body rejected), closing quote run of 3+ (the whole run).
 // Clean parse = TryGetSuccess && end == input.Length && ErrorInfo is null && no recovery
 // diagnostics (a recovered parse, e.g. an unterminated literal with an inserted quote run, is
 // a reject).
@@ -90,14 +90,12 @@ public class RawStringLiteralRuleTests
         AssertParses("\"\"\"\n  \"\"\"", Raw);
     }
 
-    // === Deviations: the grammar rejects where the old scanner accepted (Stage-5 category) ===
-
     [TestMethod]
-    public void RawStringLiteral_QuoteRun3InContent_N4_GrammarRejectsScannerAccepts()
+    public void RawStringLiteral_QuoteRun3InContent_N4_Parses()
     {
-        // A content quote run of 3..N-1 at N>=4 matches no RawLiteralPart (no context-bounded
-        // repetition, D1) — the rule stops at the run and the full parse fails.
-        AssertFails("\"\"\"\"  \n\"\"\"\n\"\"\"\"", Raw);
+        // A content quote run of 3..N-1 at N>=4 is matched as quote parts (the single-regex
+        // terminal needs no context bound) — scanner-consistent (scanner: 15).
+        AssertParses("\"\"\"\"  \n\"\"\"\n\"\"\"\"", Raw);
     }
 
     [Ignore]

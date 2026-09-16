@@ -62,17 +62,22 @@ public sealed partial class CSharpTerminals
     [Regex("""[^"]+""")]
     public static partial Terminal NonQuoteText();
 
-    // Raw string opening/closing quote run: a run of 3+ quotes, one [Regex] match. A single
-    // match (not OneOrMany of a quote literal) so the engine's post-terminal trivia skip
-    // cannot merge two runs separated by whitespace into one "opening" run.
+    // Non-interpolated raw string literal (C# 11) as ONE match: opening run of 3+ quotes,
+    // content where every quote is part of a 1..2 run (alt: single " | "" + non-quote), 1+
+    // content (rejects """""" empty, scanner -1), closing run of 3+ (whole run, scanner
+    // semantics). One match = no intra-match trivia skip (a OneOrMany quote-literal source
+    // would let the post-terminal trivia skip merge runs separated by whitespace).
+    // Content quote runs of 3..N-1 at N>=4 match as quote parts — scanner-consistent.
     [Regex("""""
-        """+
+        """+("|""[^"]|[^"])+"""+
         """"")]
-    public static partial Terminal RawQuoteRun();
+    public static partial Terminal RawString();
 
-    public static Terminal InterpolatedRegularEscape() => _interpolatedRegularEscape;
-
-    public static Terminal RawQuoteContent() => _rawQuoteContent;
+    // One valid plain-string escape, same set as StringEscape. Escapes RESOLVING to '{' / '}'
+    // (\x7B..\x7D, \u007B..\u007D, \U0000007B..\U0000007D) are accepted — the regex engine
+    // cannot check hex values (D7; Roslyn rejects them, CS1053). \{ / \} / invalid: no match.
+    [Regex("""\\(["'\\0abfnrtv]|x[0-9a-fA-F]+|u[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]|U00(0[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]|10[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]))""")]
+    public static partial Terminal InterpolatedRegularEscape();
 
     public static Terminal RawOpenBraceLiteral() => _rawOpenBraceLiteral;
 
@@ -80,9 +85,17 @@ public sealed partial class CSharpTerminals
 
     public static Terminal RawHoleOpenBraces() => _rawHoleOpenBraces;
 
-    public static Terminal RegularFormatText() => _regularFormatText;
+    // Regular format text: run up to '}' — non-} non-quote non-backslash chars or a valid
+    // escape (D7: \x7B..\x7D accepted). A lone '"' or an invalid escape stops the run and the
+    // hole rule's trailing '}' then fails — rule-level accept/reject = old imperative terminal.
+    // One match = comments inside the format stay literal text (no intra-match trivia skip).
+    [Regex("""([^}"\\]|\\(["'\\0abfnrtv]|x[0-9a-fA-F]+|u[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]|U00(0[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]|10[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f])))*""")]
+    public static partial Terminal RegularFormatText();
 
-    public static Terminal VerbatimFormatText() => _verbatimFormatText;
+    // Verbatim format text: run up to '}' — non-} non-quote chars or an exact '""' pair. A
+    // lone '"' stops the run and the hole rule's trailing '}' then fails (old terminal: -1).
+    [Regex("""([^}"]|"")*""")]
+    public static partial Terminal VerbatimFormatText();
 
     [Regex(@"'([^'\n\\]|\\.)'")]
     public static partial Terminal CharLiteral();
@@ -106,8 +119,7 @@ public sealed partial class CSharpTerminals
         StringEscape(),
         StringText(),
         NonQuoteText(),
-        RawQuoteRun(),
-        RawQuoteContent(),
+        RawString(),
         RawOpenBraceLiteral(),
         RawCloseBraceLiteral(),
         RawHoleOpenBraces(),
@@ -119,154 +131,11 @@ public sealed partial class CSharpTerminals
 
     private static readonly Terminal _trivia = new TriviaTerminal();
 
-    private static readonly Terminal _interpolatedRegularEscape = new InterpolatedRegularEscapeTerminal();
-
-    private static readonly Terminal _rawQuoteContent = new RawQuoteContentTerminal();
-
     private static readonly Terminal _rawOpenBraceLiteral = new RawOpenBraceLiteralTerminal();
 
     private static readonly Terminal _rawCloseBraceLiteral = new RawCloseBraceLiteralTerminal();
 
     private static readonly Terminal _rawHoleOpenBraces = new RawHoleOpenBracesTerminal();
-
-    private static readonly Terminal _regularFormatText = new RegularFormatTextTerminal();
-
-    private static readonly Terminal _verbatimFormatText = new VerbatimFormatTextTerminal();
-
-    // '\' + a valid escape sequence. \{ / \} (incl. \u007B / \u007D) and invalid escapes do
-    // not match (CS1053 / invalid escape) — the hole/text cycle then fails.
-    private sealed record InterpolatedRegularEscapeTerminal : Terminal
-    {
-        public InterpolatedRegularEscapeTerminal() : base("InterpolatedRegularEscape")
-        {
-        }
-
-        public override int TryMatch(string input, int startPos)
-        {
-            if (startPos >= input.Length || input[startPos] != '\\')
-                return -1;
-
-            var end = StringLiteralScanner.TryScanEscape(input, startPos, out var codePoint);
-            if (end < 0)
-                return -1;
-
-            if (codePoint is 0x7B or 0x7D)
-                return -1;
-
-            return end - startPos;
-        }
-
-        public override string ToString() => "InterpolatedRegularEscape";
-    }
-
-    // Regular format: run up to '}'. '\'-escapes (CS1053 on \{ / \} / invalid), a single '"'
-    // is a premature end (error), '{' is skipped (Roslyn keeps scanning).
-    private sealed record RegularFormatTextTerminal : Terminal
-    {
-        public RegularFormatTextTerminal() : base("RegularFormatText")
-        {
-        }
-
-        public override int TryMatch(string input, int startPos)
-        {
-            var length = input.Length;
-            var pos = startPos;
-
-            while (pos < length)
-            {
-                var c = input[pos];
-
-                if (c == '}')
-                    return pos - startPos;
-
-                if (c == '\\')
-                {
-                    var end = StringLiteralScanner.TryScanEscape(input, pos, out var codePoint);
-                    if (end < 0)
-                        return -1;
-
-                    if (codePoint is 0x7B or 0x7D)
-                        return -1;
-
-                    pos = end;
-                    continue;
-                }
-
-                if (c == '"')
-                    return -1;
-
-                pos++;
-            }
-
-            return -1;
-        }
-
-        public override string ToString() => "RegularFormatText";
-    }
-
-    // Verbatim format: run up to '}'. '""' is an escape, a single '"' is a premature end.
-    private sealed record VerbatimFormatTextTerminal : Terminal
-    {
-        public VerbatimFormatTextTerminal() : base("VerbatimFormatText")
-        {
-        }
-
-        public override int TryMatch(string input, int startPos)
-        {
-            var length = input.Length;
-            var pos = startPos;
-
-            while (pos < length)
-            {
-                var c = input[pos];
-
-                if (c == '}')
-                    return pos - startPos;
-
-                if (c == '"')
-                {
-                    if (pos + 1 < length && input[pos + 1] == '"')
-                    {
-                        pos += 2;
-                        continue;
-                    }
-
-                    return -1;
-                }
-
-                pos++;
-            }
-
-            return -1;
-        }
-
-        public override string ToString() => "VerbatimFormatText";
-    }
-
-    // Raw string content quote run: a maximal run of exactly 1..2 quotes (a run of 3+ is the
-    // closing, not content). Hand-written (D1 category): "maximal run 1..2" is inexpressible
-    // declaratively — the regex engine has no negative lookahead, and a literal + !'"'
-    // predicate sees the position after the post-terminal trivia skip (a run followed by a
-    // newline and the closing run would fail the guard).
-    private sealed record RawQuoteContentTerminal : Terminal
-    {
-        public RawQuoteContentTerminal() : base("RawQuoteContent")
-        {
-        }
-
-        public override int TryMatch(string input, int startPos)
-        {
-            var pos = startPos;
-            var length = input.Length;
-            while (pos < length && input[pos] == '"')
-                pos++;
-
-            var run = pos - startPos;
-            return run is 1 or 2 ? run : -1;
-        }
-
-        public override string ToString() => "RawQuoteContent";
-    }
 
     // Raw string content: a brace run of length 1..D-1, where D is the dollar count of the
     // enclosing literal (Parser.ContextCount, set by the context scope). A run of D+ braces is
