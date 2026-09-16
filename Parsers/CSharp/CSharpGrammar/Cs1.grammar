@@ -331,6 +331,16 @@ Primary =
     // Reserved words are not identifiers (C# 1.0): without this guard `new`/`typeof`/`sizeof`
     // would fall back to Identifier and swallow e.g. `typeof(int, int)` as an invocation.
     | IdentifierName = !ReservedKeyword Identifier
+    // T2.3.3: predefined type name as the start of a member-access expression — int.Parse(),
+    // string.Format("a"), double.MaxValue, char.IsLetter('a'). A BARE predefined type is NOT an
+    // expression: the "." Identifier is REQUIRED here, so `int` alone still matches no Primary
+    // alternative and fails (requirement 2). Further postfixes (`()`, `.x`, `[i]`) are handled by
+    // the PostfixOp* loop in PrimaryExpr. Roslyn ParsePrimaryExpressionWithoutPostfix
+    // (LanguageParser.cs:12078-12093): a predefined-type token is a valid expression-start only
+    // when immediately followed by "." (else ERR_InvalidExprTerm); the member name is a true
+    // identifier (non-reserved). The IdentifierName guard above is untouched, so `new`/`typeof`/
+    // `sizeof` still cannot be bare identifiers (requirement 3).
+    | PredefinedMember = PredefinedType "." !ReservedKeyword Identifier
     | StringLiteral
     | VerbatimStringLiteral
     | CharLiteral

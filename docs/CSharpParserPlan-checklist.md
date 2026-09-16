@@ -29,7 +29,7 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 ## Дефекты/бэклог движка (ExtensibleParser)
 
 - [ ] D1: пустой ввод ("" / только комментарии/trivia) не парсится — epsilon-совпадение именованного правила на стартовом правиле отклоняется (`AcceptEpsilonMatch`: NoRecovery=false, Recovery=только RecoveryRule в recovery-точке). Валидный C# (пустой файл) падает. Нужено решение уровня движка (принять epsilon для start rule / явный путь EOF) с защитой от бесконечных циклов. Обойдено в грамматике для NamespaceBody (`NamespaceBody?`) — для start rule обхода нет.
-- [ ] D2: `int.Parse()` / `string.Format()` не парсятся — guard `IdentifierName = !ReservedKeyword Identifier` в `Primary` (T2.3.1) блокирует ВСЕ reserved-ключевые слова как начало Expression, включая predefined-типы (`int`/`string`/…). В C# predefined-типы допустимы как начало member-access (`int.Parse()`). Исправление — T2.3.3 (allow type-name expression starts, не все reserved words).
+- [✅] D2: `int.Parse()` / `string.Format()` не парсились — guard `IdentifierName = !ReservedKeyword Identifier` в `Primary` (T2.3.1) блокировал ВСЕ reserved-ключевые слова как начало Expression, включая predefined-типы. Исправлено в T2.3.3: добавлена альтернатива `PredefinedMember = PredefinedType "." !ReservedKeyword Identifier` (predefined-тип допустим как начало Expression только с обязательным `.` + identifier; bare `int` остаётся не-выражением; guard для `new`/`typeof`/`sizeof` не тронут).
 
 ## Этап 2 — C# 1.0: члены и тела
 
@@ -38,7 +38,7 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 - [✅] T2.3 Выражения C# 1: завершить временное `Expression` (TDOPP) — `new`, приведение, `is`/`as`, `sizeof`/`typeof` + тесты
   - [✅] T2.3.1 `new` (object/array creation) + `is`/`as` (type test в TDOPP-таблице) + `sizeof`/`typeof` + тесты (фича + Roslyn-отбор)
   - [✅] T2.3.2 Приведение `(Type) expr` (разборность cast vs parens — см. Deviations) + тесты
-  - [ ] T2.3.3 Дефект D2: predefined-типы как начало Expression (`int.Parse()`, `string.Format()`) — уточнить guard в `Primary` (разрешить type-name starts, не все reserved words) + тесты
+  - [✅] T2.3.3 Дефект D2: predefined-типы как начало Expression (`int.Parse()`, `string.Format()`) — уточнить guard в `Primary` (разрешить type-name starts, не все reserved words) + тесты
 - [ ] T2.2 Операторы: `Block` + if/while/do-while/for/foreach/switch/try/using/lock/checked/return/goto/throw/block/empty/declaration + тесты
   - [✅] T2.2.1 `Block` + empty + expression-stmt + local-variable-declaration + return/throw/break/continue/goto/labels + тесты
   - [ ] T2.2.2 if/while/do-while/for/foreach + тесты

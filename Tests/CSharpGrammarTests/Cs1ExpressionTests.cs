@@ -234,6 +234,83 @@ public class Cs1ExpressionTests
         Cs1ExpressionTestHelper.AssertParses("(int) ++x");
     }
 
+    // === преопределённый тип в начале member-access (T2.3.3) ===
+    // Roslyn: преопределённый тип — начало expression ТОЛЬКО сразу перед "." (иначе
+    // ERR_InvalidExprTerm). LanguageParser.cs:8514 ("int.Parse() is an expression") и
+    // ParsePrimaryExpressionWithoutPostfix (12078-12093). Дальнейшие postfix (()/x/[i]) —
+    // PostfixOp* в PrimaryExpr.
+
+    [TestMethod]
+    public void PredefinedMember_Invocation_Succeeds()
+    {
+        // int.Parse() — преопределённый тип + member access + вызов.
+        Cs1ExpressionTestHelper.AssertParses("int.Parse()");
+    }
+
+    [TestMethod]
+    public void PredefinedMember_FormatArgs_Succeeds()
+    {
+        // string.Format("a") — преопределённый тип + member access + аргумент-строка.
+        Cs1ExpressionTestHelper.AssertParses("string.Format(\"a\")");
+    }
+
+    [TestMethod]
+    public void PredefinedMember_PropertyAccess_Succeeds()
+    {
+        // double.MaxValue — преопределённый тип + member access (без вызова).
+        Cs1ExpressionTestHelper.AssertParses("double.MaxValue");
+    }
+
+    [TestMethod]
+    public void PredefinedMember_CharIsLetter_Succeeds()
+    {
+        // char.IsLetter('a') — преопределённый тип + member access + вызов с char-аргументом.
+        Cs1ExpressionTestHelper.AssertParses("char.IsLetter('a')");
+    }
+
+    [TestMethod]
+    public void PredefinedMember_BoolParse_Succeeds()
+    {
+        // bool.Parse("true") — преопределённый тип + member access + вызов.
+        Cs1ExpressionTestHelper.AssertParses("bool.Parse(\"true\")");
+    }
+
+    [TestMethod]
+    public void PredefinedMember_UintMaxValue_Succeeds()
+    {
+        // uint.MaxValue — преопределённый тип + member access.
+        Cs1ExpressionTestHelper.AssertParses("uint.MaxValue");
+    }
+
+    [TestMethod]
+    public void PredefinedMember_LongMinValue_Succeeds()
+    {
+        // long.MinValue — преопределённый тип + member access.
+        Cs1ExpressionTestHelper.AssertParses("long.MinValue");
+    }
+
+    [TestMethod]
+    public void PredefinedMember_ChainedInvocation_Succeeds()
+    {
+        // int.Parse("5").ToString() — первичное int.Parse + postfix: вызов, затем .ToString, затем вызов.
+        Cs1ExpressionTestHelper.AssertParses("int.Parse(\"5\").ToString()");
+    }
+
+    [TestMethod]
+    public void PredefinedMember_InAdditive_Succeeds()
+    {
+        // double.MaxValue + 1 → (double.MaxValue) + 1: корень — Add, левый операнд — member access.
+        Cs1ExpressionTestHelper.AssertParses("double.MaxValue + 1");
+    }
+
+    [TestMethod]
+    public void QualifiedInt32Parse_Succeeds()
+    {
+        // System.Int32.Parse() — квалифицированное имя (System — обычный идентификатор, не
+        // PredefinedType) — путь IdentifierName + PostfixOp*, НЕ затронут fix'ом (req 5).
+        Cs1ExpressionTestHelper.AssertParses("System.Int32.Parse()");
+    }
+
     // === скобки (T2.3.2): (expr) — НЕ каст ===
 
     [TestMethod]

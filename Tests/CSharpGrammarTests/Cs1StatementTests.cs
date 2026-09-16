@@ -287,4 +287,65 @@ public class Cs1StatementTests
         // Имя переменной — истинный идентификатор, не ключевое слово.
         Cs1StatementTestHelper.AssertFails("{ int return; }");
     }
+
+    // === T2.3.3: преопределённый тип в начале member-access ===
+    // Roslyn: преопределённый тип — начало expression ТОЛЬКО сразу перед "." (иначе не
+    // выражение). LanguageParser.cs:8514 + ParsePrimaryExpressionWithoutPostfix (12078-12093).
+    // В statement-контексте: `int` без "." — это (неполная) декларация, а не expression-statement.
+
+    [TestMethod]
+    public void PredefinedMember_ExpressionStatement_Parses()
+    {
+        // { int.Parse(); } — int перед "." → expression-statement (не декларация).
+        Cs1StatementTestHelper.AssertParses("{ int.Parse(); }");
+    }
+
+    [TestMethod]
+    public void PredefinedMember_PropertyExpressionStatement_Parses()
+    {
+        // { double.MaxValue; } — int перед "." → expression-statement.
+        Cs1StatementTestHelper.AssertParses("{ double.MaxValue; }");
+    }
+
+    [TestMethod]
+    public void LocalDecl_StringType_Parses()
+    {
+        // Декларация с преопределённым типом string (req 4).
+        Cs1StatementTestHelper.AssertParses("{ string s = \"a\"; }");
+    }
+
+    [TestMethod]
+    public void Invalid_BarePredefinedType_Fails()
+    {
+        // { int; } — int без "." — не выражение (тип не значение) и не полная декларация (нет имени).
+        Cs1StatementTestHelper.AssertFails("{ int; }");
+    }
+
+    [TestMethod]
+    public void Invalid_BarePredefinedTypeAssignment_Fails()
+    {
+        // { x = int; } — RHS int без "." — не выражение.
+        Cs1StatementTestHelper.AssertFails("{ x = int; }");
+    }
+
+    [TestMethod]
+    public void Invalid_BareNew_Fails()
+    {
+        // { new; } — new — зарезервированное слово, не идентификатор (guard T2.3.1 сохранён).
+        Cs1StatementTestHelper.AssertFails("{ new; }");
+    }
+
+    [TestMethod]
+    public void Invalid_BareTypeof_Fails()
+    {
+        // { typeof; } — typeof требует ( Type ), не голый идентификатор (guard сохранён).
+        Cs1StatementTestHelper.AssertFails("{ typeof; }");
+    }
+
+    [TestMethod]
+    public void Invalid_BareSizeof_Fails()
+    {
+        // { sizeof; } — sizeof требует ( Type ), не голый идентификатор (guard сохранён).
+        Cs1StatementTestHelper.AssertFails("{ sizeof; }");
+    }
 }
