@@ -184,3 +184,73 @@ AutoPropertyAccessorList =
     | AutoGetSet            = "get" ";" "set" ";"
     | BlockGetterAutoSetter = "get" Block "set" ";"
     | AutoGetterBlockSetter = "get" ";" "set" Block;
+
+// ============================================================================
+// T3.2.4 — C# 3.0 extension methods (the `this` parameter modifier).
+//
+// The KEY new construct is the `this` PARAMETER MODIFIER: `static void M(this int x) { }`.
+// In Roslyn, `this` is a parameter modifier (IsParameterModifierExcludingScoped,
+// LanguageParser.cs:4999: ThisKeyword/RefKeyword/OutKeyword/InKeyword/ParamsKeyword/ReadOnlyKeyword),
+// parsed in the parameter modifier list (ParseParameterModifiers, LanguageParser.cs:5015, comment 5022
+// "in/out/ref/readonly/params/this"). The parser accepts it UNCONDITIONALLY (no version gate); the
+// version gate (extension methods = C# 3.0) and the first-parameter restriction are BINDER concerns
+// (CheckParameterModifiers, ParameterHelpers.cs:587: IDS_FeatureExtensionMethod -> CSharp3,
+// MessageID.cs:717-721; ERR_BadThisParam "not on the first parameter", ParserErrorMessageTests.cs:3472).
+//
+// `this` is ALREADY a Cs1 ReservedKeyword (Cs1.grammar:604) and a Cs1 Primary alternative
+// (Cs1.grammar:679, the `this` EXPRESSION primary, e.g. `this.M()`). The `this` in a parameter list
+// (`this int x`) is a PARAMETER MODIFIER — a DIFFERENT context from `this` as an expression primary.
+// Re-declaring ParameterModifier to append `"this"` does NOT touch Primary, so the `this` expression
+// primary (`class C { void M() { this.N(); } }`) is UNAFFECTED (still a C# 1.0 feature, parses at v1/v2).
+//
+// APPROACH (T0.3 append-merge of the Cs1 modifier unions — the same pattern as `partial` in T3.1.3):
+//   * Re-declare `ParameterModifier` to ADD `"this"` (the CS3 feature). The Cs1 union is
+//     `| "ref" | "out" | "params"`; the merged v3 union is `| "ref" | "out" | "params" | "this"`.
+//     Each alternative is a distinct word -> no equal-length tie. `this` is a reserved keyword, so it
+//     can never be a `Type`/`TypeName` (TypeName = !ReservedKeyword Identifier, Cs1.grammar:23) -> no
+//     ambiguity with the parameter's type.
+//   * The `static` CLASS modifier is C# 2.0 (Roslyn IDS_FeatureStaticClasses -> CSharp2, MessageID.cs:728;
+//     Cs1 test Class_StaticModifier_Fails asserts `static class a { }` fails at Cs1). It is declared in
+//     Cs2.grammar (ClassModifier = | "static"), NOT here. The extension method positive tests parse at v3
+//     because v3 merges Cs1+Cs2+Cs3 (Cs2 supplies `static`). `static` is NOT added to StructModifier
+//     (a struct cannot be static — CS0701).
+//
+// Mutual exclusivity (longest-match, no equal-length tie):
+//   * `this int x` (v3): ParameterModifier* = `this`, Type = `int`, TypeName = `x`. The Cs1 alternative
+//     (no `this`) fails at `this` (not a Cs1 modifier, not a Type) -> Cs3 only. No tie.
+//   * `int x` (v3): ParameterModifier* = empty, Type = `int`, TypeName = `x` -> no `this` modifier. No tie.
+//   * `static class E` (v3): ClassModifier* = `static`, "class", ... -> matches. A bare `class E` (no
+//     static) -> ClassModifier* empty. Different inputs, no tie. `static` (reserved) can never be a
+//     TypeName (Cs1:23) -> it is only ever a modifier, never a class name.
+//   * `this` modifier vs `this` expression primary: a parameter list (`Parameter` -> `ParameterModifier`)
+//     vs an expression (`Primary`) — different contexts, no conflict.
+//
+// Roslyn refs (C:\RSDN\roslyn, main):
+//   IsParameterModifierExcludingScoped (LanguageParser.cs:4999): ThisKeyword (5003).
+//   ParseParameterModifiers (LanguageParser.cs:5015): comment 5022 "in/out/ref/readonly/params/this".
+//   CheckParameterModifiers (ParameterHelpers.cs:587): ThisKeyword ->
+//   Binder.CheckFeatureAvailability(IDS_FeatureExtensionMethod) (607); first-parameter (ERR_BadThisParam).
+//   IDS_FeatureExtensionMethod -> CSharp3 (MessageID.cs:717-721); IDS_FeatureStaticClasses -> CSharp2
+//   (MessageID.cs:728).
+//   Syntax tests: DeclarationParsingTests.cs:19226 ScopedInParameter1
+//   (`static class C { public static void M(scoped in this int x) { } }`); ParserErrorMessageTests.cs:3472
+//   CS1107ERR_DupParamMod (malformed `this` forms are BINDER diagnostics); SymbolDisplayTests.cs:330
+//   TestExtensionMethodAsStatic (canonical `public static TSource M<TSource>(this C1<TSource> source,
+//   int index) {}`).
+//
+// CS3 only: the `this` PARAMETER MODIFIER is the CS3 feature. No extension properties or other
+// extension-member forms (later versions). The `this` modifier is allowed on ANY parameter at the parse
+// level (the first-parameter-only restriction is a binder concern, CS1100).
+
+// === T3.2.4: the `this` parameter modifier (C# 3.0). Re-declares ParameterModifier (append, T0.3
+// merge). The Cs1 union is `| "ref" | "out" | "params"`; the merged v3 union adds `"this"`. Distinct
+// words -> no equal-length tie. `this` is a reserved keyword (Cs1:604), so it can never be a
+// Type/TypeName (Cs1:23) -> no ambiguity with the parameter's type. Roslyn
+// IsParameterModifierExcludingScoped (LanguageParser.cs:4999: ThisKeyword 5003). ===
+ParameterModifier =
+    | "this";
+
+// NOTE (T3.2.4): the `static` CLASS modifier is C# 2.0 (Roslyn IDS_FeatureStaticClasses -> CSharp2,
+// MessageID.cs:728), NOT a CS3 feature. It is declared in Cs2.grammar (ClassModifier = | "static"),
+// not here. `static` is already a Cs1 MethodModifier (Cs1:293), so the `static` in `static void M(...)`
+// needs no change. NOT added to StructModifier (a struct cannot be static — CS0701).

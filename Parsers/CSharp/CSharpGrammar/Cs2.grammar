@@ -252,8 +252,14 @@ AnonymousMethodParameter =
 // T0.3 merge: re-declaring a rule name APPENDS alternatives. The Cs1 ClassDeclaration/StructDeclaration/
 // Method use these merged modifier unions, so no re-declaration of the declarations is needed.
 // `"partial"` is a WordLiteral (RuleGenerator.cs:77-79) and matches whole-word (partial, not partialX).
+//
+// `static` class modifier (T3.2.4 fix): static CLASSES are C# 2.0 (Roslyn IDS_FeatureStaticClasses ->
+// CSharp2, MessageID.cs:728; Cs1 test Class_StaticModifier_Fails asserts `static class a { }` fails at
+// Cs1). `static` is already a Cs1 MethodModifier (Cs1:293) but NOT a Cs1 ClassModifier (Cs1:44), so it
+// is APPENDED here (CS2). NOT added to StructModifier (a struct cannot be static — CS0701).
 ClassModifier =
-    | "partial";
+    | "partial"
+    | "static";
 
 StructModifier =
     | "partial";
