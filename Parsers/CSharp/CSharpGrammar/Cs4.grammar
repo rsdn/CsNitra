@@ -60,3 +60,77 @@ ReservedKeyword =
 // Cs1/Cs3 rules.
 PredefinedType =
     | "dynamic";
+
+// ============================================================================
+// T3.3.2 — C# 4.0 named arguments.
+//
+// A named argument is `Identifier ":" Expression` (the parameter name, a `:`, and the argument
+// value). A positional argument is just `Expression`. In an argument list, the `:` after an
+// identifier is unambiguously a named-argument separator (Roslyn ParseArgumentExpression,
+// LanguageParser.cs:12583: CurrentToken is IdentifierToken && PeekToken(1) is ColonToken ->
+// NameColon(Identifier, ColonToken)). The `:` is NOT a TDOPP binary operator (the only `:` in
+// Expression is inside the conditional `Expression "?" Expression ":" Expression`, which requires
+// a leading `?`), so `x: 5` is NOT an Expression — it requires the NamedArgument rule.
+//
+// The method-call argument list is `Invocation`, a NAMED ALTERNATIVE of `PostfixOp`
+// (Cs1.grammar:725): `"(" (Expression; ",")* ")"`. A named alternative is inlined into its parent
+// rule (it is NOT a separate RuleSymbol — Scope.AddSymbol registers only top-level rule
+// statements), so `Invocation` CANNOT be re-declared directly; the parent `PostfixOp` must be
+// re-declared to add a new alternative.
+//
+// Approach (T0.3 append-merge of `PostfixOp`):
+//   * New `Argument` rule: `| NamedArgument = Identifier ":" Expression | Expression`. Within
+//     `Argument`, longest-match disambiguates: `x: 5` -> NamedArgument (longer than `x`); `x`
+//     (no `:`) -> Expression (NamedArgument fails: no `:`); `5` -> Expression (NamedArgument fails:
+//     not an Identifier). No equal-length tie within `Argument`.
+//   * Re-declare `PostfixOp` to APPEND `NamedInvocation = "(" (Argument; ",")* ")"`. For a
+//     positional-only list `(x)`, BOTH the Cs1 `Invocation` and the Cs4 `NamedInvocation` match at
+//     the same length; the engine keeps the FIRST (declaration-order) success (Parser.cs:296-316),
+//     so the Cs1 `Invocation` wins (no error). For a list with a named argument `(x: 5)`, the Cs1
+//     `Invocation` FAILS (`x: 5` is not an Expression), so the Cs4 `NamedInvocation` is the only
+//     match. The Cs4 alternative is therefore reachable only for named-argument lists.
+//
+// Version purity: at v3 (Cs1+Cs2+Cs3, no Cs4) the `NamedInvocation` alternative is absent, so
+// `N(x: 5)` REJECTS (the Cs1 `Invocation` fails: `x: 5` is not an Expression). At v4 the
+// `NamedInvocation` is present, so `N(x: 5)` parses. (Roslyn: NamedArgumentBeforeCSharp4,
+// ParserErrorMessageTests.cs:6140 — CS8024 "Feature 'named argument' is not available in C# 3".)
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp/Portable/Parser/LanguageParser.cs):
+//   ParseArgumentExpression (12581): nameColon = (Identifier && Peek(1)==Colon) ? NameColon(...) :
+//   null; expression = ParseSubExpression(Precedence.Expression); Argument(nameColon, refKind, expr).
+//   ParseArgumentList (12475): `(` (ParseArgumentExpression,)* `)` (allowTrailingSeparator: false,
+//   requireOneElement: false, so `()` is allowed and a trailing `,` is rejected).
+//   The ORDER (positional before named) is a BINDER concern (CS1737); the PARSER accepts any order.
+//   Syntax tests: ExpressionParsingTests.cs:1024 (TestCallWithNamedArgument, `a(B: b)`), :1186
+//   (TestNewWithNamedArgument), :2280 (TestTupleWithTwoNamedArguments).
+//
+// CS4 only: the `ref`/`out` named arguments are a binder concern — the syntax is the same
+// (`Identifier ":" Expression`), so no separate rule is needed.
+
+// === `Argument`: one argument in a named-argument-capable list. Named union (the meta-grammar
+// forbids `|` inside a group). Longest-match: `x: 5` -> NamedArgument (longer); `x` (no `:`) ->
+// Expression; `5` -> Expression.
+//
+// T3.3.2 fix — the value/positional expression is `Expression : Comma`, NOT a plain `Expression`.
+// A plain `Expression` is a TDOPP rule with minPrecedence 0, and the `Comma` operator (binding power
+// 1, the lowest in the Cs1 precedence list) is applicable at minPrecedence 0 (Parser.cs:360:
+// `precedence > minPrecedence || (== && right)` -> `1 > 0`). So a plain `Expression` greedily ABSORBS
+// a following `,`: in `N(1, y: 6)` the first argument's `Expression` parses `1, y` (the Comma RHS is
+// just `y`, since `y: 6` is not an Expression) and the argument list then fails on the leftover `: 6`
+// -> the whole parse fails. `Expression : Comma` (a ReqRef with Precedence = Comma's binding power 1,
+// RuleGenerator.cs:90-94) raises minPrecedence to 1, so the Comma postfix is NOT applicable
+// (`1 > 1` is false) while every other operator (binding power >= 2) still is. The argument therefore
+// stops at the `,` separator. This is the same minPrecedence mechanism Cs1 already uses
+// (`Expression : Relational` in TypeIs/TypeAs, `Expression : Cast` in CastExpr) — no engine change.
+// ===
+Argument =
+    | NamedArgument      = Identifier ":" Expression : Comma
+    | PositionalArgument = Expression : Comma;
+
+// === Named-argument invocation (C# 4.0). Re-declares `PostfixOp` (append, T0.3 merge). The Cs4
+// alternative is a `(` argument list of `Argument`s. For a positional-only list the Cs1
+// `Invocation` (declaration-order first) wins the equal-length match; for a list with a named
+// argument the Cs1 `Invocation` fails and this is the only match. Roslyn ParseArgumentExpression
+// (LanguageParser.cs:12581). ===
+PostfixOp =
+    | NamedInvocation = "(" (Argument; ",")* ")";
