@@ -81,7 +81,7 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 - [ ] T3.6 CS7: кортежи, pattern matching, локальные функции, `out var`, `ref`-возврат/локальные, разделители цифр, `throw`-выражение, `ref readonly`
   - [✅] T3.6.1 Кортежи: tuple-типы (`(int, string)`), tuple-литералы (`(1, "a")`), deconstruction (`var (x, y) = t`), `Item1`-доступ → `Cs7.grammar` + тесты (D1: unnamed tuple literal version-purity blocked — Cs1 Parens+Comma)
   - [✅] T3.6.2 Pattern matching: declaration patterns (`is int x`), type/constant patterns, discard `_`, guard `when`, `switch` с паттернами (`case int y:`, `case var y:`, `case 5:`) → `Cs7.grammar` + тесты (D: `case int when y > 0:` rejects — `when` treated as a designation, unlike Roslyn)
-  - [ ] T3.6.3 Локальные функции: `void M() { void N() { } N(); }` (в т.ч. `async`/`static`/generics) → `Cs7.grammar` + тесты
+  - [✅] T3.6.3 Локальные функции: `void M() { void N() { } N(); }` (в т.ч. `async`/`static`/generics) → `Cs7.grammar` + тесты (D1: `void N();` ";"-body → LocalVariableDeclaration tie, unlike Roslyn; D4: generic invocation `N<int>()` pre-existing gap — declaration-only form tested)
   - [ ] T3.6.4 `out var` + `ref`-возврат/локальные + `ref readonly` (ref-семантика) → `Cs7.grammar` + тесты
   - [ ] T3.6.5 Разделители цифр (`1_000_000`) + `throw` как выражение (`x = c ? throw e : 5`) → `Cs7.grammar` + тесты
 - [ ] T3.7 CS7.1–7.2: `default`, `in`, `ref struct`, type/constant patterns

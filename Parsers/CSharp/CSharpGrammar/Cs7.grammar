@@ -129,3 +129,44 @@ Pattern =
 // ParseWhenClause (10704). The guard is BETWEEN the pattern and the `:` (an Optional). ===
 CaseLabel =
     | PatternCaseLabel = "case" Pattern ("when" Expression)? ":";
+
+// === Local functions (C# 7.0). Re-declares Cs1 Statement (append, T0.3 merge). A local function
+// is a method-like declaration INSIDE a block (a statement, not a member). Roslyn
+// LocalFunctionStatement (LanguageParser.cs:11024) + TryParseLocalFunctionStatementBody (10921):
+// modifiers + return type + name + (type parameters via the greedy TypeName) + parameter list +
+// constraints + (block | => expression | ;). The version gate (IDS_FeatureLocalFunctions,
+// MessageID.cs:131) is a BINDER check (Binder_Statements.cs:556), not a parse check — the parser
+// accepts the form wherever the rule exists (CS7 only, per the task).
+//
+// Disambiguation with the other Cs1 Statement alternatives (longest-match, no equal-length tie for
+// the task's forms — the REQUIRED-new-construct is the "(" ParameterList? ")" after the name, which
+// no other statement form has at that position):
+//   * vs LocalVariableDeclaration (Type Name =/;): the local function REQUIRES "(" after the name;
+//     a local variable declaration has "=" or ";" after the name. Mutually exclusive.
+//   * vs ExpressionStatement (Expression ;): a bare return type (void/int/...) is not an expression
+//     start (PredefinedMember needs "." after the type; a user-defined type is a single IdentifierName
+//     that stops before the 2nd name). Mutually exclusive.
+//   * vs LabeledStatement (!ReservedKeyword Identifier : Statement): a return type / modifier is
+//     either reserved (void/static/unsafe) or not followed by ":". Mutually exclusive.
+//   * static/unsafe are reserved keywords -> no other Statement starts with them. async is not
+//     reserved, but no other Statement matches "async <type> <name> ( ... )".
+// KNOWN TIE: "void N();" (a ";" body) matches BOTH LocalVariableDeclaration (Cs1) and
+// LocalFunctionStatement (MethodBody = ";") at the same length -> the FIRST (Cs1) wins -> parsed as a
+// local variable of type void (a binder error). Roslyn parses it as a local function (LocalFunction_
+// NoBody, LocalFunctionParsingTests.cs:626). Not tested (a ";"-body local function is not in the task
+// list); a binder-level difference (progress doc, Deviation D1).
+Statement =
+    | LocalFunctionStatement = LocalFunctionModifier* Type TypeName "(" ParameterList? ")" ConstraintClause* MethodBody;
+
+// Local function modifiers (C# 7.0): static, async, unsafe. A local-function-SPECIFIC set (NOT the
+// full MethodModifier), matching the task's subset exactly and NOT accepting access/virtual/override/
+// etc. modifiers (binder-invalid on local functions; Roslyn IsAdditionalLocalFunctionModifier,
+// LanguageParser.cs:10882, parses access modifiers only for a better error message). static/unsafe
+// are reserved; async is a contextual keyword (a WordLiteral, whole-word match; not reserved, Cs5).
+// Ordering is NOT enforced (a greedy any-order loop; Roslyn AsyncStaticFunctions uses both orders).
+// NOTE: static local functions are a C# 8.0 feature in Roslyn (IDS_FeatureStaticLocalFunctions,
+// MessageID.cs:183), but the task requires them in CS7 (progress doc, Deviation D2).
+LocalFunctionModifier =
+    | "static"
+    | "async"
+    | "unsafe";
