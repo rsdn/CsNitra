@@ -5,11 +5,35 @@ namespace CSharpGrammarTests;
 
 public static class EmbeddedGrammar
 {
+    // version → (embedded-resource suffix, display path). Ascending order. Add a new version
+    // by inserting one line (plus the .grammar file + its <EmbeddedResource> entry when that
+    // grammar file itself is added in a later Stage-3 task).
+    private static readonly IReadOnlyList<GrammarVersion> _versions =
+    [
+        new(1,  "Cs1.grammar",  "Cs1.grammar"),
+        new(6,  "Cs6.grammar",  "Cs6.grammar"),
+        new(11, "Cs11.grammar", "Cs11.grammar"),
+    ];
+
     public static string LoadCs1Grammar() => Load("Cs1.grammar");
 
     public static string LoadCs6Grammar() => Load("Cs6.grammar");
 
     public static string LoadCs11Grammar() => Load("Cs11.grammar");
+
+    public static IReadOnlyList<(string Text, string Path)> LoadGrammarUpTo(int version)
+    {
+        var selected = _versions
+            .Where(v => v.Version <= version)
+            .OrderBy(v => v.Version)
+            .Select(v => (Text: Load(v.Suffix), Path: v.Path))
+            .ToArray();
+
+        if (selected.Length == 0)
+            throw new ArgumentException($"No grammar files for version <= {version}", nameof(version));
+
+        return selected;
+    }
 
     private static string Load(string resourceSuffix)
     {
@@ -20,4 +44,6 @@ public static class EmbeddedGrammar
         using var reader = new StreamReader(stream);
         return reader.ReadToEnd();
     }
+
+    private sealed record GrammarVersion(int Version, string Suffix, string Path);
 }
