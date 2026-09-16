@@ -279,3 +279,70 @@ Argument =
 // matches the reserved "ref"). At v7 it PARSES.
 Expression =
     | RefExpr = "ref" Expression : Unary;
+
+// ============================================================================
+// T3.6.5 — C# 7.0 digit separators + `throw` as expression.
+//
+// Two CS7 features:
+//   * Digit separators — `1_000_000` / `0xFF_FF` / `0b1_0` / `1_0.5` (underscores in numeric
+//     literals). A TERMINAL change: four new `[Regex]` terminals in `CSharpTerminals.cs`, each
+//     REQUIRING at least one `_` (mutually exclusive with the Cs1 no-separator terminals). The
+//     referencing rules (`Primary`, `Constant`) are re-declared below to add the separated forms.
+//   * `throw` as expression — `c ? throw e : 5` (a `throw` + expression, NO semicolon). A GRAMMAR
+//     change: re-declare `Expression` to add a `throw` PREFIX operator (like the Cs7 `ref` / the
+//     Cs5 `await`). The Cs1 `ThrowStatement` (`"throw" Expression? ";"`) is UNCHANGED.
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp):
+//   * Digit separators — ScanNumericLiteralSingleInteger (Parser/Lexer.cs:801-842) +
+//     ScanNumericLiteral (844-1033): a `_` between digits → IDS_FeatureDigitSeparator (Lexer.cs:1032,
+//     C# 7.0); a trailing / decimal-leading `_` → ERR_InvalidNumber (1022-1024). Each `_` is followed
+//     by a digit (816-836) → no leading / trailing / consecutive `_`.
+//   * `throw` expression — ParseThrowExpression (Parser/LanguageParser.cs:11924-11929):
+//     ThrowExpression(ThrowKeyword, ParseSubExpression(Coalescing)) — `throw` + expression. Entered
+//     from ParseSubExpression on a ThrowKeyword token (11508-11515); the "wrong precedence" error is a
+//     BINDER concern. C# 7.0.
+//
+// CS7 only.
+
+// === Digit separators (C# 7.0). Re-declares Cs1 Primary (append, T0.3 merge). Each separated-literal
+// alternative REQUIRES at least one `_` (the separated terminal), so it is MUTUALLY EXCLUSIVE with the
+// Cs1/Cs6 no-separator alternative: `1_000_000` matches only SeparatedDecInt (DecInt matches only `1`),
+// and `1000000` matches only DecInt (SeparatedDecInt fails — no `_`). Longest-match, no equal-length
+// tie. The shapes mirror the existing DecInt/HexInt/BinInt/Real (Cs1:704-706, Cs6:127). Roslyn
+// Lexer.cs:801-842. ===
+Primary =
+    | SeparatedDecInt = SeparatedDecimalIntegerLiteral IntegerSuffix?
+    | SeparatedHexInt = SeparatedHexIntegerLiteral  IntegerSuffix?
+    | SeparatedBinInt = SeparatedBinaryIntegerLiteral IntegerSuffix?
+    | SeparatedReal   = SeparatedDecimalRealLiteral Exponent? RealSuffix?;
+
+// === Digit separators in constants (C# 7.0). Re-declares Cs1 Constant (append, T0.3 merge). The
+// `Constant` rule (Cs1:469-477) has DecimalConstant/HexConstant (no real/binary). These add the
+// separated forms so digit separators work in enum member values, attribute arguments, and goto/case
+// labels. Same mutual-exclusivity as Primary (a `_` is required). ===
+Constant =
+    | SeparatedDecimalConstant = SeparatedDecimalIntegerLiteral IntegerSuffix?
+    | SeparatedHexConstant     = SeparatedHexIntegerLiteral  IntegerSuffix?;
+
+// === `throw` as expression (C# 7.0). Re-declares Cs1 Expression (append, T0.3 merge); APPENDS the
+// ThrowExpression prefix. A `throw` prefix operator (like the Cs7 RefExpr / the Cs5 AwaitExpr):
+// `throw` + expression (NO semicolon — the semicolon form is the UNCHANGED Cs1 ThrowStatement). The
+// operand is `Expression : Unary` (minPrecedence = the Unary level, RuleGenerator.cs:90-94), so it
+// binds tighter than all binary operators and does NOT absorb a following `,` (the TDOPP Comma
+// mechanism, T3.3.2). Roslyn ParseThrowExpression (LanguageParser.cs:11924-11929). ===
+//
+// Disambiguation (longest-match, no equal-length tie at the expression level): `throw` is a reserved
+// keyword (Cs1 ReservedKeyword:605), so it is NOT an IdentifierName and NO other Expression alternative
+// starts with it. `throw e` -> ThrowExpression (sole match). A bare `throw` (no operand) ->
+// ThrowExpression fails; no other alternative matches -> the parse fails (correct).
+//
+// Statement context: `throw e;` in a block matches BOTH ExpressionStatement (`Expression ";"` with the
+// Expression a ThrowExpression) and ThrowStatement (`"throw" Expression? ";"`) at the same length ->
+// the FIRST (declaration order, ExpressionStatement before ThrowStatement) wins (Parser.cs:299-316).
+// Both parse, so the `throw e;` statement still PARSES at v7 (no regression); at v1–v6 the
+// ThrowExpression is absent, so it parses via ThrowStatement (the sole match).
+//
+// Version purity: at v6 the ThrowExpression is absent, so `c ? throw e : 5` REJECT (no Expression
+// alternative matches the reserved "throw" in the conditional's middle branch). At v7 it PARSES.
+Expression =
+    | ThrowExpression = "throw" Expression : Unary;

@@ -32,6 +32,26 @@ public sealed partial class CSharpTerminals
     [Regex(@"[fFdDmM]")]
     public static partial Terminal RealSuffix();
 
+    // === C# 7.0 digit separators (T3.6.5). Each terminal REQUIRES at least one `_` (the `+` on the
+    // `(_…)` group), so it is mutually exclusive with the Cs1 no-separator terminal above: a literal
+    // with no `_` matches only the Cs1 terminal, and a literal with a `_` matches only the separated
+    // terminal (no equal-length tie). Each `_` must be followed by at least one digit (`_[0-9]+`), so
+    // a leading `_`, a trailing `_`, and consecutive `__` are all rejected (Roslyn Lexer.cs:801-842,
+    // IDS_FeatureDigitSeparator). ===
+    [Regex(@"[0-9]+(_[0-9]+)+")]
+    public static partial Terminal SeparatedDecimalIntegerLiteral();
+
+    [Regex(@"0[xX][0-9a-fA-F]+(_[0-9a-fA-F]+)+")]
+    public static partial Terminal SeparatedHexIntegerLiteral();
+
+    [Regex(@"0[bB][01]+(_[01]+)+")]
+    public static partial Terminal SeparatedBinaryIntegerLiteral();
+
+    // A real literal with at least one `_` somewhere: a separator in the integer part, or in the
+    // fractional part, or the `.\d` form (three alternatives, each requiring a `_`).
+    [Regex(@"[0-9]+(_[0-9]+)+\.[0-9]*(_[0-9]+)*|[0-9]+\.[0-9]*(_[0-9]+)+|\.[0-9]+(_[0-9]+)+")]
+    public static partial Terminal SeparatedDecimalRealLiteral();
+
     // Greedy run of safe raw-content chars: [^\{\}"]+ (newline allowed).
     [Regex("""[^\{\}"]+""")]
     public static partial Terminal InterpolatedRawText();
@@ -109,11 +129,15 @@ public sealed partial class CSharpTerminals
         Trivia(),
         Identifier(),
         DecimalIntegerLiteral(),
+        SeparatedDecimalIntegerLiteral(),
         HexIntegerLiteral(),
+        SeparatedHexIntegerLiteral(),
         BinaryIntegerLiteral(),
+        SeparatedBinaryIntegerLiteral(),
         OctalIntegerLiteral(),
         IntegerSuffix(),
         DecimalRealLiteral(),
+        SeparatedDecimalRealLiteral(),
         Exponent(),
         RealSuffix(),
         InterpolatedRegularText(),
