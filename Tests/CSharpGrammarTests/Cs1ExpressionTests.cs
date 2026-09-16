@@ -1,4 +1,5 @@
-﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using ExtensibleParser;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace CSharpGrammarTests;
 
@@ -176,6 +177,104 @@ public class Cs1ExpressionTests
         Cs1ExpressionTestHelper.AssertParses("sizeof(int*)");
     }
 
+    // === каст (T2.3.2): (Type) expr ===
+
+    [TestMethod]
+    public void Cast_PredefinedType_Succeeds()
+    {
+        Cs1ExpressionTestHelper.AssertParses("(int) x");
+    }
+
+    [TestMethod]
+    public void Cast_ArrayType_Succeeds()
+    {
+        // Тип — массивный: ранг парсится целиком (Type, не Expression).
+        Cs1ExpressionTestHelper.AssertParses("(int[]) x");
+    }
+
+    [TestMethod]
+    public void Cast_PointerType_Succeeds()
+    {
+        // Указательный тип (unsafe, но синтаксис чист).
+        Cs1ExpressionTestHelper.AssertParses("(int*) x");
+    }
+
+    [TestMethod]
+    public void Cast_PointerToArray_Succeeds()
+    {
+        // Чередование рангов: указатель на массив.
+        Cs1ExpressionTestHelper.AssertParses("(int[]*) x");
+    }
+
+    [TestMethod]
+    public void Cast_QualifiedType_Succeeds()
+    {
+        // Квалифицированное имя — и тип, и выражение; каст выигрывает по длине (съедает операнд s).
+        Cs1ExpressionTestHelper.AssertParses("(System.String) s");
+    }
+
+    [TestMethod]
+    public void Cast_ParenthesizedCast_Succeeds()
+    {
+        // Вложенный каст в скобках.
+        Cs1ExpressionTestHelper.AssertParses("((int) x)");
+    }
+
+    [TestMethod]
+    public void Cast_MemberAccessOperand_Succeeds()
+    {
+        // Операнд — первичное с postfix: (int) x.y → (int)(x.y) (см. shape-тест ниже).
+        Cs1ExpressionTestHelper.AssertParses("(int) x.y");
+    }
+
+    [TestMethod]
+    public void Cast_UnaryPrefixOperand_Succeeds()
+    {
+        // Операнд — unарный prefix: (int) ++x → (int)(++x).
+        Cs1ExpressionTestHelper.AssertParses("(int) ++x");
+    }
+
+    // === скобки (T2.3.2): (expr) — НЕ каст ===
+
+    [TestMethod]
+    public void Parens_AdditiveContinuation_Succeeds()
+    {
+        // (x) + 1 — скобки, НЕ каст: после (x) идёт бинарный оператор (CanFollowCast(+)=false).
+        // Тай-брейк longest-match: PrimaryExpr (Parens) стоит первым prefix-альтернативой → выигрывает.
+        // Корень — Add (не CastExpr): доказательство, что это (x)+1, а не (x)(+1).
+        var node = Cs1ExpressionTestHelper.ParseExpression("(x) + 1");
+        Assert.AreEqual("Add", node.Kind);
+    }
+
+    [TestMethod]
+    public void Parens_SubtractionContinuation_Succeeds()
+    {
+        // (x) - 1 — скобки, НЕ каст (CanFollowCast(-)=false). Корень — Sub (не CastExpr).
+        var node = Cs1ExpressionTestHelper.ParseExpression("(x) - 1");
+        Assert.AreEqual("Sub", node.Kind);
+    }
+
+    [TestMethod]
+    public void Parens_Alone_Succeeds()
+    {
+        // (x) — после ) нет операнда каста → только скобки.
+        Cs1ExpressionTestHelper.AssertParses("(x)");
+    }
+
+    [TestMethod]
+    public void Parens_Qualified_Succeeds()
+    {
+        // (a.b) — a.b и тип, и выражение; после ) нет операнда → только скобки.
+        Cs1ExpressionTestHelper.AssertParses("(a.b)");
+    }
+
+    [TestMethod]
+    public void Parens_Expression_Succeeds()
+    {
+        // (1 + 2) — литерал не является началом Type → только скобки.
+        Cs1ExpressionTestHelper.AssertParses("(1 + 2)");
+    }
+
     // === Взаимодействия приоритетов ===
 
     [TestMethod]
@@ -231,6 +330,59 @@ public class Cs1ExpressionTests
     {
         // !x is int → (!x) is int: Unary (выше) связывает раньше is/Relational.
         Cs1ExpressionTestHelper.AssertParses("!x is int");
+    }
+
+    // === Shape: каст связывает ЖЁСТЧЕ всех бинарных (T2.3.2) ===
+
+    [TestMethod]
+    public void Precedence_CastBindsTighterThanAdditive_Shape()
+    {
+        // (int) x + y → ((int)x) + y, НЕ (int)(x+y). Корень — Add, его левый операнд — каст.
+        var node = Cs1ExpressionTestHelper.ParseExpression("(int) x + y");
+        var add = node as SeqNode
+            ?? throw new InvalidOperationException($"Expected SeqNode root, got {node?.GetType().Name}");
+        Assert.AreEqual("Add", add.Kind);
+        var cast = add.Elements[0] as SeqNode
+            ?? throw new InvalidOperationException($"Expected CastExpr left operand, got {add.Elements[0]?.GetType().Name}");
+        Assert.AreEqual("CastExpr", cast.Kind);
+    }
+
+    [TestMethod]
+    public void Precedence_CastBindsTighterThanMultiplicative_Shape()
+    {
+        // (int) x * y → ((int)x) * y, НЕ (int)(x*y). Корень — Mul, его левый операнд — каст.
+        var node = Cs1ExpressionTestHelper.ParseExpression("(int) x * y");
+        var mul = node as SeqNode
+            ?? throw new InvalidOperationException($"Expected SeqNode root, got {node?.GetType().Name}");
+        Assert.AreEqual("Mul", mul.Kind);
+        var cast = mul.Elements[0] as SeqNode
+            ?? throw new InvalidOperationException($"Expected CastExpr left operand, got {mul.Elements[0]?.GetType().Name}");
+        Assert.AreEqual("CastExpr", cast.Kind);
+    }
+
+    [TestMethod]
+    public void Precedence_CastOperandIncludesMemberAccess_Shape()
+    {
+        // (int) x.y → (int)(x.y): postfix .y — внутри операнда каста (корень — CastExpr, а не
+        // member-access поверх каста). Соответствует C# 1.0 (как !x.y → !(x.y)).
+        var node = Cs1ExpressionTestHelper.ParseExpression("(int) x.y");
+        var cast = node as SeqNode
+            ?? throw new InvalidOperationException($"Expected SeqNode root, got {node?.GetType().Name}");
+        Assert.AreEqual("CastExpr", cast.Kind);
+        var operand = cast.Elements[^1];
+        Assert.AreEqual("x.y", operand.ToString("(int) x.y"));
+    }
+
+    [TestMethod]
+    public void Precedence_CastOperandIncludesUnaryPrefix_Shape()
+    {
+        // (int) ++x → (int)(++x): unарный prefix — внутри операнда каста (корень — CastExpr).
+        var node = Cs1ExpressionTestHelper.ParseExpression("(int) ++x");
+        var cast = node as SeqNode
+            ?? throw new InvalidOperationException($"Expected SeqNode root, got {node?.GetType().Name}");
+        Assert.AreEqual("CastExpr", cast.Kind);
+        var operand = cast.Elements[^1];
+        Assert.AreEqual("++x", operand.ToString("(int) ++x"));
     }
 
     // === Невалидные формы (version purity + malformed) ===
@@ -321,5 +473,35 @@ public class Cs1ExpressionTests
     public void Invalid_NewMissingType_Fails()
     {
         Cs1ExpressionTestHelper.AssertFails("new");
+    }
+
+    // === Невалидные касты (T2.3.2) ===
+
+    [TestMethod]
+    public void Invalid_CastNoOperand_Fails()
+    {
+        // (int) без операнда — каст требует Expression после ).
+        Cs1ExpressionTestHelper.AssertFails("(int)");
+    }
+
+    [TestMethod]
+    public void Invalid_CastUnclosedType_Fails()
+    {
+        // (int — незакрытая скобка типа.
+        Cs1ExpressionTestHelper.AssertFails("(int");
+    }
+
+    [TestMethod]
+    public void Invalid_CastUnclosedParen_Fails()
+    {
+        // (int x — нет ) после типа.
+        Cs1ExpressionTestHelper.AssertFails("(int x");
+    }
+
+    [TestMethod]
+    public void Invalid_CastGeneric_Fails()
+    {
+        // Дженерик-каст — CS2, вне C# 1.0: < не является частью Type → каст/скобки не парсятся.
+        Cs1ExpressionTestHelper.AssertFails("(Foo<int>) x");
     }
 }

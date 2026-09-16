@@ -269,8 +269,10 @@ ReservedKeyword =
     | "while";
 
 // === ВРЕМЕННОЕ (T3.5.1) — T2.3 заменит на полную TDOPP-таблицу C# 1.0 ===
+// T2.3.2: Cast — самый жёсткий уровень (выше Unary): каст-операнд парсится на нём, поэтому не
+// поглощает бинарные операторы (см. CastExpr). Roslyn: Precedence.Cast (LanguageParser.cs:12848).
 precedence
-    Unary, Multiplicative, Additive, Relational, Equality,
+    Cast, Unary, Multiplicative, Additive, Relational, Equality,
     LogicalAnd, LogicalXor, LogicalOr, CondAnd, CondOr,
     Conditional, Assignment, Comma;
 
@@ -287,6 +289,14 @@ Expression =
     | UnaryBitNot   = "~"  Expression : Unary
     | PreInc        = "++" Expression : Unary
     | PreDec        = "--" Expression : Unary
+    // T2.3.2: каст — prefix-оператор на уровне Cast (самый жёсткий). Операнд — ReqRef на Cast,
+    // поэтому не поглощает бинарные операторы: (int) x + y → ((int)x) + y.
+    // Разграничение с (expr): PrimaryExpr (с Parens) стоит ПЕРВЫМ prefix-альтернативой, поэтому
+    // longest-match + тай-брейк «первый выигрывает» дают: неоднозначные (x)/(a.b) со следующим
+    // бинарным оператором → скобки (как Roslyn CanFollowCast(+/-/...)=false); неambiguous-типы
+    // (int/int[]/int*) не являются началом Expression → только каст; (System.String) s — каст
+    // длиннее. См. docs/CSharpParserPlan-progressT2.3.2.md.
+    | CastExpr      = "(" Type ")" Expression : Cast
     | Mul           = Expression "*"  Expression : Multiplicative
     | Div           = Expression "/"  Expression : Multiplicative
     | Mod           = Expression "%"  Expression : Multiplicative

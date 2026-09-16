@@ -36,7 +36,7 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 
 - [ ] T2.3 Выражения C# 1: завершить временное `Expression` (TDOPP) — `new`, приведение, `is`/`as`, `sizeof`/`typeof` + тесты
   - [✅] T2.3.1 `new` (object/array creation) + `is`/`as` (type test в TDOPP-таблице) + `sizeof`/`typeof` + тесты (фича + Roslyn-отбор)
-  - [ ] T2.3.2 Приведение `(Type) expr` (разборность cast vs parens — см. Deviations) + тесты
+  - [✅] T2.3.2 Приведение `(Type) expr` (разборность cast vs parens — см. Deviations) + тесты
 - [ ] T2.2 Операторы: `Block` + if/while/do-while/for/foreach/switch/try/using/lock/checked/return/goto/throw/block/empty/declaration + тесты
   - [ ] T2.2.1 `Block` + empty + expression-stmt + local-variable-declaration + return/throw/break/continue/goto/labels + тесты
   - [ ] T2.2.2 if/while/do-while/for/foreach + тесты
@@ -118,3 +118,5 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 - T2.3.1: `new Foo` (без скобок/размеров/инициализатора) — NEGATIVE (в задании было positive): Roslyn `ERR_BadNewExpr` (CS1526). `new Foo()`/`new Foo(1,2)` — positive.
 - T2.3.1: механизм Type-операнда для `is`/`as` (RHS = Type, не Expression) — декларативно через self-recursive альтернативу `Expression : Relational "is" Type` (прецедент postfix берётся из первого элемента-ReqRef, RHS — plain `Ref("Type")` на prec 0). Тот же паттерн, что у postfix'ов самого `Type`. Без изменения движка.
 - T2.3.1: добавлен guard `IdentifierName = !ReservedKeyword Identifier` в `Primary` (иначе `new`/`typeof`/`sizeof` глотались бы как identifier).
+- T2.3.2: cast `(Type) expr` — декларативно, без изменения движка. `CastExpr = "(" Type ")" Expression : Cast` — TDOPP **prefix**-оператор на новом самом жёстком уровне `Cast` (выше `Unary`); операнд — ReqRef на `Cast`, поэтому не поглощает бинарные операторы: `(int) x + y` → `((int)x)+y`. Разграничение с `(expr)`: `PrimaryExpr` (с `Parens`) — первая prefix-альтернатива, longest-match + тай-брейк «первый выигрывает».
+- T2.3.2: `(int) x.y` → **`(int)(x.y)`**, НЕ `((int)x).y` (операнд каста — unary-expression, включает member-access; Roslyn `ParseSubExpression(Cast)`→`ParsePrimaryExpression`). Поправка к допущению в задаче.

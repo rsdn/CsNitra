@@ -39,4 +39,19 @@ public static class Cs1ExpressionTestHelper
                 && parser.Parser.RecoveryDiagnostics.Count == 0,
             $"Expected parse failure or recovery diagnostics for: {input}");
     }
+
+    // Parses a bare Expression and returns its root node (for tree-shape assertions, e.g. proving
+    // that (int) x + y is ((int)x)+y and not (int)(x+y)).
+    public static ISyntaxNode ParseExpression(string input)
+    {
+        var parser = CreateParser();
+        var result = parser.Parse(input, "Expression", out _);
+
+        Assert.IsNull(parser.Parser.ErrorInfo);
+        Assert.IsTrue(result.TryGetSuccess(out var node, out var end), $"Expected success: {input}");
+        Assert.IsNotNull(node);
+        Assert.AreEqual(input.Length, end);
+        Assert.AreEqual(0, parser.Parser.RecoveryDiagnostics.Count);
+        return node;
+    }
 }

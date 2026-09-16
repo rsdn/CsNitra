@@ -83,6 +83,47 @@ public class Cs1RoslynExpressionTests
         Cs1ExpressionTestHelper.AssertParses("o is A[][] ? b : c");
     }
 
+    // === Касты C# 1.0 (T2.3.2), отобранные из Roslyn ===
+
+    [TestMethod]
+    public void Roslyn_ExpressionParsing_TestCast()
+    {
+        // Roslyn: ExpressionParsingTests.TestCast — `(a) b` → CastExpression (Type=`a`,
+        // Expression=`b`), 0 parse-ошибок. Неоднозначный тип (идентификатор) становится кастом,
+        // потому что после ) идёт операнд (CanFollowCast(identifier)=true).
+        // Адаптация: bare Expression (форма уже выражение).
+        Cs1ExpressionTestHelper.AssertParses("(a) b");
+    }
+
+    [TestMethod]
+    public void Roslyn_ForStatement_VariousExpressions_Cast()
+    {
+        // Roslyn: ForStatementParsingTest.TestVariousExpressions_Cast — `for ((int)0;(int)0;(int)0);`,
+        // 0 parse-ошибок (CastExpression + PredefinedType/IntKeyword + NumericLiteral).
+        // Адаптация: for-инициализатор → bare Expression.
+        Cs1ExpressionTestHelper.AssertParses("(int)0");
+    }
+
+    [TestMethod]
+    public void Roslyn_ExpressionParsing_TestParenthesizedExpression()
+    {
+        // Roslyn: ExpressionParsingTests.TestParenthesizedExpression — `(goo)` →
+        // ParenthesizedExpression (НЕ каст), 0 parse-ошибок. После ) нет операнда каста
+        // (CanFollowCast(EOF)=false) → скобки.
+        // Адаптация: bare Expression (форма уже выражение).
+        Cs1ExpressionTestHelper.AssertParses("(goo)");
+    }
+
+    [TestMethod]
+    public void Roslyn_ForStatement_VariousExpressions_Parenthesized()
+    {
+        // Roslyn: ForStatementParsingTest.TestVariousExpressions_Parenthesized —
+        // `for ((a);(a);(a));`, 0 parse-ошибок (ParenthesizedExpression + IdentifierName).
+        // Неоднозначный (a) без операнда → скобки, не каст.
+        // Адаптация: for-инициализатор → bare Expression.
+        Cs1ExpressionTestHelper.AssertParses("(a)");
+    }
+
     // === Негативные (version purity / malformed), отобранные из Roslyn ===
 
     [TestMethod]
