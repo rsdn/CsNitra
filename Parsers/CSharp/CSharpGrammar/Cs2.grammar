@@ -147,3 +147,65 @@ StructDeclaration = Attributes? StructModifier* "struct" TypeName BaseList? Cons
 InterfaceDeclaration = Attributes? InterfaceModifier* "interface" TypeName BaseList? ConstraintClause+ InterfaceBody ";"?;
 
 DelegateDeclaration = Attributes? DelegateModifier* "delegate" Type TypeName "(" ParameterList? ")" ConstraintClause+ ";";
+
+// ============================================================================
+// T3.1.2 — C# 2.0 `var` (implicit typing) + anonymous methods.
+//
+// `var` is a PLAIN IDENTIFIER in C# 1.0 but a RESERVED KEYWORD in C# 2.0. It is therefore NOT
+// added to Cs1 ReservedKeyword (that would break C# 1.0, where `var` is a valid type/variable
+// name). Instead it is APPENDED to the merged ReservedKeyword here (T0.3 merge semantics), so the
+// merged ReservedKeyword reserves `var` only at version 2+.
+//   * v1 (Cs1 only): `var` is not reserved -> a valid TypeName (`!ReservedKeyword Identifier`) ->
+//     `var x = 5;` parses as a *typed* declaration whose type is `var`.
+//   * v2 (Cs1+Cs2): `var` is reserved -> not a TypeName -> not a Type -> the Cs1
+//     LocalVariableDeclaration (Type-based) cannot start with `var`; the Cs2 `"var"` alternative
+//     (REQUIRED-new-construct) matches instead. Mutually exclusive, no tie.
+//
+// Anonymous methods are EXPRESSIONS (Roslyn ParseAnonymousMethodExpression, LanguageParser.cs:13734):
+//   `delegate` + optional `(params)` + `{ block }`. They are added to Primary (append, the same
+//   pattern Cs11 uses for raw strings). Disambiguation with DelegateDeclaration is by CONTEXT: an
+//   anonymous method is a Primary (parsed only in expression position), a delegate declaration is a
+//   TypeDeclaration (parsed only in namespace/class-member position). After `delegate`, a type
+//   identifier leads to a declaration; `{` or `(` leads to an anonymous method. The two never
+//   compete at the same position (no equal-length tie).
+//
+// CS2-only: no `async`/`partial`/`static` anonymous-function modifiers (CS5/CS2-modifier/CS8), no
+// default parameter values (`delegate (int x = 0)`, a binder concern handled by Parameter — out of
+// scope here), no lambdas (CS3, T3.2).
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp/Portable/Parser/LanguageParser.cs):
+//   ParseAnonymousMethodExpression (13734) -> worker (13743): eat DelegateKeyword, optional
+//   ParseParenthesizedParameterList (4750) when next is "(", then required ParseBlock.
+//   ParseParameter (4938): modifiers + ParseType + identifier (the untyped `x` form is a
+//   binder/version concern — implicit-typed anonymous-method parameters are C# 4.0; the parser
+//   accepts the syntactic form, parser-vs-binder split).
+//   Syntax tests: ExpressionParsingTests.cs:1953 (typed) / :1984 (empty list) / :2014 (no list);
+//   DeclarationParsingTests.cs:12669-12670 (var + anonymous method), :12787 (ref param).
+
+// === `var` reservation (version-purity). Re-declares Cs1 ReservedKeyword; APPENDS "var". ===
+ReservedKeyword =
+    | "var";
+
+// === `var` local variable declaration (C# 2.0 implicit typing). Re-declares Cs1
+// LocalVariableDeclaration; the Cs2 alternative REQUIRES the "var" literal (REQUIRED-new-
+// construct), mutually exclusive with the Cs1 Type-based alternative (at v2 var is not a Type).
+// Roslyn ParseLocalDeclarationStatement (LanguageParser.cs:10482). `var x;` (no initializer)
+// parses at the syntax level — a binder error CS0815 in real C#. ===
+LocalVariableDeclaration = "var" VariableDeclarator ("," VariableDeclarator)* ";";
+
+// === Anonymous method (C# 2.0 expression). Re-declares Primary (append, as Cs11 does for raw
+// strings). `delegate` + optional parameter list + block. Roslyn ParseAnonymousMethodExpression. ===
+Primary =
+    | AnonymousMethod = "delegate" AnonymousMethodParameterList? Block;
+
+// Anonymous method parameter list: "(" (param,)* ")" — empty parens allowed (`delegate () { }`).
+// Roslyn ParseParenthesizedParameterList (LanguageParser.cs:4750), requireOneElement:false.
+AnonymousMethodParameterList = "(" (AnonymousMethodParameter; ",")* ")";
+
+// Anonymous method parameter: explicitly typed (`int x`) OR untyped name (`x`). Named union (the
+// meta-grammar forbids `|` inside a group). Longest-match: `int x` -> typed (untyped fails: int is
+// reserved, not a TypeName); `x` -> untyped (typed fails: needs a 2nd name); `Foo x` -> typed
+// (longer than the untyped `Foo`).
+AnonymousMethodParameter =
+    | AnonymousMethodTypedParameter = ParameterModifier* Type TypeName
+    | AnonymousMethodUntypedParameter = TypeName;
