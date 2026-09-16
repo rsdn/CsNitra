@@ -708,7 +708,16 @@ Primary =
     // T2.3.1: self-contained primary units (Roslyn ParsePrimaryExpressionWithoutPostfix).
     | NewExpr = "new" NewBody
     | SizeOf  = "sizeof" "(" Type ")"
-    | TypeOf  = "typeof" "(" Type ")";
+    | TypeOf  = "typeof" "(" Type ")"
+    // T2.3.4: checked/unchecked expressions (Roslyn ParseCheckedOrUncheckedExpression,
+    // LanguageParser.cs:12677-12689). `checked ( expr )` / `unchecked ( expr )` — self-contained
+    // primary units (like Parens). The inner Expression is a FULL TDOPP expression (Roslyn
+    // ParseExpressionForParenthesizedConstruct → ParseExpressionCore), so `checked (x + y * z)`
+    // checks the whole `x + y * z`. Leading tokens `checked`/`unchecked` are reserved keywords
+    // (ReservedKeyword), distinct from Parens (which starts with "(") → no equal-length tie.
+    // Precedence: primary (highest); `checked (x) + 1` → (checked (x)) + 1 (root Add).
+    | CheckedExpr   = "checked"   "(" Expression ")"
+    | UncheckedExpr = "unchecked" "(" Expression ")";
 
 PostfixOp =
     | MemberAccess = "." Identifier

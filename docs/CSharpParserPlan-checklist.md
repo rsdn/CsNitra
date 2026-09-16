@@ -40,7 +40,7 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
   - [✅] T2.3.1 `new` (object/array creation) + `is`/`as` (type test в TDOPP-таблице) + `sizeof`/`typeof` + тесты (фича + Roslyn-отбор)
   - [✅] T2.3.2 Приведение `(Type) expr` (разборность cast vs parens — см. Deviations) + тесты
   - [✅] T2.3.3 Дефект D2: predefined-типы как начало Expression (`int.Parse()`, `string.Format()`) — уточнить guard в `Primary` (разрешить type-name starts, не все reserved words) + тесты
-  - [ ] T2.3.4 Гэп: `checked (expr)` / `unchecked (expr)` как ВЫРАЖЕНИЯ (напр. `int w = checked (x + y);`) — statement-форма сделана в T2.2.3, но expression-форма ещё не в `Expression` (доделать, если потребуется в T2.1)
+  - [✅] T2.3.4 Гэп: `checked (expr)` / `unchecked (expr)` как ВЫРАЖЕНИЯ (напр. `int w = checked (x + y);`) — expression-форма добавлена в `Primary` (`CheckedExpr`/`UncheckedExpr`); statement-форма — T2.2.3 + тесты
 - [✅] T2.2 Операторы: `Block` + if/while/do-while/for/foreach/switch/try/using/lock/checked/return/goto/throw/block/empty/declaration + тесты
   - [✅] T2.2.1 `Block` + empty + expression-stmt + local-variable-declaration + return/throw/break/continue/goto/labels + тесты
   - [✅] T2.2.2 if/while/do-while/for/foreach + тесты

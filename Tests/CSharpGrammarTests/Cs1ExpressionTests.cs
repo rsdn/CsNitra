@@ -581,4 +581,120 @@ public class Cs1ExpressionTests
         // Дженерик-каст — CS2, вне C# 1.0: < не является частью Type → каст/скобки не парсятся.
         Cs1ExpressionTestHelper.AssertFails("(Foo<int>) x");
     }
+
+    // === checked / unchecked expressions (T2.3.4): checked ( expr ) / unchecked ( expr ) ===
+    // Roslyn: checked/unchecked — первичные выражения (ParsePrimaryExpressionWithoutPostfix,
+    // LanguageParser.cs:11966-11968 → ParseCheckedOrUncheckedExpression, 12677-12689). Внутреннее
+    // выражение — полное (ParseExpressionForParenthesizedConstruct → ParseExpressionCore).
+    // checked/unchecked-выражения — C# 1.0.
+
+    [TestMethod]
+    public void CheckedExpr_AdditiveInner_Succeeds()
+    {
+        // checked (x + y) — внутреннее выражение с бинарным оператором.
+        Cs1ExpressionTestHelper.AssertParses("checked (x + y)");
+    }
+
+    [TestMethod]
+    public void CheckedExpr_Simple_Succeeds()
+    {
+        // checked (x) — минимальная форма.
+        Cs1ExpressionTestHelper.AssertParses("checked (x)");
+    }
+
+    [TestMethod]
+    public void CheckedExpr_FullPrecedenceInner_Succeeds()
+    {
+        // checked (x + y * z) — внутреннее выражение парсится с полным приоритетом (скобки
+        // ограничивают checked-выражение: проверяется всё x + y * z).
+        Cs1ExpressionTestHelper.AssertParses("checked (x + y * z)");
+    }
+
+    [TestMethod]
+    public void UncheckedExpr_MultiplicativeInner_Succeeds()
+    {
+        // unchecked (a * b) — множительное внутреннее выражение.
+        Cs1ExpressionTestHelper.AssertParses("unchecked (a * b)");
+    }
+
+    [TestMethod]
+    public void UncheckedExpr_NestedChecked_Succeeds()
+    {
+        // unchecked (checked (x)) — вложенные checked/unchecked.
+        Cs1ExpressionTestHelper.AssertParses("unchecked (checked (x))");
+    }
+
+    [TestMethod]
+    public void CheckedExpr_InAdditive_Succeeds()
+    {
+        // checked (x) + 1 → (checked (x)) + 1: checked — первичное (high precedence).
+        Cs1ExpressionTestHelper.AssertParses("checked (x) + 1");
+    }
+
+    [TestMethod]
+    public void CheckedExpr_InDeclaration_Succeeds()
+    {
+        // int w = checked (x + y); — checked-выражение как инициализатор (statement-контекст,
+        // start rule "Block").
+        Cs1StatementTestHelper.AssertParses("{ int w = checked (x + y); }");
+    }
+
+    // === Shape: checked связывает ЖЁСТЧЕ бинарных (T2.3.4) ===
+
+    [TestMethod]
+    public void Precedence_CheckedBindsTighterThanAdditive_Shape()
+    {
+        // checked (x) + 1 → (checked (x)) + 1, НЕ checked (x + 1) (невозможно: ) замыкает x).
+        // Корень — Add, левый операнд — checked-выражение (возможно, обёрнутое в PrimaryExpr).
+        var node = Cs1ExpressionTestHelper.ParseExpression("checked (x) + 1");
+        var add = node as SeqNode
+            ?? throw new InvalidOperationException($"Expected SeqNode root, got {node?.GetType().Name}");
+        Assert.AreEqual("Add", add.Kind);
+        var left = add.Elements[0];
+        var checkedNode = left.Kind == "CheckedExpr"
+            ? left
+            : (left as SeqNode)?.Elements[0]
+              ?? throw new InvalidOperationException($"Expected CheckedExpr operand, got {left.Kind}");
+        Assert.AreEqual("CheckedExpr", checkedNode.Kind);
+    }
+
+    // === Roslyn-отбор: statement-контекст (T2.3.4) ===
+
+    [TestMethod]
+    public void CheckedExpr_StatementContext_ExpressionStatement()
+    {
+        // Roslyn ParseCheckedStatement (LanguageParser.cs:9511-9514): `checked ( ... )` в
+        // statement-позиции парсится как ExpressionStatement (НЕ CheckedStatement).
+        Assert.AreEqual("ExpressionStatement", Cs1StatementTestHelper.FirstStatementKind("{ checked (x + y); }"));
+    }
+
+    // === Невалидные checked/unchecked (T2.3.4) ===
+
+    [TestMethod]
+    public void Invalid_CheckedNoParens_Fails()
+    {
+        // checked x + y — без скобок: checked-выражение требует "(" Expression ")".
+        Cs1ExpressionTestHelper.AssertFails("checked x + y");
+    }
+
+    [TestMethod]
+    public void Invalid_CheckedEmptyParens_Fails()
+    {
+        // checked () — пустые скобки: внутреннее Expression отсутствует.
+        Cs1ExpressionTestHelper.AssertFails("checked ()");
+    }
+
+    [TestMethod]
+    public void Invalid_CheckedUnclosedParen_Fails()
+    {
+        // checked (x — незакрытая скобка.
+        Cs1ExpressionTestHelper.AssertFails("checked (x");
+    }
+
+    [TestMethod]
+    public void Invalid_CheckedSemicolon_Fails()
+    {
+        // checked; — после checked ни "(" ни выражения → не выражение.
+        Cs1ExpressionTestHelper.AssertFails("checked;");
+    }
 }
