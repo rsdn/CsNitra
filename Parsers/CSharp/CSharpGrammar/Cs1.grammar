@@ -296,6 +296,12 @@ Expression =
     | Greater       = Expression ">"  Expression : Relational
     | LessEq        = Expression "<=" Expression : Relational
     | GreaterEq     = Expression ">=" Expression : Relational
+    // T2.3.1: is/as — RHS is a Type (not Expression). Postfix precedence comes from the first
+    // element (ReqRef Expression : Relational) while the RHS is a plain Ref("Type") parsed at
+    // minPrecedence 0, so all Type postfix ranks (TypeArray/TypePointer) apply. Same
+    // first-element-ReqRef pattern as Type's own postfixes (above). Roslyn: Precedence.Relational.
+    | TypeIs        = Expression : Relational "is" Type
+    | TypeAs        = Expression : Relational "as" Type
     | Equal         = Expression "==" Expression : Equality
     | NotEqual      = Expression "!=" Expression : Equality
     | BitAnd        = Expression "&"  Expression : LogicalAnd
@@ -312,14 +318,20 @@ Primary =
     | "false"
     | "null"
     | "this"
-    | Identifier
+    // Reserved words are not identifiers (C# 1.0): without this guard `new`/`typeof`/`sizeof`
+    // would fall back to Identifier and swallow e.g. `typeof(int, int)` as an invocation.
+    | IdentifierName = !ReservedKeyword Identifier
     | StringLiteral
     | VerbatimStringLiteral
     | CharLiteral
     | DecInt  = DecimalIntegerLiteral IntegerSuffix?
     | HexInt  = HexIntegerLiteral  IntegerSuffix?
     | Real    = DecimalRealLiteral Exponent? RealSuffix?
-    | Parens  = "(" Expression ")";
+    | Parens  = "(" Expression ")"
+    // T2.3.1: self-contained primary units (Roslyn ParsePrimaryExpressionWithoutPostfix).
+    | NewExpr = "new" NewBody
+    | SizeOf  = "sizeof" "(" Type ")"
+    | TypeOf  = "typeof" "(" Type ")";
 
 PostfixOp =
     | MemberAccess = "." Identifier
@@ -327,3 +339,29 @@ PostfixOp =
     | Invocation   = "(" (Expression; ",")* ")"
     | PostInc      = "++"
     | PostDec      = "--";
+
+// === T2.3.1: new-экспрессии C# 1.0 (Roslyn ParseArrayOrObjectCreationExpression,
+// LanguageParser.cs:13383-13428). Две формы:
+//   array creation:  new BaseType [sizes] {initializer}?   (тип — массивный)
+//   object creation: new BaseType (argument-list)          (тип — немассивный)
+// C# 1.0: без object/collection-инициализаторов (CS3); array-инициализатор — C# 1.0.
+// `new T` без скобок/размеров/инициализатора — parse-ошибка (ERR_BadNewExpr, CS1526).
+NewBody =
+    | ArrayCreation  = NewBaseType NewArrayRank ArrayInitializer?
+    | ObjectCreation = NewBaseType ArgumentList;
+
+// Базовый тип для new: немассивный, не-указательный (new-указателя нет в C# 1.0).
+NewBaseType =
+    | PredefinedType
+    | QualifiedName;
+
+// Ранг-спецификатор в expression-контексте new: `[` + expression-list + `]` (размеры) или `[]`
+// (опущенный размер). В отличие от ArrayRankSpecifier (тип-контекст, только запятые) — здесь
+// размеры — полные выражения (Roslyn ParseArrayRankSpecifier, LanguageParser.cs:7860-7918).
+NewArrayRank = "[" (Expression; ",")* "]";
+
+// Array-инициализатор: `{` expression-list? `}` (C# 1.0).
+ArrayInitializer = "{" (Expression; ",")* "}";
+
+// Argument-list: `(` expression-list? `)` (пустой список допустим: `new Foo()`).
+ArgumentList = "(" (Expression; ",")* ")";

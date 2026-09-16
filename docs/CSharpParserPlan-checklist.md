@@ -32,9 +32,21 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 
 ## Этап 2 — C# 1.0: члены и тела
 
+Выполняется в порядке зависимостей (см. Deviations): **T2.3 (выражения) → T2.2 (операторы) → T2.1 (члены)**. Фундамент — временное TDOPP-правило `Expression` из T3.5.2 (уже есть полная таблица приоритетов, `Primary`, `PostfixOp`).
+
+- [ ] T2.3 Выражения C# 1: завершить временное `Expression` (TDOPP) — `new`, приведение, `is`/`as`, `sizeof`/`typeof` + тесты
+  - [✅] T2.3.1 `new` (object/array creation) + `is`/`as` (type test в TDOPP-таблице) + `sizeof`/`typeof` + тесты (фича + Roslyn-отбор)
+  - [ ] T2.3.2 Приведение `(Type) expr` (разборность cast vs parens — см. Deviations) + тесты
+- [ ] T2.2 Операторы: `Block` + if/while/do-while/for/foreach/switch/try/using/lock/checked/return/goto/throw/block/empty/declaration + тесты
+  - [ ] T2.2.1 `Block` + empty + expression-stmt + local-variable-declaration + return/throw/break/continue/goto/labels + тесты
+  - [ ] T2.2.2 if/while/do-while/for/foreach + тесты
+  - [ ] T2.2.3 switch (case/default/labels) + try-catch-finally + using/lock/checked/unchecked + тесты
 - [ ] T2.1 Члены: поля, свойства, методы, конструкторы, деструкторы, операторы, индексаторы, события, модификаторы, атрибуты + тесты
-- [ ] T2.2 Операторы/выражения-вызовы: if/while/for/foreach/switch/try/using/lock/check/return/goto/throw/block/empty + тесты
-- [ ] T2.3 Выражения C# 1: TDOPP-таблица приоритетов, литералы, `new`, приведение, `is`/`as`, `.`/`[]`/`()`, пре/постфиксы + тесты
+  - [ ] T2.1.1 Field + member-модификаторы + field-initializer + тесты
+  - [ ] T2.1.2 Property + accessors (get/set) + property-модификаторы + тесты
+  - [ ] T2.1.3 Method + constructor (+ `: base`/`: this`) + destructor + method-модификаторы + тесты
+  - [ ] T2.1.4 Operator + indexer + event + тесты
+  - [ ] T2.1.5 `ClassBody`/`StructBody`/`InterfaceBody` → member lists; base-list; version-purity + тесты
 
 ## Этап 3 — Версии CS2–CS14
 
@@ -102,3 +114,7 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 - T3.5.2: первая сессия субагента умерла (пустой результат, progress-файл-каркас); ретрай по состоянию на диске. Найден дефект: D=3 raw-дыры закрывались 4 скобками — опечатка была и в дизайне (§2.7), исправлена в реализации И в дизайн-документе (дыра уровня D закрывается D скобками). Убраны 2 отладочных теста.
 - T3.5.2: отклонения от дизайна (задокументированы в progress): `PostfixOp` через `SeparatedList` (не имена анонимных групп); `VerbatimInterpolatedPrefix` — отдельное правило (нет `|` внутри группы); char-литералы в `!`-предикатах → string-литералы (язык поддерживает только double-quoted).
 - **Этап 6**: подход отклонён от исходного дизайна плана. T6.1 (char-классы в языке CsNitra) и T6.2 (no-trivia маркер движка) **не реализованы как описано** — вместо них [Regex]-терминалы: regex-движок нативно поддерживает классы символов (`[^\{\}\\"]+`), а целые [Regex]-раны + правила грамматик обходят проблему post-terminal trivia-skip без изменения движка. Результат цели этапа достигнут (все строковые литералы декларативны, `StringLiteralScanner` удалён). Детали + задокументированные accept/reject-расхождения (D1–D7) — в `DeclarativeStringTerminals-checklist.md`.
+- **Этап 2**: порядок выполнения изменён на **T2.3 → T2.2 → T2.1** (в плане T2.1 → T2.2 → T2.3). Причина: члены (T2.1) содержат тела-блоки из операторов (T2.2), операторы содержат выражения (T2.3) — жёсткая зависимость «сверху вниз». Временное TDOPP-правило `Expression` (T3.5.2) уже содержит полную таблицу приоритетов, поэтому его завершение (T2.3) — естественный фундамент. Номера задач T2.1/T2.2/T2.3 сохранены за соответствующим содержанием (члены/операторы/выражения) для прослеживаемости.
+- T2.3.1: `new Foo` (без скобок/размеров/инициализатора) — NEGATIVE (в задании было positive): Roslyn `ERR_BadNewExpr` (CS1526). `new Foo()`/`new Foo(1,2)` — positive.
+- T2.3.1: механизм Type-операнда для `is`/`as` (RHS = Type, не Expression) — декларативно через self-recursive альтернативу `Expression : Relational "is" Type` (прецедент postfix берётся из первого элемента-ReqRef, RHS — plain `Ref("Type")` на prec 0). Тот же паттерн, что у postfix'ов самого `Type`. Без изменения движка.
+- T2.3.1: добавлен guard `IdentifierName = !ReservedKeyword Identifier` в `Primary` (иначе `new`/`typeof`/`sizeof` глотались бы как identifier).
