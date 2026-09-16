@@ -14,14 +14,15 @@
 - [✅] 1. Regex-текстовые раны: InterpolatedRegularText `[^\{\}\\"]+`, InterpolatedVerbatimText
       `[^\{\}"]+`, RawFormatText `[^}]*`; удалить императивные record/поле/фабрики и
       умерший `TryScanNonBraceQuoteRun` (CSharpTerminals.cs). Грамматики не трогаем.
-- [~] 2. StringLiteral + VerbatimStringLiteral → правила Cs1.grammar (в стиле
+- [✅] 2. StringLiteral + VerbatimStringLiteral → правила Cs1.grammar (в стиле
       `VerbatimInterpolatedStringLiteral`); новые терминалы StringEscape, StringText, NonQuoteText;
       удалить императивные терминалы строк.
-  - [✅] 2.1 Реализация: правила + [Regex]-терминалы (raw-строки), сборка CSharpGrammar — 0 ошибок,
-        паттерны проверены в generated-коде.
-  - [ ] 2.2 Тесты StringLiteral: переписать юнит-тесты терминала на парс-тесты правила
-        `StringLiteral` (start rule), по имени правила, без анализа грамматики.
-  - [ ] 2.3 Тесты VerbatimStringLiteral: то же для правила `VerbatimStringLiteral`.
+   - [✅] 2.1 Реализация: правила + [Regex]-терминалы (raw-строки), сборка CSharpGrammar — 0 ошибок,
+         паттерны проверены в generated-коде.
+   - [✅] 2.2 Тесты StringLiteral: парс-тесты правила `StringLiteral` (start rule) —
+         `StringLiteralRuleTests.cs` (plain: text/escapes/unicode/invalid/untagged/raw-newline).
+   - [✅] 2.3 Тесты VerbatimStringLiteral: парс-тесты правила `VerbatimStringLiteral` —
+         `StringLiteralRuleTests.cs` (verbatim: text/doubled-quotes/backslash/newlines/braces).
 - [✅] 3. RawStringLiteral → Cs11.grammar: итог — одно [Regex]-целое `RawString`
       (open-ран 3+, контент = кавычные части 1..2 + [^"], контент ≥ 1, close-ран 3+) +
       обёртка-правило `RawStringLiteral = RawString;` + альтернатива в Primary;
@@ -32,7 +33,12 @@
       не part-правила: внутри матча нет trivia-skip, accept/reject на уровне правила = как у
       императивных); InterpolatedRegularEscape → [Regex] (набор = StringEscape, D7);
       StringLiteralScanner.cs удалён (все методы мертвы).
-- [ ] 5. Финальный гейт: сборка решения, полный прогон тестов, ревизия diff, отчёт.
+- [✅] 5. Финальный гейт: сборка решения, полный прогон тестов, ревизия diff, отчёт.
+      - `dotnet build Nitra.sln` — 0 ошибок, 0 предупреждений.
+      - Полный прогон всех 4 тест-проекта: **621 total · 616 passed · 0 failed · 5 skipped**.
+      - Ревизия diff (HEAD~5..HEAD): нет TODO/FIXME/Debug/Console; `StringLiteralScanner.cs` удалён
+        (−246 строк), `CSharpTerminals.cs` сокращён, добавлены `StringLiteralRuleTests.cs`/
+        `RawStringLiteralRuleTests.cs`. Итог: ручной код матчинга строк не осталось.
 
 ## Deviations
 
