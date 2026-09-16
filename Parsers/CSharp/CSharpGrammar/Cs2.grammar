@@ -209,3 +209,54 @@ AnonymousMethodParameterList = "(" (AnonymousMethodParameter; ",")* ")";
 AnonymousMethodParameter =
     | AnonymousMethodTypedParameter = ParameterModifier* Type TypeName
     | AnonymousMethodUntypedParameter = TypeName;
+
+// ============================================================================
+// T3.1.3 — C# 2.0 `partial` modifier (class/struct/method) + `sealed override`.
+//
+// `partial` is a CONTEXTUAL KEYWORD in Roslyn (an IdentifierToken whose ContextualKind is
+// PartialKeyword; LanguageParser.cs:1324-1328 maps it to DeclarationModifiers.Partial in the generic
+// ParseModifiers loop). It is therefore NOT added to ReservedKeyword (T1.3.1 decision: modern Roslyn
+// treats it as contextual, mcs ISO_1 demotes it to an identifier, and it is merge-friendly —
+// append-only merging cannot remove an alternative from ReservedKeyword). Instead it is APPENDED to
+// the relevant Cs1 modifier unions (T0.3 merge semantics), so the merged modifiers accept `partial`
+// only at version 2+.
+//
+// Version-purity: `partial` is a plain identifier in C# 1.0 (not reserved, not a modifier), so at v1
+// `partial class C { }` / `partial struct S { }` / `partial void M();` REJECT (partial is not a
+// modifier and cannot start a declaration); at v2 the merged modifiers accept `partial` and they
+// PARSE. No Cs1 modification.
+//
+// Partial methods: a *declaration* `partial void M(int x);` (void, NO body, ends with `;`) and an
+// *implementation* `partial void M(int x) { }` (WITH a body). The Cs1 Method (Cs1:265) already allows
+// both: its MethodBody (Cs1:267) is the named union `| Block | ";"`. So once `partial` is a
+// MethodModifier BOTH forms parse via the Cs1 Method alternative — the `;` and `{` bodies
+// disambiguate inside MethodBody (different leading tokens, no tie). No re-declaration of Method is
+// needed. The CS2 void-only return-type restriction is a BINDER concern (Roslyn CS0759/CS8023), not a
+// parse concern: the parser accepts `partial int M();` syntactically (parser-vs-binder split).
+//
+// `sealed override`: `sealed` is a HARD keyword (SyntaxKindFacts.cs:974-975) and is ALREADY a Cs1
+// MethodModifier (Cs1:299). There is NO CSharpVersion gate for sealing an override method (a C# 1.0
+// feature), so `sealed override void M() { }` already parses at v1 (and v2) via the Cs1 Method
+// alternative — no Cs2 change required.
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp/Portable/Parser/LanguageParser.cs):
+//   ParseModifiers (1347) -> GetModifierExcludingScoped (1286-1344): PartialKeyword -> Partial
+//   (1318-1319 hard; 1324-1328 contextual). IsCurrentTokenDefinitelyPartialModifier (1637) gates
+//   `partial` on a following type/member-declaration start.
+//   Syntax tests: RoundTrippingTests.cs:1579 PartialMethodWithLanguageVersion2
+//   (`partial class P { partial void M(); }` parses cleanly at CSharp2);
+//   ParserErrorMessageTests.cs:5502 PartialMethodsVersionThree (`partial int Goo() { }` — non-void;
+//   the void-only restriction is a binder CS8023 at CSharp2, a parse-level success).
+
+// === `partial` modifier (T3.1.3): re-declare Cs1 modifier unions, APPEND "partial". ===
+// T0.3 merge: re-declaring a rule name APPENDS alternatives. The Cs1 ClassDeclaration/StructDeclaration/
+// Method use these merged modifier unions, so no re-declaration of the declarations is needed.
+// `"partial"` is a WordLiteral (RuleGenerator.cs:77-79) and matches whole-word (partial, not partialX).
+ClassModifier =
+    | "partial";
+
+StructModifier =
+    | "partial";
+
+MethodModifier =
+    | "partial";

@@ -62,7 +62,7 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
     - [✅] T3.1.1.1 Generic-имена (`C<T>`, `C<T,U>`, qualified `N.List<T>`) + type-parameter lists на type-декларациях (class/struct/interface/delegate) + variance (`in`/`out`) → `Cs2.grammar` + тесты
     - [✅] T3.1.1.2 Method type-параметры (`void M<T>()`) + constraints (`where T : struct/IBase/new()/U`) + тесты
   - [✅] T3.1.2 `var` (implicit typing) + анонимные методы (`delegate T D(...) { }`) + тесты
-  - [ ] T3.1.3 `partial` (partial class/struct/method) + `sealed override` + тесты
+  - [✅] T3.1.3 `partial` (partial class/struct/method) + `sealed override` + тесты
 - [ ] T3.2 CS3: лямбды, auto-свойства, object/collection initializers, extension methods, анонимные типы, LINQ-запросы
 - [ ] T3.3 CS4: `dynamic`, именованные/опциональные аргументы, `params`-массив, constraint `new`
 - [ ] T3.4 CS5: `async`/`await`
