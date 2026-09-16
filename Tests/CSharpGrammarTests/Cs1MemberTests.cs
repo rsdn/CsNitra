@@ -252,16 +252,18 @@ public class Cs1MemberTests
     }
 
     [TestMethod]
-    public void Property_NotMemberYet_Fails()
+    public void Property_AutoGetterInClass_Fails()
     {
-        // Property is not a member yet (T2.1.2); `int P { get; }` matches no ClassMember.
+        // Property IS a member (T2.1.2), but a class accessor requires a block body: `int P { get; }`
+        // is an auto-getter (CS3, no auto-properties in C# 1.0) and must reject. See Cs1PropertyTests.
         Cs1RoslynTestHelper.AssertFails("class C { int P { get; } }");
     }
 
     [TestMethod]
-    public void AutoProperty_NotMemberYet_Fails()
+    public void Property_AutoPropertyInClass_Fails()
     {
-        // Auto-property (CS3) and Property not a member yet (T2.1.2).
+        // Auto-property in a class (CS3) — class/struct accessors require block bodies.
+        // See Cs1PropertyTests.
         Cs1RoslynTestHelper.AssertFails("class C { int P { get; set; } }");
     }
 
