@@ -18,28 +18,30 @@ public class CSharpVersionInfrastructureTests
     }
 
     [TestMethod]
-    public void LoadGrammarUpTo_6_YieldsCs1Cs2Cs3Cs4Cs6InOrder()
+    public void LoadGrammarUpTo_6_YieldsCs1Cs2Cs3Cs4Cs5Cs6InOrder()
     {
         var grammars = EmbeddedGrammar.LoadGrammarUpTo(6);
-        Assert.AreEqual(5, grammars.Count);
-        Assert.AreEqual("Cs1.grammar", grammars[0].Path);
-        Assert.AreEqual("Cs2.grammar", grammars[1].Path);
-        Assert.AreEqual("Cs3.grammar", grammars[2].Path);
-        Assert.AreEqual("Cs4.grammar", grammars[3].Path);
-        Assert.AreEqual("Cs6.grammar", grammars[4].Path);
-    }
-
-    [TestMethod]
-    public void LoadGrammarUpTo_11_YieldsCs1Cs2Cs3Cs4Cs6Cs11InOrder()
-    {
-        var grammars = EmbeddedGrammar.LoadGrammarUpTo(11);
         Assert.AreEqual(6, grammars.Count);
         Assert.AreEqual("Cs1.grammar", grammars[0].Path);
         Assert.AreEqual("Cs2.grammar", grammars[1].Path);
         Assert.AreEqual("Cs3.grammar", grammars[2].Path);
         Assert.AreEqual("Cs4.grammar", grammars[3].Path);
-        Assert.AreEqual("Cs6.grammar", grammars[4].Path);
-        Assert.AreEqual("Cs11.grammar", grammars[5].Path);
+        Assert.AreEqual("Cs5.grammar", grammars[4].Path);
+        Assert.AreEqual("Cs6.grammar", grammars[5].Path);
+    }
+
+    [TestMethod]
+    public void LoadGrammarUpTo_11_YieldsCs1Cs2Cs3Cs4Cs5Cs6Cs11InOrder()
+    {
+        var grammars = EmbeddedGrammar.LoadGrammarUpTo(11);
+        Assert.AreEqual(7, grammars.Count);
+        Assert.AreEqual("Cs1.grammar", grammars[0].Path);
+        Assert.AreEqual("Cs2.grammar", grammars[1].Path);
+        Assert.AreEqual("Cs3.grammar", grammars[2].Path);
+        Assert.AreEqual("Cs4.grammar", grammars[3].Path);
+        Assert.AreEqual("Cs5.grammar", grammars[4].Path);
+        Assert.AreEqual("Cs6.grammar", grammars[5].Path);
+        Assert.AreEqual("Cs11.grammar", grammars[6].Path);
     }
 
     [TestMethod]
@@ -52,6 +54,19 @@ public class CSharpVersionInfrastructureTests
         Assert.AreEqual("Cs2.grammar", grammars[1].Path);
         Assert.AreEqual("Cs3.grammar", grammars[2].Path);
         Assert.AreEqual("Cs4.grammar", grammars[3].Path);
+    }
+
+    [TestMethod]
+    public void LoadGrammarUpTo_5_YieldsCs1Cs2Cs3Cs4Cs5InOrder()
+    {
+        // Cs5 exists (T3.4); all files <= 5 are included (Cs1, Cs2, Cs3, Cs4, Cs5).
+        var grammars = EmbeddedGrammar.LoadGrammarUpTo(5);
+        Assert.AreEqual(5, grammars.Count);
+        Assert.AreEqual("Cs1.grammar", grammars[0].Path);
+        Assert.AreEqual("Cs2.grammar", grammars[1].Path);
+        Assert.AreEqual("Cs3.grammar", grammars[2].Path);
+        Assert.AreEqual("Cs4.grammar", grammars[3].Path);
+        Assert.AreEqual("Cs5.grammar", grammars[4].Path);
     }
 
     [TestMethod]
