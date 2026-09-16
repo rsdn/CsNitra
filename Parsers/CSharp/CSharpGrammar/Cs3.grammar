@@ -1,0 +1,77 @@
+// Cs3.grammar — C# 3.0: lambda expressions (T3.2.1).
+//
+// Lambdas are EXPRESSIONS (Roslyn ParseLambdaExpression, LanguageParser.cs:13891), added to Primary
+// (append, the same pattern Cs2 uses for AnonymousMethod and Cs11 for raw strings). A lambda is:
+//   [params] "=>" (Expression | Block)
+// where params is a simple (unparenthesized) identifier OR a parenthesized (possibly empty) list of
+// typed/untyped parameters, and the body is an expression OR a block (disambiguated by the leading
+// `{`). CS3 only: no async (CS5), no static (CS8), no ref/out/params/in/readonly params
+// (CS7.2+/CS8/CS9), no explicit return type, no attributed lambdas.
+//
+// `=>` TOKENIZATION: the fat arrow is a SINGLE literal (no new terminal). CSharpTerminals.cs defines
+// NO multi-char operator terminals — operators are grammar LITERALS matched directly against the raw
+// input (Literal.TryMatch, ExtensibleParser/Rules.cs:76, a StartsWith on the text). Multi-char
+// operators already work as single literals in Cs1: OperatorSymbol has "==" / "!=" / "++" / "--"
+// (Cs1:368-371) and the Expression rule uses "<=" / ">=" / "&&" / "||" (Cs1:656-670). So "=>" matches
+// the 2-char sequence directly; there is no `=`-then-`>` split. Roslyn confirms `=>` is one token
+// (SyntaxKind.EqualsGreaterThanToken, LanguageParser.cs:13919/13934).
+//
+// Mutual exclusivity (longest-match, no equal-length tie):
+//   * lambda vs plain identifier: `x => ...` — IdentifierName matches `x` (stops before "=>");
+//     LambdaExpression matches `x => ...` (longer). Longest-match -> lambda. A bare `x` (no "=>") ->
+//     IdentifierName only (LambdaExpression fails: no "=>"). No tie.
+//   * lambda vs parenthesized expression: `(x) => ...` — Parens matches `(x)` (stops after ")");
+//     LambdaExpression matches `(x) => ...` (longer). Longest-match -> lambda. A bare `(x)` (no "=>")
+//     -> Parens only (LambdaExpression fails: no "=>"). No tie.
+//   * lambda body expression vs block: `{` -> Block (Expression fails: "{" is not an expression
+//     start); else -> Expression (Block fails: no "{"). Different leading tokens, mutually exclusive,
+//     no tie.
+//
+// TDOPP body stops at separators: the expression body is a full TDOPP Expression (minPrecedence 0).
+// It STOPS at ")" and "}" (neither is a binary operator, so no postfix applies). It DOES consume a
+// following "," (the Comma postfix, binding power 1, is applicable at minPrecedence 0) — this is the
+// EXISTING grammar behavior for any top-level Expression in an argument list (e.g. `new Foo(1, 2)`
+// parses `1, 2` as one comma expression), not a lambda-specific defect, and it does not cause a parse
+// failure for the positive cases (the whole input is still consumed). See the progress doc.
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp/Portable/Parser/LanguageParser.cs):
+//   ParseLambdaExpression (13891) -> worker (13903): "(" -> ParseLambdaParameterList +
+//   EqualsGreaterThanToken + ParseLambdaBody; else identifier + EqualsGreaterThanToken + ParseLambdaBody.
+//   ParseLambdaBody (13945): "{" -> ParseBlock, else ParsePossibleRefExpression.
+//   ParseLambdaParameterList (13950): "(" (ParseLambdaParameter,)* ")" (requireOneElement:false).
+//   ParseLambdaParameter (14007): modifiers (ref/out/params/in/readonly — version-gated, not CS3) +
+//   optional type (ShouldParseLambdaParameterType 14038) + identifier.
+//   IsPossibleLambdaExpression (13054): the disambiguation checks PeekToken(1) == EqualsGreaterThanToken.
+//   Syntax tests: ExpressionParsingTests.cs:2039 (a => b), :2075 (a => { }), :2095 (() => b),
+//   :2135 (() => { }), :2157 ((a) => b), :2181 ((a, a2) => b), :2208 ((T a) => b).
+//
+// CS3-only: no async (CS5), no static (CS8), no ref/out params (CS7.2/CS9), no in/readonly params
+// (CS7.2/CS8), no params keyword (CS9), no explicit return type, no attributed lambdas.
+
+// === Lambda expression (C# 3.0). Re-declares Primary (append, as Cs2 does for AnonymousMethod and
+// Cs11 for raw strings). `=>` is a single literal (see the `=>` tokenization note above). ===
+Primary =
+    | LambdaExpression = LambdaParameters "=>" LambdaBody;
+
+// Lambda parameters: a simple (unparenthesized) true identifier OR a parenthesized (possibly empty)
+// list. Named union (the meta-grammar forbids `|` inside a group). Longest-match disambiguation:
+// `x` -> SimpleLambdaParameter (LambdaParameterList fails: no "("); `(x)` -> LambdaParameterList
+// (SimpleLambdaParameter fails: "(" is not an identifier). Roslyn ParseLambdaExpression (13916-13941).
+LambdaParameters =
+    | SimpleLambdaParameter = !ReservedKeyword Identifier
+    | LambdaParameterList = "(" (LambdaParameter; ",")* ")";
+
+// A single lambda parameter (CS3): explicitly typed (`int x`) OR an untyped name (`x`). No modifiers
+// (ref/out/params/in/readonly are CS7.2+/CS8/CS9 — Roslyn ParseLambdaParameter 14007, version-gated).
+// Named union. Longest-match: `int x` -> typed (untyped fails: int is reserved, not a TypeName);
+// `x` -> untyped (typed fails: needs a 2nd name); `Foo x` -> typed (longer than the untyped `Foo`).
+LambdaParameter =
+    | LambdaTypedParameter = Type TypeName
+    | LambdaUntypedParameter = TypeName;
+
+// Lambda body: an expression OR a block. Disambiguated by the leading token: `{` -> Block, else ->
+// Expression (Roslyn ParseLambdaBody 13945). A `{` is not an expression start (no Primary alternative
+// begins with `{`), so the two alternatives are mutually exclusive (no tie).
+LambdaBody =
+    | Expression
+    | Block;

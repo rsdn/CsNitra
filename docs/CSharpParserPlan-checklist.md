@@ -57,13 +57,18 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 Механизм слияния (T0.3) готов и покрыт тестами: тексты конкатенируются в порядке списка файлов, повторяющиеся имена правил = ДОБАВЛЕНИЕ альтернатив (не замена), `precedence`-списки мерджатся по якорю, TDOPP пересобирается один раз. Каждая версия = новый файл `CsN.grammar` + `<EmbeddedResource>` + тесты. См. Deviations (инфраструктура T3.0).
 
 - [✅] T3.0 Инфраструктура версионности: хелпер `LoadGrammarUpTo(int version)` (слияние Cs1→CsN по возрастанию) + общий тест-хелпер `CreateParser(int version)`; enables version-purity тесты (parse at N, reject at N-1)
-- [ ] T3.1 CS2: дженерики + constraints, `var`, анонимные методы, `partial`, sealed override
+- [✅] T3.1 CS2: дженерики + constraints, `var`, анонимные методы, `partial`, sealed override
   - [✅] T3.1.1 Дженерики: type-параметры, generic-имена (`C<T>`, `C<T,U>`), variance, constraints (`where T : struct/IBase/new()/U`) → `Cs2.grammar` + тесты
     - [✅] T3.1.1.1 Generic-имена (`C<T>`, `C<T,U>`, qualified `N.List<T>`) + type-parameter lists на type-декларациях (class/struct/interface/delegate) + variance (`in`/`out`) → `Cs2.grammar` + тесты
     - [✅] T3.1.1.2 Method type-параметры (`void M<T>()`) + constraints (`where T : struct/IBase/new()/U`) + тесты
   - [✅] T3.1.2 `var` (implicit typing) + анонимные методы (`delegate T D(...) { }`) + тесты
   - [✅] T3.1.3 `partial` (partial class/struct/method) + `sealed override` + тесты
 - [ ] T3.2 CS3: лямбды, auto-свойства, object/collection initializers, extension methods, анонимные типы, LINQ-запросы
+  - [✅] T3.2.1 Лямбды (`x => x + 1`, `() => ...`, `(int x) => ...`, statement-body `x => { ... }`) → `Cs3.grammar` + тесты
+  - [ ] T3.2.2 Object initializers (`new C { X = 5 }`) + collection initializers (`new List<int> { 1, 2, 3 }`) + анонимные типы (`new { X = 5 }`) → `Cs3.grammar` + тесты
+  - [ ] T3.2.3 Auto-свойства (`int P { get; set; }`, `{ get; }`, initializer `= ...`) → `Cs3.grammar` + тесты
+  - [ ] T3.2.4 Extension methods (`static class E { static void M(this int x) { } }`) → `Cs3.grammar` + тесты
+  - [ ] T3.2.5 LINQ query expressions (`from x in xs select x`, `where`/`orderby`/`join`/`let`/`group`) → `Cs3.grammar` + тесты
 - [ ] T3.3 CS4: `dynamic`, именованные/опциональные аргументы, `params`-массив, constraint `new`
 - [ ] T3.4 CS5: `async`/`await`
 - [ ] T3.5 CS6: `?.`, expression-bodied члены, `nameof`, binary literals (интерполяция — T3.5.1–T3.5.2, выполняется раньше остальных пунктов плана)
