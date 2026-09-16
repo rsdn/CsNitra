@@ -77,4 +77,40 @@ public static class Cs1StatementTestHelper
     // Returns "some" if the IfStatement carries an else (Elements[5] is a SomeNode), else "none".
     public static string IfElsePresent(SeqNode ifStatement) =>
         ifStatement.Elements[5] is SomeNode ? "some" : "none";
+
+    // UsingStatement = "using" "(" ResourceAcquisition ")" Statement → SeqNode Elements:
+    // [0]using [1]( [2]ResourceAcquisition [3]) [4]Statement. Returns the ResourceAcquisition Kind
+    // ("ResourceDeclaration" vs "Expression") — the using decl-vs-expr disambiguation (T2.2.3).
+    public static string UsingResourceKind(string input)
+    {
+        var usingStatement = FirstStatementNode(input) as SeqNode
+            ?? throw new InvalidOperationException($"Expected UsingStatement SeqNode, got {FirstStatementNode(input)?.GetType().Name}");
+        return usingStatement.Elements[2].Kind;
+    }
+
+    // SwitchStatement = "switch" "(" Expression ")" "{" SwitchSection* "}" → SeqNode Elements:
+    // [0]switch [1]( [2]expr [3]) [4]{ [5]SwitchSection* [6]}. Returns the number of sections.
+    public static int SwitchSectionCount(string input)
+    {
+        var switchStatement = FirstStatementNode(input) as SeqNode
+            ?? throw new InvalidOperationException($"Expected SwitchStatement SeqNode, got {FirstStatementNode(input)?.GetType().Name}");
+        var sections = switchStatement.Elements[5] as SeqNode
+            ?? throw new InvalidOperationException($"Expected sections node, got {switchStatement.Elements[5].GetType().Name}");
+        return sections.Elements.Count;
+    }
+
+    // SwitchSection = SwitchLabel+ Statement* → SeqNode Elements: [0]SwitchLabel+ [1]Statement*.
+    // Returns the number of labels in the FIRST section (stacked-labels check: `case 1: case 2:` = 2).
+    public static int SwitchFirstSectionLabelCount(string input)
+    {
+        var switchStatement = FirstStatementNode(input) as SeqNode
+            ?? throw new InvalidOperationException($"Expected SwitchStatement SeqNode, got {FirstStatementNode(input)?.GetType().Name}");
+        var sections = switchStatement.Elements[5] as SeqNode
+            ?? throw new InvalidOperationException($"Expected sections node, got {switchStatement.Elements[5].GetType().Name}");
+        var section = sections.Elements[0] as SeqNode
+            ?? throw new InvalidOperationException($"Expected section node, got {sections.Elements[0].GetType().Name}");
+        var labels = section.Elements[0] as SeqNode
+            ?? throw new InvalidOperationException($"Expected labels node, got {section.Elements[0].GetType().Name}");
+        return labels.Elements.Count;
+    }
 }

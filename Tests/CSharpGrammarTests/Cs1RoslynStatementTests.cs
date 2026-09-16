@@ -196,4 +196,89 @@ public class Cs1RoslynStatementTests
         Assert.AreEqual("IfStatement", inner.Kind);
         Assert.AreEqual("some", Cs1StatementTestHelper.IfElsePresent(inner), "inner if must own the else");
     }
+
+    // === T2.2.3: сложные операторы (StatementParsingTests.cs, C:\RSDN\roslyn) ===
+    // Адаптация: обёрнуто в Block; case-метки — константы (C# 1.0: Roslyn парсит expression, константность —
+    // на биндинге; здесь `Constant`); `var`/using-декларация (C# 8) — вне скоупа.
+
+    [TestMethod]
+    public void Roslyn_SwitchStatement_Parses()
+    {
+        // StatementParsingTests.TestSwitch (2116) → "switch (a) { }" (пустой switch).
+        Cs1StatementTestHelper.AssertParses("{ switch (a) { } }");
+    }
+
+    [TestMethod]
+    public void Roslyn_SwitchWithCase_Parses()
+    {
+        // StatementParsingTests.TestSwitchWithCase (2141) → "switch (a) { case b:; }".
+        // АДАПТАЦИЯ: `b` — идентификатор; C# 1.0 case-метка — константа → "1".
+        Cs1StatementTestHelper.AssertParses("{ switch (a) { case 1: ; } }");
+    }
+
+    [TestMethod]
+    public void Roslyn_SwitchWithMultipleLabels_Parses()
+    {
+        // StatementParsingTests.TestSwitchWithMultipleLabelsOnOneCase (2256) → "switch (a) { case b: case c:; }".
+        // АДАПТАЦИЯ: константы "1"/"2" вместо идентификаторов; стек меток = ОДНА секция.
+        Cs1StatementTestHelper.AssertParses("{ switch (a) { case 1: case 2: ; } }");
+    }
+
+    [TestMethod]
+    public void Roslyn_TryCatch_Parses()
+    {
+        // StatementParsingTests.TestTryCatch (1223) → "try { } catch(T e) { }".
+        Cs1StatementTestHelper.AssertParses("{ try { } catch (T e) { } }");
+    }
+
+    [TestMethod]
+    public void Roslyn_TryCatchAll_Parses()
+    {
+        // StatementParsingTests.TestTryCatchWithNoExceptionDeclaration (1282) → "try { } catch { }".
+        // catch-all валиден (Roslyn Declaration == null).
+        Cs1StatementTestHelper.AssertParses("{ try { } catch { } }");
+    }
+
+    [TestMethod]
+    public void Roslyn_TryCatchMultipleAndFinally_Parses()
+    {
+        // StatementParsingTests.TestTryCatchWithMultipleCatchesAndFinally (1372) →
+        // "try { } catch(T e) { } catch(T2) { } catch { } finally { }".
+        Cs1StatementTestHelper.AssertParses("{ try { } catch (T e) { } catch (T2) { } catch { } finally { } }");
+    }
+
+    [TestMethod]
+    public void Roslyn_UsingWithDeclaration_Parses()
+    {
+        // StatementParsingTests.TestUsingWithDeclaration (2356) → "using (T a = b) { }".
+        Cs1StatementTestHelper.AssertParses("{ using (T a = b) { } }");
+    }
+
+    [TestMethod]
+    public void Roslyn_UsingWithExpression_Parses()
+    {
+        // StatementParsingTests.TestUsingWithExpression (2334) → "using (a) { }".
+        Cs1StatementTestHelper.AssertParses("{ using (a) { } }");
+    }
+
+    [TestMethod]
+    public void Roslyn_LockStatement_Parses()
+    {
+        // StatementParsingTests.TestLock (2095) → "lock (a) { }".
+        Cs1StatementTestHelper.AssertParses("{ lock (a) { } }");
+    }
+
+    [TestMethod]
+    public void Roslyn_CheckedStatement_Parses()
+    {
+        // StatementParsingTests.TestChecked (1417) → "checked { }".
+        Cs1StatementTestHelper.AssertParses("{ checked { } }");
+    }
+
+    [TestMethod]
+    public void Roslyn_UncheckedStatement_Parses()
+    {
+        // StatementParsingTests.TestUnchecked (1434) → "unchecked { }".
+        Cs1StatementTestHelper.AssertParses("{ unchecked { } }");
+    }
 }

@@ -418,7 +418,13 @@ Statement =
     | WhileStatement
     | DoWhileStatement
     | ForStatement
-    | ForEachStatement;
+    | ForEachStatement
+    | SwitchStatement
+    | TryStatement
+    | UsingStatement
+    | LockStatement
+    | CheckedStatement
+    | UncheckedStatement;
 
 // label: Identifier ":" Statement — метка = истинный идентификатор (не ключевое слово).
 // Roslyn IsPossibleLabeledStatement (8493): PeekToken(1)==Colon && IsTrueIdentifier.
@@ -492,3 +498,90 @@ ForInit =
 // foreach ( type identifier in expression ) statement (C# 1.0; deconstruction — C# 7, вне скоупа).
 // Имя переменной — истинный идентификатор (не ключевое слово), guard как в VariableDeclarator.
 ForEachStatement = "foreach" "(" Type !ReservedKeyword Identifier "in" Expression ")" Statement;
+
+// === T2.2.3: сложные операторы C# 1.0 — switch / try / using / lock / checked / unchecked.
+// Третий (последний) подпункт операторов (T2.2.1 simple → T2.2.2 if/while/do/for/foreach → T2.2.3).
+// Семантика по Roslyn LanguageParser (C:\RSDN\roslyn, main): ParseSwitchStatement (10160),
+// ParseSwitchSection (10236), ParseTryStatement (9348), ParseCatchClause (9424), ParseUsingStatement
+// (10327), ParseLockStatement (10101), ParseCheckedStatement (9507).
+//
+// Каждая новая альтернатива начинается со СВОЕГО reserved-keyword (switch/try/using/lock/checked/
+// unchecked), которого нет у существующих альтернатив Statement → disambiguation по ведущему токену,
+// равных тай-брейков нет.
+//
+// Ограничение CsNitra-метаграмматики: `|` допустим только между top-level альтернативами правила, НЕ
+// внутри группы `( ... )` (Group оборачивает ОДНО RuleExpression, CsNitraParser.cs:103). Поэтому формы
+// `( A | B )` вынесены в правила-union: SwitchLabel, TryTail, CheckedBody, ResourceAcquisition.
+// См. docs/CSharpParserPlan-progressT2.2.3.md.
+
+// switch ( Expression ) { SwitchSection* } (Roslyn ParseSwitchStatement 10160; управляющее выражение
+// в скобках, C# 1.0 — без tuple-формы C# 7).
+SwitchStatement = "switch" "(" Expression ")" "{" SwitchSection* "}";
+
+// Секция: ( CaseLabel | DefaultLabel )+ Statement* — одна/неск. меток (стек `case 1: case 2:`), затем
+// операторы. Roslyn ParseSwitchSection (10236): do{label}while(IsPossibleSwitchSection), затем
+// ParseStatements(stopOnSwitchSections: true). Statement* останавливается перед следующей case/default,
+// т.к. они reserved keywords и не являются началом Statement. SwitchLabel+ — one-or-more, поэтому секция
+// ОБЯЗАНА начинаться с метки: `switch (x) { y = 1; }` (оператор без метки) не парсится.
+SwitchSection = SwitchLabel+ Statement*;
+
+// Метка секции: case-метка (константа) ИЛИ default-метка (Roslyn: case → ParseExpressionOrPatternForSwitch,
+// C# 1.0 — константное выражение, без паттернов/when — C# 7; default → DefaultSwitchLabel).
+SwitchLabel =
+    | CaseLabel
+    | DefaultLabel;
+
+// case Constant ":" (C# 1.0: константное выражение; Constant — int/char/string/bool + унарный знак).
+CaseLabel = "case" Constant ":";
+
+// default ":" (Roslyn DefaultSwitchLabel, 10289-10291).
+DefaultLabel = "default" ":";
+
+// try Block ( CatchClause+ FinallyClause? | FinallyClause ) (Roslyn ParseTryStatement 9348).
+// Обязательность catch/finally: Roslyn даёт ERR_ExpectedEndTry, если нет ни catch, ни finally (9393-9402)
+// → `try { }` невалиден. finally — один, после catch* → finally-до-catch / две finally невалидны.
+TryStatement = "try" Block TryTail;
+
+// Хвост try: catch+ (с опц. finally) ИЛИ finally. `|` в группе не выразимо → отдельное правило.
+// Альтернативы взаимно исключают друг друга (ведущий catch vs finally) → тай-брейков нет.
+TryTail =
+    | CatchClauses = CatchClause+ FinallyClause?
+    | FinallyClause;
+
+// catch ( Type Identifier? )? Block (Roslyn ParseCatchClause 9424). Скобки с типом/именем ОПЦИОНАЛЬНЫ:
+// `catch { }` (catch-all, Declaration == null) валиден (TestTryCatchWithNoExceptionDeclaration, 1282).
+// Имя — истинный идентификатор (guard), опционально. when-фильтр — C# 6, вне скоупа C# 1.0.
+CatchClause = "catch" ("(" Type !ReservedKeyword Identifier? ")")? Block;
+
+// finally Block (Roslyn FinallyClause, 9388-9390).
+FinallyClause = "finally" Block;
+
+// using ( ResourceAcquisition ) Statement (Roslyn ParseUsingStatement 10327; C# 1.0 — только
+// statement-форма, using-декларация `using T a = b;` — C# 8, вне скоупа).
+UsingStatement = "using" "(" ResourceAcquisition ")" Statement;
+
+// ResourceAcquisition: локальная декларация (Type VariableDeclarator*) ИЛИ Expression. Дисамбигуация
+// декларация-vs-выражение — longest-match (как ForInit, T2.2.2): два имени подряд — только декларация,
+// одно выражение — только Expression. Тай-брейков нет.
+ResourceAcquisition =
+    | ResourceDeclaration = Type VariableDeclarator ("," VariableDeclarator)*
+    | Expression;
+
+// lock ( Expression ) Statement (Roslyn ParseLockStatement 10101).
+LockStatement = "lock" "(" Expression ")" Statement;
+
+// checked/unchecked ( Block | ExpressionStatement ) (Roslyn ParseCheckedStatement 9507; C# grammar:
+// checked_statement: checked block | checked expression_statement). `{` ведёт → Block, иначе ExpressionStatement.
+// ВАЖНО: checked-ВЫРАЖЕНИЕ `checked ( expr )` (напр. `int w = checked (x + y);`) — это Expression, НЕ
+// statement; НЕ добавлено здесь (T2.3 follow-up, см. progressT2.2.3). Здесь `checked (x = y + z);` моделируется
+// как `checked` + ExpressionStatement `(x = y + z);` (упрощение; см. Boundary decisions).
+CheckedStatement = "checked" CheckedBody;
+
+// unchecked — аналог checked.
+UncheckedStatement = "unchecked" CheckedBody;
+
+// Тело checked/unchecked: Block ИЛИ ExpressionStatement. `|` в группе не выразимо → отдельное правило.
+// `{` ведёт → Block, иначе ExpressionStatement. Взаимно исключают друг друга → тай-брейков нет.
+CheckedBody =
+    | Block
+    | ExpressionStatement;
