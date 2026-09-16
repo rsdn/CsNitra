@@ -1,0 +1,62 @@
+// Cs4.grammar — C# 4.0 `dynamic` (predefined type) (T3.3.1).
+//
+// `dynamic` is a CONTEXTUAL KEYWORD in Roslyn: a plain identifier (IdentifierToken) in C# 1.0–3.0,
+// a keyword in C# 4.0+. It is the SAME version-purity challenge as `var` (T3.1.2): a name that is a
+// valid TypeName at an older version but a keyword at a newer one.
+//
+// T0.3 merge semantics: re-declaring a rule name APPENDS alternatives (declaration order across
+// files); it does NOT modify the Cs1 alternative. The engine is longest-match-wins and an
+// equal-length tie resolves to an ERROR. So a re-declared Cs4 alternative is reachable only when it
+// is MUTUALLY EXCLUSIVE with the Cs1 one.
+//
+// Tie-avoidance (the `dynamic` version-purity):
+//   Cs1: PredefinedType = the 16 predefined types (Cs1:515-531); TypeName = !ReservedKeyword
+//   Identifier (Cs1:23); Type = PredefinedType | QualifiedName | ... (Cs1:508-512); QualifiedName =
+//   TypeName NamespaceSegment* (Cs1:21).
+//   * v3 (Cs1+Cs2+Cs3): `dynamic` is NOT reserved (absent from Cs1 ReservedKeyword, not appended in
+//     Cs2/Cs3) -> a valid TypeName -> `dynamic x = 5;` parses as a type-NAME declaration (type
+//     `dynamic`), exactly like `var x = 5;` at v1. `dynamic` is NOT a PredefinedType at v3.
+//   * v4 (Cs1+Cs2+Cs3+Cs4): `dynamic` IS reserved (appended below) -> NOT a TypeName -> the
+//     QualifiedName route of `Type` fails; `dynamic` IS a PredefinedType (appended below) -> the
+//     PredefinedType route matches. Only ONE `Type` alternative matches `dynamic` -> NO equal-length
+//     tie.
+//   Because `dynamic` is a full `Type` at v4, it flows through EVERY type position (field, property,
+//   method return type, method parameter, local variable, ...) via the existing Cs1/Cs3 rules — no
+//   per-position re-declaration is needed. This is the key difference from `var`: `var` is NOT a type
+//   (it is only a local-declaration marker), so T3.1.2 needed a dedicated `LocalVariableDeclaration =
+//   "var" ...` alternative. `dynamic` needs no such alternative — the Cs1 `Type`-based
+//   LocalVariableDeclaration already handles `dynamic y = x;` at v4.
+//
+// Roslyn refs (C:\RSDN\roslyn, main):
+//   * `dynamic` is a CONTEXTUAL keyword (IdentifierToken) — SyntaxKindExtensions.cs:48 ("Note that
+//     'dynamic' is a contextual keyword, so it should never show up here."). Not a hard reserved
+//     keyword -> a plain identifier in C# 1.0–3.0.
+//   * At the SYNTAX level Roslyn parses `dynamic` as an IdentifierName (a type name), NOT a
+//     PredefinedType: IsPredefinedType (SyntaxKindFacts.cs:316-340) lists the 16 predefined types and
+//     does NOT include dynamic. The built-in dynamic type is a BINDER concept (DynamicTypeSymbol.cs;
+//     Binder_Symbols.cs:897 resolves an IdentifierName "dynamic" to the built-in dynamic type when no
+//     user type by that name exists) — a parser-vs-binder split.
+//   * Our grammar models the version-purity at the PARSE level (dynamic is a PredefinedType at v4, a
+//     TypeName at v3) for consistency with the established `var` (T3.1.2) and `partial` (T3.1.3)
+//     precedent — a deliberate, documented deviation from Roslyn's pure binder-level handling.
+//
+// CS4-only: expression-position `dynamic` (member access / invocation / indexer on a dynamic VALUE)
+// is a BINDER concern — its syntax is a plain IdentifierName + postfix operators, already parsed by
+// Cs1, so no grammar change is needed here.
+
+// === `dynamic` reservation (version-purity). Re-declares Cs1 ReservedKeyword; APPENDS "dynamic". ===
+// `dynamic` is a plain identifier in C# 1.0–3.0 (a valid TypeName) but a keyword in C# 4.0+, so it is
+// NOT added to Cs1 ReservedKeyword (that would break C# 1.0–3.0, where `dynamic` is a valid type/
+// variable name). Appending here reserves `dynamic` only at version 4+. Consequence: at v4 `dynamic`
+// is NOT a TypeName (`!ReservedKeyword Identifier` fails), so the QualifiedName route of `Type` fails
+// and only the PredefinedType route (below) matches — no equal-length tie.
+ReservedKeyword =
+    | "dynamic";
+
+// === `dynamic` predefined type (C# 4.0). Re-declares Cs1 PredefinedType; APPENDS "dynamic". ===
+// At v4 `dynamic` is a valid `Type` via this alternative. It is mutually exclusive with the Cs1
+// QualifiedName route at v4 (dynamic is reserved -> not a TypeName), so no tie. Being a full Type, it
+// is usable in every type position (field/property/parameter/return type/local) via the existing
+// Cs1/Cs3 rules.
+PredefinedType =
+    | "dynamic";

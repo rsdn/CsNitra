@@ -13,6 +13,7 @@ public static class EmbeddedGrammar
         new(1,  "Cs1.grammar",  "Cs1.grammar"),
         new(2,  "Cs2.grammar",  "Cs2.grammar"),
         new(3,  "Cs3.grammar",  "Cs3.grammar"),
+        new(4,  "Cs4.grammar",  "Cs4.grammar"),
         new(6,  "Cs6.grammar",  "Cs6.grammar"),
         new(11, "Cs11.grammar", "Cs11.grammar"),
     ];

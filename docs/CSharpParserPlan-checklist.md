@@ -63,13 +63,16 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
     - [✅] T3.1.1.2 Method type-параметры (`void M<T>()`) + constraints (`where T : struct/IBase/new()/U`) + тесты
   - [✅] T3.1.2 `var` (implicit typing) + анонимные методы (`delegate T D(...) { }`) + тесты
   - [✅] T3.1.3 `partial` (partial class/struct/method) + `sealed override` + тесты
-- [ ] T3.2 CS3: лямбды, auto-свойства, object/collection initializers, extension methods, анонимные типы, LINQ-запросы
+- [✅] T3.2 CS3: лямбды, auto-свойства, object/collection initializers, extension methods, анонимные типы, LINQ-запросы
   - [✅] T3.2.1 Лямбды (`x => x + 1`, `() => ...`, `(int x) => ...`, statement-body `x => { ... }`) → `Cs3.grammar` + тесты
   - [✅] T3.2.2 Object initializers (`new C { X = 5 }`) + collection initializers (`new List<int> { 1, 2, 3 }`) + анонимные типы (`new { X = 5 }`) → `Cs3.grammar` + тесты
   - [✅] T3.2.3 Auto-свойства (`int P { get; set; }`, `{ get; }`, initializer `= ...`) → `Cs3.grammar` + тесты
   - [✅] T3.2.4 Extension methods (`static class E { static void M(this int x) { } }`) → `Cs3.grammar` + тесты
   - [✅] T3.2.5 LINQ query expressions (`from x in xs select x`, `where`/`orderby`/`join`/`let`/`group`) → `Cs3.grammar` + тесты
-- [ ] T3.3 CS4: `dynamic`, именованные/опциональные аргументы, `params`-массив, constraint `new`
+- [ ] T3.3 CS4: `dynamic`, именованные/опциональные аргументы (`params` и constraint `new` — CS1/CS2, уже есть)
+  - [✅] T3.3.1 `dynamic` (тип/переменная `dynamic`, `dynamic x = ...`, `M(dynamic x)`) → `Cs4.grammar` + тесты
+  - [ ] T3.3.2 Named arguments (`M(x: 5)`, `M(x: 5, y: 6)`, порядок не важен) → `Cs4.grammar` + тесты
+  - [ ] T3.3.3 Optional parameters (`void M(int x = 5)`, `void M(int x = 5, int y = 6)`) → `Cs4.grammar` + тесты
 - [ ] T3.4 CS5: `async`/`await`
 - [ ] T3.5 CS6: `?.`, expression-bodied члены, `nameof`, binary literals (интерполяция — T3.5.1–T3.5.2, выполняется раньше остальных пунктов плана)
   - [✅] T3.5.1 Дизайн: правила интерполяции (3 уровня $) для семейств regular/verbatim/raw → `docs/InterpolatedStringGrammar.md` (семантика из Roslyn Lexer + образец `C:\RSDN\nitra\...\CS6Literals.nitra`)
