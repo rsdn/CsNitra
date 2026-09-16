@@ -170,3 +170,112 @@ LocalFunctionModifier =
     | "static"
     | "async"
     | "unsafe";
+
+// ============================================================================
+// T3.6.4 — C# 7.0 ref semantics.
+//
+// Four CS7 features (ref return / ref readonly return / ref local / out var), plus the `ref`
+// EXPRESSION (the `ref _y` in a ref-local initializer and in `return ref _x`):
+//   * `ref` return — `ref int M() { return _x; }` (the `ref` is a modifier BEFORE the return type).
+//   * `ref readonly` return — `ref readonly int M() { return _x; }` (the `ref readonly` modifiers).
+//   * `ref` local — `ref int x = ref _y;` (the `ref` is a modifier BEFORE the local variable's type).
+//   * `out var` — `M(out var x)` (an `out` argument with an implicit type `var`).
+//   * `ref` expression — `ref _y` (a `ref` prefix operator on an expression).
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp/Portable):
+//   * `ref` return — ParseReturnType (Parser/LanguageParser.cs:3314) eats a leading `ref` /
+//     `ref readonly` before the type. Confirmed by RefReadonlyTests.cs:28 (RefReadonlyReturn_CSharp7,
+//     `ref readonly int M<T>()`).
+//   * `ref` local — ParseLocalDeclarationStatement (10482) eats a leading `ref` before the type.
+//     Confirmed by StatementParsingTests.cs:767 (TestRefLocalDeclarationStatement, `ref T a;`), :793
+//     (TestRefLocalDeclarationStatementWithInitializer, `ref T a = ref b;` — the initializer is a
+//     RefExpression `ref b`), :824 (multiple initializers).
+//   * `out var` — ParseArgumentExpression (12581) handles an `out` argument with a variable
+//     declaration (implicit type). Confirmed by DeclarationParsingTests.cs:6580 (ParseOutVar,
+//     `M(out var x);`).
+//   * `ref` expression — ParsePrimaryExpressionWithoutPostfix (12068-12076): a `ref` token starts a
+//     RefExpression(refKeyword, ParseExpressionCore()) — a `ref` + expression.
+//   * Version gates: `ref` return / `ref` local / `out var` / `ref` expression are C# 7.0 (the task's
+//     scope). `ref readonly` is C# 7.2 in Roslyn (RefReadonlyTests.cs:48, ERR_FeatureNotAvailable-
+//     InVersion7_1 "readonly references ... 7.2") — the task requires it in CS7 (Deviation D1).
+//
+// CS7 only.
+
+// === `ref` / `readonly` method modifiers (C# 7.0). Re-declares Cs1 MethodModifier; APPENDS "ref" and
+// "readonly". The Cs1 Method (Cs1.grammar:265) is `MethodModifier* Type TypeName "(" ...`, so a leading
+// `ref` / `ref readonly` is consumed by the merged `MethodModifier*` and the return type follows.
+// `ref`/`readonly` are reserved keywords (Cs1 ReservedKeyword:591/590), so neither can be a method NAME
+// or a Type; and `readonly` is a FIELD modifier elsewhere (FieldModifier, Cs1.grammar:162 — a DIFFERENT
+// rule), so there is no conflict with `readonly` fields. Roslyn ParseReturnType (3314) +
+// RefReadonlyTests.cs:28. Named union (the meta-grammar forbids `|` inside a group). ===
+//
+// Disambiguation (longest-match, no equal-length tie):
+//   * `ref int M() { }` (ref return): Field FAILS (`ref` is not a FieldModifier; Type=ref fails — ref is
+//     reserved); Method -> MethodModifier=ref, Type=int, TypeName=M, (), MethodBody. Sole match.
+//   * `ref readonly int M() { }`: Method -> MethodModifier=ref, readonly, Type=int, ... Sole match.
+//   * `readonly int x;` (a readonly FIELD, every version): Field -> FieldModifier=readonly, Type=int,
+//     VariableDeclarator=x, ; (matches). Method -> MethodModifier=readonly, Type=int, TypeName=x, then
+//     `(` expected but `;` found -> FAILS. So Field is the sole match (no regression at any version).
+//
+// Version purity: at v6 `ref`/`readonly` are not MethodModifiers, so `ref int M() { }` / `ref readonly
+// int M() { }` REJECT (MethodModifier* matches zero; Type=ref fails — ref is reserved). At v7 they PARSE.
+MethodModifier =
+    | "ref"
+    | "readonly";
+
+// === `ref` local (C# 7.0). Re-declares Cs1 LocalVariableDeclaration (append, T0.3 merge). The Cs7
+// alternative REQUIRES the "ref" literal (REQUIRED-new-construct), so it is MUTUALLY EXCLUSIVE with the
+// Cs1 Type-based alternative (ref is reserved, not a Type), the Cs2 "var" alternative (starts with "var"),
+// and the Cs7 DeconstructionDeclaration (starts with "var"). The initializer `ref _y` is a RefExpression
+// (the `ref` expression rule below). Roslyn ParseLocalDeclarationStatement (10482) +
+// StatementParsingTests.cs:767/793/824. ===
+//
+// Disambiguation (longest-match, no equal-length tie):
+//   * `ref int x = ref _y;` (ref local): Cs1 LocalVariableDeclaration FAILS (Type=ref — ref is reserved);
+//     Cs2/Cs7 "var" alternatives FAIL (start with "var"); ExpressionStatement FAILS (`ref int` is not an
+//     Expression — int is not an expression start, so the RefExpr operand fails); RefLocalDeclaration ->
+//     "ref", Type=int, VariableDeclarator=(x = ref _y), ;. Sole match.
+//
+// Version purity: at v6 "ref" is not a local-declaration modifier, so `ref int x = ref _y;` REJECT (no
+// LocalVariableDeclaration alternative matches; ExpressionStatement fails). At v7 it PARSES.
+LocalVariableDeclaration =
+    | RefLocalDeclaration = "ref" Type VariableDeclarator ("," VariableDeclarator)* ";";
+
+// === `out var` argument (C# 7.0). Re-declares Cs4 Argument (append, T0.3 merge). The Cs7 alternative
+// REQUIRES the "out" "var" prefix (REQUIRED-new-construct), so it is MUTUALLY EXCLUSIVE with the Cs4
+// NamedArgument (needs an Identifier ":" — "out" is reserved, not an Identifier) and PositionalArgument
+// (needs an Expression — "out" is reserved, not an expression start). The value is a simple name (a true
+// identifier, not reserved). Roslyn ParseArgumentExpression (12581) + DeclarationParsingTests.cs:6580
+// (ParseOutVar, `M(out var x);`). ===
+//
+// Disambiguation (longest-match, no equal-length tie):
+//   * `out var x` (out var): NamedArgument FAILS (out is reserved, not an Identifier); PositionalArgument
+//     FAILS (out is reserved, not an expression start); OutVarArgument -> "out", "var", Identifier=x.
+//     Sole match.
+//   * `out x` (a plain out argument): OutVarArgument FAILS (x is not "var"); NamedArgument/Positional-
+//     Argument FAIL (out is reserved). NO alternative matches -> `M(out x)` REJECTS (a PRE-EXISTING GAP —
+//     the plain `out`/`ref` argument forms are not modeled; Deviation D2).
+//
+// Version purity: at v6 the "out var" alternative is absent, so `M(out var x)` REJECT (both Cs4 Argument
+// alternatives fail on the reserved "out"). At v7 it PARSES.
+Argument =
+    | OutVarArgument = "out" "var" !ReservedKeyword Identifier;
+
+// === `ref` expression (C# 7.0). Re-declares Cs1 Expression (append, T0.3 merge); APPENDS the RefExpr
+// prefix. A `ref` prefix operator (like the Cs5 await, Cs5.grammar:74): `ref` + expression. The operand
+// is `Expression : Unary` (a ReqRef with Precedence = the Unary level, RuleGenerator.cs:90-94):
+// minPrecedence = Unary's binding power, so the operand binds tighter than all binary operators
+// (Multiplicative and below) — `ref x + y` = `(ref x) + y` — and the Comma (binding power 1, the lowest)
+// is NOT applicable, so the operand does NOT absorb a following `,` in a comma-separated context. Roslyn
+// ParsePrimaryExpressionWithoutPostfix (LanguageParser.cs:12068-12076): a `ref` token starts a
+// RefExpression(refKeyword, ParseExpressionCore()). ===
+//
+// Disambiguation (longest-match, no equal-length tie): `ref` is a reserved keyword (Cs1 ReservedKeyword),
+// so it is NOT an IdentifierName and NO other Expression alternative starts with it. `ref _y` -> RefExpr
+// (sole match). A bare `ref` (no operand) -> RefExpr fails (no expression after `ref`); no other
+// alternative matches -> the parse fails (correct: a bare `ref` is not an expression).
+//
+// Version purity: at v6 the RefExpr alternative is absent, so `ref _y` REJECT (no Expression alternative
+// matches the reserved "ref"). At v7 it PARSES.
+Expression =
+    | RefExpr = "ref" Expression : Unary;
