@@ -14,6 +14,9 @@ public sealed partial class CSharpTerminals
     [Regex(@"0[xX][0-9a-fA-F]+")]
     public static partial Terminal HexIntegerLiteral();
 
+    [Regex(@"0[bB][01]+")]
+    public static partial Terminal BinaryIntegerLiteral();
+
     [Regex(@"0[0-7]+")]
     public static partial Terminal OctalIntegerLiteral();
 
@@ -107,6 +110,7 @@ public sealed partial class CSharpTerminals
         Identifier(),
         DecimalIntegerLiteral(),
         HexIntegerLiteral(),
+        BinaryIntegerLiteral(),
         OctalIntegerLiteral(),
         IntegerSuffix(),
         DecimalRealLiteral(),

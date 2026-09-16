@@ -58,3 +58,74 @@ Expression =
     | InterpolatedStringLiteral
     | VerbatimInterpolatedStringLiteral
     | RawInterpolatedStringLiteral;
+
+// ============================================================================
+// T3.5.3 — C# 6.0: `?.`, expression-bodied members, `nameof`, binary literals.
+//
+// T0.3 merge: re-declaring a rule name APPENDS alternatives (declaration order across files);
+// it does NOT modify the Cs1 alternative. Longest-match-wins; an equal-length tie resolves to the
+// FIRST alternative (declaration order, Parser.cs:296-316). A re-declared Cs6 alternative is
+// reachable only when MUTUALLY EXCLUSIVE with the existing ones (REQUIRED-new-construct).
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp/Portable):
+//   * `?.` — ParsePrimaryExpression comment (Parser/LanguageParser.cs:11945) lists `x?.y, x?[y]`
+//     as postfix primary operators; `?.` is one token (QuestionDotToken). CS6.
+//   * Expression-bodied — ParseArrowExpressionClause (Parser/LanguageParser.cs:4408-4412) =
+//     EatToken(EqualsGreaterThanToken) + ParsePossibleRefExpression() => `=> Expression`. CS6.
+//   * `nameof` — contextual keyword (NameOfKeyword, an IdentifierToken); a primary expression
+//     `nameof ( name_of_argument )` where the argument is an identifier or a dotted member access.
+//     CS6. NOT a reserved keyword (a plain identifier in C# 1.0-5.0).
+//   * Binary literals — ScanNumericLiteral (Parser/Lexer.cs:844-904): after `0`, `ch=='b'||ch=='B'`
+//     (870) => CheckFeatureAvailability(IDS_FeatureBinaryLiteral) (872); digits 0/1 (IsBinaryDigit).
+
+// === `?.` null-conditional operator (C# 6.0). Re-declares PostfixOp (append, T0.3 merge). The
+// `?.` is a single 2-char literal (a StartsWith match, Rules.cs:76) — distinct from the 1-char `?`
+// of the Conditional operator (Cs1:671). The existing Invocation postfix handles the trailing `()`
+// after `?.M`, so `x?.M()` = x + NullConditionalMemberAccess + Invocation. Roslyn LanguageParser.cs:11945.
+//   Disambiguation `x?.M()` vs `x ? a : b`: the `?.` postfix (2-char) requires `?.` + an identifier
+//   (or `[`); the Conditional `?` (1-char) requires an Expression after the `?`. In `x?.M()` the
+//   text after `?` is `.M()` — not an Expression (no Primary starts with `.`) — so Conditional fails
+//   and PrimaryExpr (with the `?.` postfix) wins. In `x ? a : b` the `?.` literal fails (a space
+//   follows the `?`), so the Conditional wins. No equal-length tie.
+PostfixOp =
+    | NullConditionalMemberAccess = "?." Identifier
+    | NullConditionalIndexer = "?." "[" (Expression; ",")* "]";
+
+// === Expression-bodied members (C# 6.0). ===
+// MethodBody (Cs1:267) is `| Block | ";"`. Re-declare (append) to add the `=> Expression ;` form.
+// The `=>` is the REQUIRED-new-construct: the three alternatives disambiguate by leading token
+// (`{` -> Block, `;` -> ";", `=>` -> ExpressionBody), so no equal-length tie. Re-declaring
+// MethodBody (rather than Method) lets the Cs1 Method/Operator/ConversionOperator rules (which
+// reference MethodBody) all gain the expression body — all valid CS6. Constructor/Destructor use
+// Block directly (not MethodBody), so they stay non-expression-bodied (correct for CS6).
+// The body Expression is a full TDOPP expression; it is followed by `;` (not a `,`), so the Comma
+// postfix (bp 1) is not a separator concern — no `Expression : Comma` needed (T3.3.2).
+MethodBody =
+    | ExpressionBody = "=>" Expression ";";
+
+// Property (Cs1:188) requires a `{` accessor list. Re-declare (append) to add the expression-body
+// form `Type TypeName "=>" Expression ";"?`. The `=>` after the name is the REQUIRED-new-construct,
+// mutually exclusive with the Cs1/Cs3 `{`-body Property and the Field (`;`/`,`/`=` after the name).
+// Roslyn ParseArrowExpressionClause (LanguageParser.cs:4408).
+Property = Attributes? PropertyModifier* Type TypeName "=>" Expression ";"?;
+
+// === `nameof` + binary literal (C# 6.0). Re-declares Primary (append, T0.3 merge). ===
+// `nameof` is a CONTEXTUAL keyword (NOT reserved — a valid IdentifierName at every version). The
+// argument is an identifier or a dotted member access (NOT a full expression). Roslyn: NameOfKeyword
+// primary expression.
+//   Disambiguation (longest-match on Primary, no tie): `nameof(x)` -> NameOf (length 9) beats
+//   IdentifierName (`nameof`, length 6); ParseSeq (Parser.cs:810) commits the Primary to its longest
+//   match BEFORE the PostfixOp* loop, so the IdentifierName+Invocation path is never considered.
+//   Bare `nameof` (no `(`) -> NameOf fails (no `(`) -> IdentifierName only. No tie.
+// `BinInt` is a binary literal `0b`/`0B` + binary digits (0/1); the BinaryIntegerLiteral terminal is
+// `0[bB][01]+` (CSharpTerminals.cs). Longest-match: `0b1010` -> BinInt (length 6) beats DecInt
+// (`DecimalIntegerLiteral` = `[0-9]+` matches only `0`, length 1). No tie. `0b102` -> BinInt matches
+// `0b10` (the `2` is not a binary digit), leaving a dangling `2` -> the whole parse fails (an invalid
+// binary digit is rejected). Roslyn Lexer.cs:844-904.
+Primary =
+    | NameOf = "nameof" "(" NameOfArgument ")"
+    | BinInt = BinaryIntegerLiteral IntegerSuffix?;
+
+// The nameof argument: a true identifier followed by zero or more `. identifier` segments
+// (e.g. `x`, `C.P`, `C.P.Q`). Roslyn name_of_argument (identifier | name . identifier).
+NameOfArgument = !ReservedKeyword Identifier ("." !ReservedKeyword Identifier)*;

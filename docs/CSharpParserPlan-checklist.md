@@ -77,7 +77,7 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 - [ ] T3.5 CS6: `?.`, expression-bodied члены, `nameof`, binary literals (интерполяция — T3.5.1–T3.5.2, выполняется раньше остальных пунктов плана)
   - [✅] T3.5.1 Дизайн: правила интерполяции (3 уровня $) для семейств regular/verbatim/raw → `docs/InterpolatedStringGrammar.md` (семантика из Roslyn Lexer + образец `C:\RSDN\nitra\...\CS6Literals.nitra`)
   - [✅] T3.5.2 Реализация: грамматические правила интерполяции + временное правило Expression + удаление сканер-терминалов (`InterpolatedStringLiteral`, `RawInterpolatedStringLiteral`, hole-скан) и их тестов
-  - [ ] T3.5.3 CS6: `?.`, expression-bodied члены, `nameof`, binary literals (итерация CS6)
+  - [✅] T3.5.3 CS6: `?.`, expression-bodied члены, `nameof`, binary literals (итерация CS6)
 - [ ] T3.6 CS7: кортежи, pattern matching, локальные функции, `out var`, `ref`-возврат/локальные, разделители цифр, `throw`-выражение, `ref readonly`
 - [ ] T3.7 CS7.1–7.2: `default`, `in`, `ref struct`, type/constant patterns
 - [ ] T3.8 CS8: switch expressions, using declarations, `..`/`^`, `??=`, NRT-аннотации, default interface members
