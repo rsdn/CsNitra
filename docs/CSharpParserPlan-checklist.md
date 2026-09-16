@@ -45,12 +45,12 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
   - [✅] T2.2.1 `Block` + empty + expression-stmt + local-variable-declaration + return/throw/break/continue/goto/labels + тесты
   - [✅] T2.2.2 if/while/do-while/for/foreach + тесты
   - [✅] T2.2.3 switch (case/default/labels) + try-catch-finally + using/lock/checked/unchecked + тесты
-- [ ] T2.1 Члены: поля, свойства, методы, конструкторы, деструкторы, операторы, индексаторы, события, модификаторы, атрибуты + тесты
-  - [~] T2.1.1 Инфраструктура членов + Field: union-правила `ClassMember`/`StructMember`/`InterfaceMember` + `ClassBody`/`StructBody`/`InterfaceBody` = member lists + member-модификаторы + Field (+ field-initializer) + тесты (класс с полями)
+- [✅] T2.1 Члены: поля, свойства, методы, конструкторы, деструкторы, операторы, индексаторы, события, модификаторы, атрибуты + тесты
+  - [✅] T2.1.1 Инфраструктура членов + Field: union-правила `ClassMember`/`StructMember`/`InterfaceMember` + `ClassBody`/`StructBody`/`InterfaceBody` = member lists + member-модификаторы + Field (+ field-initializer) + тесты (класс с полями)
   - [✅] T2.1.2 Property + accessors (get/set, тела-блоки) + property-модификаторы → в union + тесты
   - [✅] T2.1.3 Method + constructor (+ `: base`/`: this`) + destructor + method-модификаторы → в union + тесты
   - [✅] T2.1.4 Operator + indexer + event → в union + тесты
-  - [ ] T2.1.5 Финализация: вложенные типы как члены, base-list, version-purity, полная верификация + тесты
+  - [✅] T2.1.5 Финализация: вложенные типы как члены, base-list, version-purity, полная верификация + тесты
 
 ## Этап 3 — Версии CS2–CS14
 
