@@ -56,11 +56,11 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 
 Механизм слияния (T0.3) готов и покрыт тестами: тексты конкатенируются в порядке списка файлов, повторяющиеся имена правил = ДОБАВЛЕНИЕ альтернатив (не замена), `precedence`-списки мерджатся по якорю, TDOPP пересобирается один раз. Каждая версия = новый файл `CsN.grammar` + `<EmbeddedResource>` + тесты. См. Deviations (инфраструктура T3.0).
 
-- [~] T3.0 Инфраструктура версионности: хелпер `LoadGrammarUpTo(int version)` (слияние Cs1→CsN по возрастанию) + общий тест-хелпер `CreateParser(int version)`; enables version-purity тесты (parse at N, reject at N-1)
+- [✅] T3.0 Инфраструктура версионности: хелпер `LoadGrammarUpTo(int version)` (слияние Cs1→CsN по возрастанию) + общий тест-хелпер `CreateParser(int version)`; enables version-purity тесты (parse at N, reject at N-1)
 - [ ] T3.1 CS2: дженерики + constraints, `var`, анонимные методы, `partial`, sealed override
   - [ ] T3.1.1 Дженерики: type-параметры, generic-имена (`C<T>`, `C<T,U>`), variance, constraints (`where T : struct/IBase/new()/U`) → `Cs2.grammar` + тесты
     - [✅] T3.1.1.1 Generic-имена (`C<T>`, `C<T,U>`, qualified `N.List<T>`) + type-parameter lists на type-декларациях (class/struct/interface/delegate) + variance (`in`/`out`) → `Cs2.grammar` + тесты
-    - [ ] T3.1.1.2 Method type-параметры (`void M<T>()`) + constraints (`where T : struct/IBase/new()/U`) + тесты
+    - [✅] T3.1.1.2 Method type-параметры (`void M<T>()`) + constraints (`where T : struct/IBase/new()/U`) + тесты
   - [ ] T3.1.2 `var` (implicit typing) + анонимные методы (`delegate T D(...) { }`) + тесты
   - [ ] T3.1.3 `partial` (partial class/struct/method) + `sealed override` + тесты
 - [ ] T3.2 CS3: лямбды, auto-свойства, object/collection initializers, extension methods, анонимные типы, LINQ-запросы

@@ -71,3 +71,79 @@ StructDeclaration = Attributes? StructModifier* "struct" TypeName TypeParameterL
 InterfaceDeclaration = Attributes? InterfaceModifier* "interface" TypeName TypeParameterList BaseList? InterfaceBody ";"?;
 
 DelegateDeclaration = Attributes? DelegateModifier* "delegate" Type TypeName TypeParameterList "(" ParameterList? ")" ";";
+
+// ============================================================================
+// T3.1.1.2 — C# 2.0 method type parameters + constraint clauses.
+//
+// Method type parameters (`void M<T>(T x) { }`): the `<T>` is consumed by the GREEDY merged
+// TypeName (Boundary decision D1, T3.1.1.1), so no explicit TypeParameterList is needed in the
+// method header. At v1 (non-greedy TypeName) `void M<T>()` REJECTS (TypeName stops at `M`, then
+// `(` is expected but `<` is found); at v2 the greedy TypeName eats `M<T>` and the Cs1 Method
+// alternative matches. So method type parameters are parse-reachable at v2 via the Cs1 Method
+// alternative; the REQUIRED-new-construct that makes the Cs2 Method alternative reachable is the
+// ConstraintClause+ below.
+//
+// Constraint clauses (Roslyn ParseTypeParameterConstraintClauses:2242 /
+// ParseTypeParameterConstraintClause:2250 / ParseTypeParameterConstraint:2346, LanguageParser.cs).
+// CS2-only: a constraint is one of `struct` | `class` | `new()` | a Type (an interface / base
+// class / another type-parameter name — the parser parses a Type, the binder decides what it is).
+// No `unmanaged` (CS8), `notnull` (CS8), `enum<T>` (CS7.3), `delegate` (CS7.3), `default` (CS9),
+// or `allows ref` (CS13).
+//
+// `where` is NOT a Cs1 ReservedKeyword (checked: absent from the list). It is matched here as a
+// WordLiteral (raw whole-word text match), so no ambiguity arises: a constraint clause is only
+// recognized where the rule explicitly expects `"where"`, and the clause requires `where <id> :`
+// (Roslyn IsCurrentTokenWhereOfConstraintClause:2234), so a bare `where` cannot be mistaken for a
+// type name / base list.
+//
+// The re-declared Method / InterfaceMethod / type declarations REQUIRE ConstraintClause+ (>= 1
+// clause) as the REQUIRED-new-construct, so each is mutually exclusive with the Cs1 and T3.1.1.1
+// alternatives (never an equal-length tie). Full hand-traces in
+// docs/CSharpParserPlan-progressT3.1.1.2.md.
+
+// Constraint clause: `where` + type-parameter-name + `:` + (constraint,)+. Roslyn
+// ParseTypeParameterConstraintClause (LanguageParser.cs:2250). The type-parameter-name is a simple
+// true identifier (Roslyn IsTrueIdentifier / ParseIdentifierName), hence `!ReservedKeyword Identifier`.
+ConstraintClause = "where" !ReservedKeyword Identifier ":" ConstraintList;
+
+// Comma-separated constraint list, one or more, no trailing comma (SeparatedList Forbidden).
+// Roslyn: first bound + `,` loop (LanguageParser.cs:2261-2309).
+ConstraintList = (Constraint; ",")+;
+
+// A single constraint (CS2): struct | class | new() | Type. Named union (the meta-grammar forbids
+// `|` inside a group). `struct`/`class`/`new` are reserved keywords (Cs1 ReservedKeyword), so none
+// can be a Type; the four alternatives are mutually exclusive. Roslyn ParseTypeParameterConstraint
+// (LanguageParser.cs:2346), CS2 subset.
+Constraint =
+    | "struct"
+    | "class"
+    | NewConstraint = "new" "(" ")"
+    | Type;
+
+// === Re-declared methods (T3.1.1.2): ConstraintClause+ REQUIRED. ===
+// The greedy TypeName consumes the method's `<...>` type-parameter list, so the disambiguating
+// REQUIRED-new-construct is the ConstraintClause+ (Roslyn position: after the parameter list,
+// before the body — ParseMethodDeclaration, LanguageParser.cs:3691-3698). Cs1 Method (no
+// constraints) and the T3.1.1.2 Method (constraints) are mutually exclusive: a method with no
+// constraint clause is matched by Cs1 (MethodBody right after `)`), and a method with a constraint
+// clause is matched by T3.1.1.2 (Cs1 MethodBody = Block | ";" cannot start with `where`).
+Method = Attributes? MethodModifier* Type TypeName "(" ParameterList? ")" ConstraintClause+ MethodBody;
+
+// Interface methods end with `;` (no body); constraints appear before the `;`.
+InterfaceMethod = Attributes? MethodModifier* Type TypeName "(" ParameterList? ")" ConstraintClause+ ";";
+
+// === Re-declared type declarations (T3.1.1.2): ConstraintClause+ REQUIRED. ===
+// As in T3.1.1.1 (D1), the greedy TypeName consumes the `<...>` type-parameter list, so the
+// T3.1.1.2 alternative does NOT repeat the TypeParameterList; it places ConstraintClause+ after the
+// base list (Roslyn position: name, type-params, base list, constraints, body —
+// ParseMainTypeDeclaration, LanguageParser.cs:1839-1843). The T3.1.1.1 alternative (with
+// TypeParameterList) remains reachable for the variance case; the T3.1.1.2 alternative
+// (ConstraintClause+) is reachable for the non-variance-with-constraints case. Mutually exclusive
+// (no tie): a base-list/body position is either `{`/`:`/`<` (Cs1 / T3.1.1.1) or `where` (T3.1.1.2).
+ClassDeclaration = Attributes? ClassModifier* "class" TypeName BaseList? ConstraintClause+ ClassBody ";"?;
+
+StructDeclaration = Attributes? StructModifier* "struct" TypeName BaseList? ConstraintClause+ StructBody ";"?;
+
+InterfaceDeclaration = Attributes? InterfaceModifier* "interface" TypeName BaseList? ConstraintClause+ InterfaceBody ";"?;
+
+DelegateDeclaration = Attributes? DelegateModifier* "delegate" Type TypeName "(" ParameterList? ")" ConstraintClause+ ";";
