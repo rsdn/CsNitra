@@ -1,8 +1,9 @@
-﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using ExtensibleParser;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace CSharpGrammarTests;
 
-// Roslyn-отбор простых операторов C# 1.0 (T2.2.1). Каждый тест помечен источником
+// Roslyn-отбор простых операторов C# 1.0 (T2.2.1) и циклов/условных (T2.2.2). Каждый тест помечен источником
 // (file:method, C:\RSDN\roslyn) и адаптацией под Block-start-rule (C# 1.0: без ref-возврата,
 // goto case — константа, break/continue — без метки). Парсинг — по правилу Block (см.
 // Cs1StatementTestHelper).
@@ -120,5 +121,79 @@ public class Cs1RoslynStatementTests
     {
         // ParseVariableDeclarators (5294) — список деклараторов через запятую.
         Cs1StatementTestHelper.AssertParses("{ int a = 1, b = 2; }");
+    }
+
+    // === T2.2.2: циклы и условные операторы (StatementParsingTests.cs, C:\RSDN\roslyn) ===
+    // Адаптация: обёрнуто в Block (C# 1.0: нет method body); `var` (CS3) заменён типом; `for(var ...)`
+    // не в C# 1.0. Dangling else — по ParseIfStatement (LanguageParser.cs:10013).
+
+    [TestMethod]
+    public void Roslyn_IfStatement_Parses()
+    {
+        // StatementParsingTests.TestIf (2012) → "if (a) { }".
+        Cs1StatementTestHelper.AssertParses("{ if (a) { } }");
+    }
+
+    [TestMethod]
+    public void Roslyn_IfElseStatement_Parses()
+    {
+        // StatementParsingTests.TestIfElse (2035) → "if (a) { } else { }".
+        Cs1StatementTestHelper.AssertParses("{ if (a) { } else { } }");
+    }
+
+    [TestMethod]
+    public void Roslyn_IfElseIfStatement_Parses()
+    {
+        // StatementParsingTests.TestIfElseIf (2061) → "if (a) { } else if (b) { }".
+        Cs1StatementTestHelper.AssertParses("{ if (a) { } else if (b) { } }");
+    }
+
+    [TestMethod]
+    public void Roslyn_WhileStatement_Parses()
+    {
+        // StatementParsingTests.TestWhile (1468) → "while(a) { }".
+        Cs1StatementTestHelper.AssertParses("{ while (a) { } }");
+    }
+
+    [TestMethod]
+    public void Roslyn_DoWhileStatement_Parses()
+    {
+        // StatementParsingTests.TestDoWhile (1490) → "do { } while (a);".
+        Cs1StatementTestHelper.AssertParses("{ do { } while (a); }");
+    }
+
+    [TestMethod]
+    public void Roslyn_ForStatementEmpty_Parses()
+    {
+        // StatementParsingTests.TestFor (1515) → "for(;;) { }" (все три части пустые).
+        Cs1StatementTestHelper.AssertParses("{ for ( ; ; ) { } }");
+    }
+
+    [TestMethod]
+    public void Roslyn_ForStatementWithDeclaration_Parses()
+    {
+        // StatementParsingTests.TestForWithVariableDeclaration (1541) → "for(T a = 0;;) { }".
+        // АДАПТАЦИЯ: T — identifier-тип (C# 1.0), init — декларация (не var — CS3).
+        Cs1StatementTestHelper.AssertParses("{ for (T a = 0; ; ) { } }");
+    }
+
+    [TestMethod]
+    public void Roslyn_ForeachStatement_Parses()
+    {
+        // StatementParsingTests.TestForEach (1919) → "foreach(T a in b) { }".
+        // АДАПТАЦИЯ: T — identifier-тип (C# 1.0); deconstruction-форма (C# 7) вне скоупа.
+        Cs1StatementTestHelper.AssertParses("{ foreach (T a in b) { } }");
+    }
+
+    [TestMethod]
+    public void Roslyn_DanglingElse_BindsToInnerIf_Shape()
+    {
+        // LanguageParser.ParseIfStatement (10013): then-statement (10026) парсится ПЕРЕД else (10028),
+        // поэтому else связывается с НАИБЛИЖАЙШИМ if. "if (a) if (b) c; else d;" → else у внутреннего if.
+        var outer = (SeqNode)Cs1StatementTestHelper.FirstStatementNode("{ if (a) if (b) c; else d; }");
+        Assert.AreEqual("none", Cs1StatementTestHelper.IfElsePresent(outer), "outer if must NOT own the else");
+        var inner = (SeqNode)outer.Elements[4];
+        Assert.AreEqual("IfStatement", inner.Kind);
+        Assert.AreEqual("some", Cs1StatementTestHelper.IfElsePresent(inner), "inner if must own the else");
     }
 }

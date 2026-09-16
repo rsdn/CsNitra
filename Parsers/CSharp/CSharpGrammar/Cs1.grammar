@@ -413,7 +413,12 @@ Statement =
     | ThrowStatement
     | BreakStatement
     | ContinueStatement
-    | GotoStatement;
+    | GotoStatement
+    | IfStatement
+    | WhileStatement
+    | DoWhileStatement
+    | ForStatement
+    | ForEachStatement;
 
 // label: Identifier ":" Statement — метка = истинный идентификатор (не ключевое слово).
 // Roslyn IsPossibleLabeledStatement (8493): PeekToken(1)==Colon && IsTrueIdentifier.
@@ -451,3 +456,39 @@ GotoStatement =
     | GotoLabel = "goto" !ReservedKeyword Identifier ";"
     | GotoCase = "goto" "case" Constant ";"
     | GotoDefault = "goto" "default" ";";
+
+// === T2.2.2: циклы и условные операторы C# 1.0 — if / while / do-while / for / foreach.
+// Второй из трёх подпунктов операторов (T2.2.1 simple → T2.2.2 → T2.2.3 switch/try/using/lock/checked).
+// Семантика по Roslyn LanguageParser (C:\RSDN\roslyn, main): ParseIfStatement (10013),
+// ParseWhileStatement (10454), ParseDoStatement (9524), ParseForStatement (9586),
+// ParseForEachStatement (9728).
+//
+// Dangling else: `if (a) if (b) c; else d;` — else связывается с НАИБЛИЖАЙШИМ (внутренним) if.
+// Механизм (declarative, без lookahead): `("else" Statement)?` — Optional (Parser.cs ParseOptional
+// 543-551) ЖАДНЫЙ: если `else` присутствует, он поглощается ТЕКУЩИМ if. then-Statement внутреннего if
+// парсится ПЕРЕД тем, как внешний if проверяет свой else, поэтому внутренний if «съедает» else
+// (внутренний then-Statement `c;` останавливается на первом `;` и не добирается до else). Тай-брейк не
+// возникает: then-Statement, начинающийся с `if`, совпадает только с IfStatement (остальные
+// альтернативы Statement начинаются с `{`/идентификатора/`;`/`return`/...). См. progressT2.2.2.
+
+IfStatement = "if" "(" Expression ")" Statement ("else" Statement)?;
+
+WhileStatement = "while" "(" Expression ")" Statement;
+
+DoWhileStatement = "do" Statement "while" "(" Expression ")" ";";
+
+ForStatement = "for" "(" ForInit? ";" Expression? ";" Expression? ")" Statement;
+
+// for-initialization (C# 1.0): local-variable-declaration | expression-list?.
+// Roslyn ParseForStatement.eatVariableDeclarationOrInitializers (9628): декларация ИЛИ список выражений.
+// Формальная запись задачи (Expression? ";") упрощена: тест `for (int i = 0; ...)` требует
+// декларативной формы в init, поэтому ForInit = декларация | Expression. Дисамбигуация
+// декларация-vs-выражение — та же longest-match, что в LocalVariableDeclaration vs ExpressionStatement
+// (T2.2.1): два имени подряд — только декларация, одно выражение — только Expression.
+ForInit =
+    | ForVariableDeclaration = Type VariableDeclarator ("," VariableDeclarator)*
+    | Expression;
+
+// foreach ( type identifier in expression ) statement (C# 1.0; deconstruction — C# 7, вне скоупа).
+// Имя переменной — истинный идентификатор (не ключевое слово), guard как в VariableDeclarator.
+ForEachStatement = "foreach" "(" Type !ReservedKeyword Identifier "in" Expression ")" Statement;

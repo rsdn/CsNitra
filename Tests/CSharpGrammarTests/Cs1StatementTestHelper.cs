@@ -57,12 +57,24 @@ public static class Cs1StatementTestHelper
     // Returns the Kind of the FIRST statement inside the block. Used to prove the
     // declaration-vs-expression disambiguation (e.g. "LocalVariableDeclaration" vs
     // "ExpressionStatement"). Block = "{" Statement* "}" → Elements = [ { , <ZeroOrMany> , } ].
-    public static string FirstStatementKind(string input)
+    public static string FirstStatementKind(string input) => FirstStatementNode(input).Kind;
+
+    // Returns the FIRST statement node inside the block (for tree-shape assertions, e.g. the
+    // dangling-else binding). Block = "{" Statement* "}" → Elements = [ { , <ZeroOrMany> , } ].
+    public static ISyntaxNode FirstStatementNode(string input)
     {
         var block = ParseBlock(input) as SeqNode
             ?? throw new InvalidOperationException($"Expected SeqNode block, got {ParseBlock(input)?.GetType().Name}");
         var statements = block.Elements[1] as SeqNode
             ?? throw new InvalidOperationException($"Expected statements node, got {block.Elements[1].GetType().Name}");
-        return statements.Elements[0].Kind;
+        return statements.Elements[0];
     }
+
+    // IfStatement = "if" "(" Expression ")" Statement ("else" Statement)? → SeqNode Elements:
+    // [0]if [1]( [2]expr [3]) [4]then-Statement [5]else-Optional. Returns the then-Statement Kind.
+    public static string IfThenKind(SeqNode ifStatement) => ifStatement.Elements[4].Kind;
+
+    // Returns "some" if the IfStatement carries an else (Elements[5] is a SomeNode), else "none".
+    public static string IfElsePresent(SeqNode ifStatement) =>
+        ifStatement.Elements[5] is SomeNode ? "some" : "none";
 }
