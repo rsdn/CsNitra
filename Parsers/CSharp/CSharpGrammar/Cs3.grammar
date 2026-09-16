@@ -75,3 +75,59 @@ LambdaParameter =
 LambdaBody =
     | Expression
     | Block;
+
+// === T3.2.2 — C# 3.0 object/collection initializers + anonymous types. ===
+// Re-declares NewBody (append, the same pattern as the Primary re-declaration above and Cs2's
+// AnonymousMethod). The initializer `{ ... }` is a NEW construct that follows an object creation
+// (or a bare `new`). The Cs1 NewBody (Cs1.grammar:735) requires `[` (array rank) or `(` (argument
+// list) after the NewBaseType, so `new C { ... }` REJECTS at Cs1 (verified in T2.3.1). Each of the
+// two re-declared alternatives REQUIRES the new construct (REQUIRED-new-construct principle):
+//   * ObjectCreationWithInitializer REQUIRES the Initializer (the Cs1 ObjectCreation requires `(`
+//     and has no initializer). Longest-match: `new C(1) { ... }` -> this (longer than the Cs1 `C(1)`);
+//     `new C(1)` (no `{`) -> Cs1 only (this fails: no Initializer). No equal-length tie (one needs a
+//     trailing `{`, the other does not).
+//   * AnonymousType REQUIRES a `{` DIRECTLY after `new` (no type name) -> `new { ... }`; mutually
+//     exclusive with every NewBaseType-based alternative (which require a type name first).
+// Roslyn: ParseNewExpression (LanguageParser.cs:13245) dispatches IsAnonymousType (13318, `new` + `{`)
+// to ParseAnonymousTypeExpression (13323); otherwise ParseArrayOrObjectCreationExpression (13383)
+// parses an optional argument list (13406) + an optional object/collection initializer (13411-13414).
+
+NewBody =
+    | ObjectCreationWithInitializer = NewBaseType ArgumentList? Initializer
+    | AnonymousType = AnonymousInitializer;
+
+// The initializer: `{` + comma-separated elements + `}`. Empty `{ }` is allowed (Roslyn
+// ParseObjectOrCollectionInitializer accepts an empty list; `new C { }` is valid C#). The element
+// list is a SeparatedList with the default (Forbidden) trailing-separator behavior, so a trailing
+// comma (`new C { X = 5, }`) is rejected.
+Initializer = "{" (InitializerElement; ",")* "}";
+
+// A single initializer element: EITHER a member assignment (`Identifier = Expression`, a SINGLE `=`)
+// OR a plain expression (a collection element). The two alternatives are MUTUALLY EXCLUSIVE (no
+// equal-length tie) — see the `=` vs `==` note below.
+//
+// `=` vs `==` disambiguation (the critical finding):
+//   * A grammar Literal is a StartsWith match (Rules.cs:76): Literal("=") WOULD match the first `=`
+//     of `==`. So a bare `Identifier "=" Expression` would mis-read `x == 5` (consuming `x =` and
+//     leaving `= 5`, which is not an Expression -> it backtracks, but the disambiguation must be
+//     explicit, not accidental).
+//   * Roslyn disambiguates with IsNamedAssignment (LanguageParser.cs:13368): IsTrueIdentifier() &&
+//     PeekToken(1).Kind == EqualsToken. Because Roslyn tokenizes `==` as ONE token (EqualsEqualsToken),
+//     PeekToken(1) after `x` in `x == 5` is EqualsEqualsToken (not EqualsToken) -> NOT a named
+//     assignment -> parsed as an expression. The `!("==")` lookahead replicates this exactly:
+//       - `X = 5`  -> `!("==")` passes (next is `= `), `"="` matches -> MemberAssignment.
+//       - `x == 5` -> `!("==")` fails (next is `==`) -> MemberAssignment fails -> Expression.
+//   * The SECOND alternative is guarded with `!(Identifier !("==") "=")` so it matches ONLY when the
+//     input is not a member-assignment start. This makes the two alternatives mutually exclusive:
+//       for `X = 5` only MemberAssignment matches; for `x == 5` / `5` only the Expression alternative
+//     matches. Without this guard, `X = 5` would match BOTH MemberAssignment and Expression (the
+//     Assign operator, Cs1.grammar:672) at the same length -> an equal-length tie.
+InitializerElement =
+    | MemberAssignment = Identifier !("==") "=" Expression
+    | NotMemberAssignment = !(Identifier !("==") "=") Expression;
+
+// Anonymous type: `new { X = 5, Y = 6 }`. REQUIRES at least one element (`+`): `new { }` (empty
+// anonymous type) is NOT valid in CS3. Roslyn's PARSER accepts the empty list (requireOneElement:
+// false, LanguageParser.cs:13338) but the BINDER rejects it (CS0659 "Anonymous type must have at
+// least one member"); we enforce that binder rule at the parse level (documented deviation).
+AnonymousInitializer = "{" (InitializerElement; ",")+ "}";
