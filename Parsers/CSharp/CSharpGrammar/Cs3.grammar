@@ -131,3 +131,56 @@ InitializerElement =
 // false, LanguageParser.cs:13338) but the BINDER rejects it (CS0659 "Anonymous type must have at
 // least one member"); we enforce that binder rule at the parse level (documented deviation).
 AnonymousInitializer = "{" (InitializerElement; ",")+ "}";
+
+// ============================================================================
+// T3.2.3 — C# 3.0 auto-properties (class/struct only).
+//
+// The Cs1 concrete class/struct property (Cs1.grammar:188) is:
+//   Property = Attributes? PropertyModifier* Type TypeName "{" AccessorDeclaration+ "}" ";"?
+// with AccessorDeclaration = AccessorName Block (Cs1.grammar:204) — EVERY accessor REQUIRES a block
+// body. C# 1.0 has NO auto-properties, so `class C { int P { get; set; } }` REJECTS at Cs1 (T2.1.2
+// Property_AutoPropertyInClass_Fails). The INTERFACE property (InterfaceProperty, Cs1.grammar:209) and
+// the ABSTRACT property (AbstractProperty, Cs1.grammar:194) are SEPARATE rules (both use
+// InterfaceAccessor = AccessorName ";") and are NOT re-declared here — the interface auto-accessor form
+// (`interface I { int P { get; set; } }`) stays a C# 1.0 feature.
+//
+// APPROACH: re-declare `Property` (append, T0.3 merge) with an alternative that REQUIRES at least one
+// AUTO (semicolon) accessor (the REQUIRED-new-construct) and allows an optional `= Expression`
+// initializer. The Cs1 alternative requires ALL-block accessors; the Cs3 alternative requires >= one
+// auto accessor. The two are MUTUALLY EXCLUSIVE (a property is either all-block or has an auto
+// accessor) — never an equal-length tie. Re-declaring `Property` (rather than `AccessorDeclaration`)
+// is what avoids the tie: re-declaring AccessorDeclaration to add a `;` form would make the Cs1
+// `AccessorDeclaration+` also match the all-block case → tie.
+//
+// Accessor forms (Roslyn ParseAccessorDeclaration LanguageParser.cs:4632-4729): block (`get { }`,
+// 4683-4687), semicolon/auto (`get;`, 4688-4690), arrow (`get =>`, 4683, CS7 — excluded). A MIX of
+// block and auto accessors is parsed naturally (Roslyn ParseAccessorList 4375-4406 loops per accessor)
+// — the auto-getter (`get; set { }`) and auto-setter (`get { } set;`) forms. C# properties require a
+// `get` (binder CS0858), so the accessor list is get-first (set-first / setter-only not modeled).
+//
+// Property initializer `= Expression` (Roslyn ParsePropertyDeclaration 4289-4295: `= ParseVariableInitializer`).
+// Roslyn gates the auto-property INITIALIZER at CS6 (IDS_FeatureAutoPropertyInitializer -> CSharp6,
+// MessageID.cs:686); the task requires it as part of the CS3 auto-property feature, so it is attached
+// to this Cs3 alternative (parses at v3, rejects at v2) — a documented deviation.
+//
+// CS3 only: no `init` (CS9, MessageID.cs:601), no `required` (CS11, MessageID.cs:549), no
+// expression-bodied accessors `get =>` (CS7, MessageID.cs:679), no backing-field `field` access (CS8).
+//
+// Roslyn syntax tests: DeclarationParsingTests.cs TestClassProperty (4158, `class a { b c { get; set; } }`),
+// TestClassAutoPropertyWithInitializer (4448, `class a { b c { get; set; } = d; }`).
+
+// === T3.2.3: re-declared concrete class/struct property (auto-property). The Cs3 alternative
+// REQUIRES an auto (semicolon) accessor via AutoPropertyAccessorList; the optional initializer
+// `("= Expression)?` is part of this alternative. Mutually exclusive with the Cs1 all-block
+// alternative (no equal-length tie). ===
+Property = Attributes? PropertyModifier* Type TypeName "{" AutoPropertyAccessorList "}" ("=" Expression)? ";"?;
+
+// Auto-property accessor list: at least one auto (semicolon) accessor, get-first (C# properties
+// require a `get`). Named union (the meta-grammar forbids `|` inside a group). The four shapes are
+// disambiguated by longest-match (a longer shape wins when it matches); none has an equal-length tie
+// with another (each pair differs in a leading token or in length).
+AutoPropertyAccessorList =
+    | AutoGetterOnly        = "get" ";"
+    | AutoGetSet            = "get" ";" "set" ";"
+    | BlockGetterAutoSetter = "get" Block "set" ";"
+    | AutoGetterBlockSetter = "get" ";" "set" Block;
