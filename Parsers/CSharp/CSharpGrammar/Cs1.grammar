@@ -82,11 +82,65 @@ BaseList = ":" (Type; ",")+;
 
 EnumBaseList = ":" Type;
 
-ClassBody = "{" "}";
+// === T2.1.1: member infrastructure — union rules for class/struct/interface bodies + Field.
+// Class/struct bodies can contain fields and nested types; interface bodies can contain only
+// nested types (C# 1.0 interfaces have NO fields — see progressT2.1.1 D1). Later sub-points
+// (T2.1.2–T2.1.4) APPEND more member alternatives (Property/Method/Constructor/Operator/Indexer/
+// Event); the unions are structured to be append-only.
+//
+// Disambiguation Field vs TypeDeclaration — longest-match: a field starts with an attribute /
+// modifier / type-name (predefined or qualified) followed by an identifier; a type declaration
+// starts with the class/struct/interface/enum/delegate keyword. The two are mutually exclusive at
+// the "type-name vs. declaration-keyword" boundary (a declaration keyword is reserved → cannot be a
+// Type/TypeName → Field fails; a type-name is never a declaration keyword → TypeDeclaration fails),
+// so no equal-length tie arises.
+//
+// Modifier ordering: Roslyn's ParseModifiers (LanguageParser.cs:1347-1484) is a generic loop that
+// consumes modifier keywords in ANY order; per-kind legality/ordering are binder diagnostics.
+// Roslyn's own test code uses `static public` (Test/Semantic/Semantics/AccessCheckTests.cs:27).
+// So FieldModifier* accepts any order — `static public int X;` parses (positive, not negative).
+ClassBody = "{" ClassMember* "}";
 
-StructBody = "{" "}";
+StructBody = "{" StructMember* "}";
 
-InterfaceBody = "{" "}";
+InterfaceBody = "{" InterfaceMember* "}";
+
+ClassMember =
+    | Field
+    | TypeDeclaration;
+
+StructMember =
+    | Field
+    | TypeDeclaration;
+
+// Interface: nested types only (no fields in C# 1.0 — progressT2.1.1 D1). T2.1.2–T2.1.4 append
+// interface methods/properties/indexers/events (never fields).
+InterfaceMember =
+    | TypeDeclaration;
+
+// Field: attributes? modifier* type variable-declarator (, variable-declarator)* ;
+// (Roslyn ParseNormalFieldDeclaration LanguageParser.cs:5200-5220 → VariableDeclaration +
+// EatToken(Semicolon); declarators via ParseFieldDeclarationVariableDeclarators 5262, which loops
+// on commas 5322-5359). Reuses VariableDeclarator (T2.2.1) = !ReservedKeyword Identifier ("="
+// Expression)?. Field initializers are C# 1.0.
+Field = Attributes? FieldModifier* Type VariableDeclarator ("," VariableDeclarator)* ";";
+
+// C# 1.0 field modifiers: access + static/const/readonly/extern/new/volatile (Roslyn
+// GetModifierExcludingScoped LanguageParser.cs:1286-1345). All core C# 1.0, no feature gate
+// (volatile: 1314-1315). Excluded (version-purity / wrong kind): async (CS5), partial (CS2),
+// unsafe (method/type modifier, not a field modifier), virtual/abstract/sealed/override
+// (method/property modifiers, T2.1.2/T2.1.3).
+FieldModifier =
+    | "public"
+    | "private"
+    | "protected"
+    | "internal"
+    | "static"
+    | "const"
+    | "readonly"
+    | "extern"
+    | "new"
+    | "volatile";
 
 EnumMemberList = (EnumMember; "," : ?)+;
 

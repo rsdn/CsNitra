@@ -81,7 +81,12 @@ public class CSharpParserTests
     {
         var parser = CreateParser();
 
-        parser.Parse("class C {", "Grammar", out _);
+        // A malformed namespace (missing the closing brace) is still recovered: S1 inserts `}` at
+        // EOF. NOTE (T2.1.1): once ClassBody/StructBody/InterfaceBody became member lists, a
+        // malformed CLASS/STRUCT/INTERFACE body (e.g. `class C {`) is no longer recovered — the
+        // engine reports a FatalError instead of recovery diagnostics (see progressT2.1.1). The
+        // namespace form keeps exercising the recovery path.
+        parser.Parse("namespace N { using System;", "Grammar", out _);
 
         Assert.IsTrue(parser.Parser.RecoveryDiagnostics.Count > 0,
             "Expected recovery diagnostics for malformed input");

@@ -30,6 +30,7 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 
 - [ ] D1: пустой ввод ("" / только комментарии/trivia) не парсится — epsilon-совпадение именованного правила на стартовом правиле отклоняется (`AcceptEpsilonMatch`: NoRecovery=false, Recovery=только RecoveryRule в recovery-точке). Валидный C# (пустой файл) падает. Нужено решение уровня движка (принять epsilon для start rule / явный путь EOF) с защитой от бесконечных циклов. Обойдено в грамматике для NamespaceBody (`NamespaceBody?`) — для start rule обхода нет.
 - [✅] D2: `int.Parse()` / `string.Format()` не парсились — guard `IdentifierName = !ReservedKeyword Identifier` в `Primary` (T2.3.1) блокировал ВСЕ reserved-ключевые слова как начало Expression, включая predefined-типы. Исправлено в T2.3.3: добавлена альтернатива `PredefinedMember = PredefinedType "." !ReservedKeyword Identifier` (predefined-тип допустим как начало Expression только с обязательным `.` + identifier; bare `int` остаётся не-выражением; guard для `new`/`typeof`/`sizeof` не тронут).
+- [ ] D3 (T2.1.1, recovery-регрессия, territory T4.1/движка): после того как `ClassBody`/`StructBody`/`InterfaceBody` стали member-lists (`{ Member* }`), разбитое тело класса/структа/интерфейса (напр. `class C {`) НЕ восстанавливается — движок даёт `FatalError` (0 diagnostics) вместо прежней S1-вставки `}`. Причина: взаимодействие member-list-цикла и рекурсивного `TypeDeclaration` (не расстановка скобок — проверено экспериментом). Валидные программы парсятся чисто. Обойдено: smoke-тест `Parse_MalformedDeclaration_ProducesRecoveryDiagnostics` переключён на разбитый namespace (`namespace N { using System;`), который всё ещё проходит recovery. Исправление — в рамках T4.1 (recovery-тесты) / движка.
 
 ## Этап 2 — C# 1.0: члены и тела
 
@@ -45,11 +46,11 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
   - [✅] T2.2.2 if/while/do-while/for/foreach + тесты
   - [✅] T2.2.3 switch (case/default/labels) + try-catch-finally + using/lock/checked/unchecked + тесты
 - [ ] T2.1 Члены: поля, свойства, методы, конструкторы, деструкторы, операторы, индексаторы, события, модификаторы, атрибуты + тесты
-  - [ ] T2.1.1 Field + member-модификаторы + field-initializer + тесты
-  - [ ] T2.1.2 Property + accessors (get/set) + property-модификаторы + тесты
-  - [ ] T2.1.3 Method + constructor (+ `: base`/`: this`) + destructor + method-модификаторы + тесты
-  - [ ] T2.1.4 Operator + indexer + event + тесты
-  - [ ] T2.1.5 `ClassBody`/`StructBody`/`InterfaceBody` → member lists; base-list; version-purity + тесты
+  - [~] T2.1.1 Инфраструктура членов + Field: union-правила `ClassMember`/`StructMember`/`InterfaceMember` + `ClassBody`/`StructBody`/`InterfaceBody` = member lists + member-модификаторы + Field (+ field-initializer) + тесты (класс с полями)
+  - [ ] T2.1.2 Property + accessors (get/set, тела-блоки) + property-модификаторы → в union + тесты
+  - [ ] T2.1.3 Method + constructor (+ `: base`/`: this`) + destructor + method-модификаторы → в union + тесты
+  - [ ] T2.1.4 Operator + indexer + event → в union + тесты
+  - [ ] T2.1.5 Финализация: вложенные типы как члены, base-list, version-purity, полная верификация + тесты
 
 ## Этап 3 — Версии CS2–CS14
 
