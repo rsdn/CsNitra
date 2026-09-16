@@ -375,3 +375,69 @@ ArrayInitializer = "{" (Expression; ",")* "}";
 
 // Argument-list: `(` expression-list? `)` (пустой список допустим: `new Foo()`).
 ArgumentList = "(" (Expression; ",")* ")";
+
+// === T2.2.1: операторы C# 1.0 — Block + простые операторы. Первый из трёх подпунктов:
+// T2.2.1 (simple) → T2.2.2 (if/while/do-while/for/foreach) → T2.2.3 (switch/try/using/lock/checked).
+// Statement — центральное правило-union; T2.2.2/T2.2.3 будут ДОБАВЛЯТЬ альтернативы (Block уже есть,
+// т.к. блок — оператор в C# и нужен для вложенных блоков).
+// Семантика по Roslyn LanguageParser (C:\RSDN\roslyn, main): ParseStatement/ParseStatementCore
+// (8184-8460), ParseBlock (9098), ParseLabeledStatement (10466), ParseLocalDeclarationStatement
+// (10482), ParseBreakStatement (9330), ParseContinueStatement (9339), ParseGotoStatement (9947),
+// ParseReturnStatement (10113), ParseThrowStatement (10308).
+//
+// Disambiguation «локальная декларация vs expression-statement» — longest-match: декларация
+// начинается с ДВУХ имён подряд (Type Identifier), что никогда не является выражением;
+// expression-statement — одно выражение, что никогда не является Type Identifier. Пары
+// альтернатив не дают равной длины → тай-брейк «первый выигрывает» не задействуется.
+// См. docs/CSharpParserPlan-progressT2.2.1.md.
+
+Block = "{" Statement* "}";
+
+Statement =
+    | Block
+    | LabeledStatement
+    | EmptyStatement
+    | ExpressionStatement
+    | LocalVariableDeclaration
+    | ReturnStatement
+    | ThrowStatement
+    | BreakStatement
+    | ContinueStatement
+    | GotoStatement;
+
+// label: Identifier ":" Statement — метка = истинный идентификатор (не ключевое слово).
+// Roslyn IsPossibleLabeledStatement (8493): PeekToken(1)==Colon && IsTrueIdentifier.
+LabeledStatement = !ReservedKeyword Identifier ":" Statement;
+
+// Пустой оператор ";" (Roslyn ParseStatementCore case SemicolonToken, 8347).
+EmptyStatement = ";";
+
+// Выражение-оператор: Expression ";" (Roslyn ParseExpressionStatement, 11037).
+ExpressionStatement = Expression ";";
+
+// Локальная декларация: Type VariableDeclarator ("," VariableDeclarator)* ";"
+// (Roslyn ParseLocalDeclarationStatement 10482 → VariableDeclaration + Semicolon, 10568-10574).
+LocalVariableDeclaration = Type VariableDeclarator ("," VariableDeclarator)* ";";
+
+// VariableDeclarator: Identifier ("=" Expression)? (Roslyn ParseVariableDeclarator 5481,
+// name + EqualsValueClause, 5704-5709/5733). Имя — не ключевое слово.
+VariableDeclarator = !ReservedKeyword Identifier ("=" Expression)?;
+
+// return Expression? ";" (Roslyn ParseReturnStatement 10113; без ref-возврата — CS7).
+ReturnStatement = "return" Expression? ";";
+
+// throw Expression? ";" (Roslyn ParseThrowStatement 10308; throw; — rethrow, C# 1.0).
+ThrowStatement = "throw" Expression? ";";
+
+// break ";" (Roslyn ParseBreakStatement 9330; C# 1.0 — без метки).
+BreakStatement = "break" ";";
+
+// continue ";" (Roslyn ParseContinueStatement 9339; C# 1.0 — без метки).
+ContinueStatement = "continue" ";";
+
+// goto ( Identifier | "case" Constant | "default" ) ";" (Roslyn ParseGotoStatement 9947).
+// C# 1.0: case-метка — константное выражение (Constant); метка-идентификатор — не ключевое слово.
+GotoStatement =
+    | GotoLabel = "goto" !ReservedKeyword Identifier ";"
+    | GotoCase = "goto" "case" Constant ";"
+    | GotoDefault = "goto" "default" ";";
