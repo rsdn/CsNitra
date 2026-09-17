@@ -390,3 +390,42 @@ Expression =
 // alone PARSES.
 Primary =
     | DefaultLiteral = "default";
+
+// ============================================================================
+// T3.7.2 — C# 7.2 `in` parameter.
+//
+// The `in` PARAMETER (C# 7.2): a read-only reference parameter — the `in` modifier BEFORE the
+// parameter's type. `void M(in int x)`. Roslyn models it as a PARAMETER MODIFIER (not a return-type
+// modifier): `IsParameterModifierExcludingScoped` (LanguageParser.cs:4999) returns true for
+// `InKeyword`, and `ParseParameterModifiers` (5019) calls it a "Normal keyword-modifier
+// (in/out/ref/readonly/params/this)". The version gate is a BINDER (semantic) check —
+// `IDS_FeatureReadOnlyReferences` (MessageID.cs:654, `// semantic check`, C# 7.2; InArgs_CSharp7,
+// RefReadonlyTests.cs:95 reports ERR_FeatureNotAvailableInVersion7_1 on the `in` keyword at C# 7.1) — so
+// the PARSER accepts the form wherever the rule exists (CS7 only, per the plan's decision: CS7.1/7.2
+// features go into Cs7.grammar, version 7). `in` is NOT a return-type modifier (InNotAllowedInReturnType,
+// RefReadonlyTests.cs:728: `in int M()` is a parse error), so it is added to `ParameterModifier` only.
+//
+// CS7 only.
+
+// === `in` parameter modifier (C# 7.2). Re-declares Cs1 ParameterModifier (append, T0.3 merge). The
+// Cs1 union is `| "ref" | "out" | "params"`; the merged v3 union adds `"this"` (T3.2.4, Cs3.grammar:250);
+// the merged v7 union adds `"in"`. Distinct words -> no equal-length tie. `in` is a RESERVED keyword
+// (Cs1 ReservedKeyword:571), so it can never be a Type/TypeName (Cs1:23) -> no ambiguity with the
+// parameter's type. Both `Parameter` alternatives (Cs1:448 and the Cs4 optional parameter, Cs4:201) use
+// `ParameterModifier*`, so both accept the new `in` modifier. Roslyn IsParameterModifierExcludingScoped
+// (LanguageParser.cs:4999: InKeyword) + InArgs_CSharp7 (RefReadonlyTests.cs:63). ===
+//
+// Disambiguation (longest-match, no equal-length tie): `in` is reserved, so it is NOT a Type/TypeName and
+// NO existing `Parameter` alternative can start with it (the Cs1/Cs4 `Parameter` = `Attributes?
+// ParameterModifier* Type TypeName ...` would need `Type = in`, which fails because `in` is reserved).
+// The only way to consume a leading `in` in a parameter list is the new `in` ParameterModifier:
+//   * `in int x` (an in parameter, v7): ParameterModifier* = in, Type = int, TypeName = x. Sole match.
+//   * `ref int x` / `out int x` / `this int x` / `int x` (every version): unchanged (the `in` modifier is
+//     not consumed; the existing modifiers / bare type still match). No regression.
+//
+// Version purity: at v6 the `in` ParameterModifier is ABSENT, so `in int x` -> ParameterModifier* matches
+// zero (in is not a modifier) and Type = in FAILS (reserved) -> the Parameter fails -> `void M(in int x)`
+// REJECTS. At v7 the `in` ParameterModifier is present, so `in int x` -> ParameterModifier* = in, Type =
+// int, TypeName = x -> PARSES.
+ParameterModifier =
+    | "in";

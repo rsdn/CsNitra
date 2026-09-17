@@ -86,7 +86,7 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
   - [✅] T3.6.5 Разделители цифр (`1_000_000`) + `throw` как выражение (`x = c ? throw e : 5`) → `Cs7.grammar` + тесты (D1: `int X = _100;` (separator at start) — false premise, parses as identifier `_100`; octal separator not added — no octal rule in the grammar)
 - [ ] T3.7 CS7.1–7.2: `default`, `in`, `ref struct`, type/constant patterns → `Cs7.grammar` (v7) + тесты
    - [✅] T3.7.1 `default` literal (`int x = default;`) → `Cs7.grammar` + тесты (D1: `default(Type)` — false premise, не существовала в Cs1, добавлена как C# 1.0; D2: «trailing space» `default ;` парсится (trivia); D3: `default(5)` парсится как вызов)
-  - [ ] T3.7.2 `in` parameter (`void M(in int x)`) → `Cs7.grammar` + тесты
+  - [✅] T3.7.2 `in` parameter (`void M(in int x)`) → `Cs7.grammar` + тесты (D1: `in` IS reserved (Cs1:571) — task's "not reserved" false premise, beneficial for mutual exclusivity; D2: `foreach (var x in y)` parses only at v1 (var reserved at v2+), no-regression test uses concrete `int`; D3: `IEnumerable<int>` not a Type (no generic type-arg list), test uses `int[]`; D4: `in` argument (call site `M(in x)`) out of scope)
   - [ ] T3.7.3 `ref struct` (`ref struct S { }`) + `readonly struct` → `Cs7.grammar` + тесты
   - [ ] T3.7.4 type/constant patterns (verify already done in T3.6.2; add generic type patterns `is List<int>` if not) → `Cs7.grammar` + тесты
 - [ ] T3.8 CS8: switch expressions, using declarations, `..`/`^`, `??=`, NRT-аннотации, default interface members
