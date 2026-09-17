@@ -92,3 +92,65 @@ Statement =
 UsingDeclarationType =
     | Type
     | "var";
+
+// ============================================================================
+// T3.8.3a — C# 8.0 index-from-end `^` prefix operator.
+//
+// The index-from-end operator `^` (C# 8.0): `x[^1]` — a `^` PREFIX operator producing an index-from-end
+// expression, used as an indexer argument (the `[]` postfix, Cs1.grammar:732 `Indexer = "[" (Expression;
+// ",")* "]"`). The `^` is a NEW TDOPP PREFIX operator on `Expression` (the SAME shape as the Cs5 `await`
+// prefix, Cs5.grammar:74, and the Cs7 `ref`/`throw` prefixes, Cs7.grammar:295/362).
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp\Portable):
+//   * Form + precedence — GetPrefixUnaryExpression (Syntax/SyntaxKindFacts.cs:416-441): CaretToken ->
+//     IndexExpression (436-437). IsExpectedPrefixUnaryOperator (Parser/LanguageParser.cs:11356-11359) is
+//     true for `^` (a prefix unary, not ref/out), so `^` is parsed in parseUnaryOrPrimaryExpression
+//     (11463-11473) as a PrefixUnaryExpression with operand ParseSubExpression(GetPrecedence(Index-
+//     Expression)); GetPrecedence (11300-11301): IndexExpression -> Precedence.Unary — the SAME level as
+//     AwaitExpression (11299) and every other unary prefix operator.
+//   * The `^` BITWISE-XOR (the OTHER role of the `^` symbol) — GetBinaryExpression (SyntaxKindFacts.cs:
+//     645-658): CaretToken -> ExclusiveOrExpression. So `^` is BOTH a prefix unary (index-from-end, CS8)
+//     and a binary operator (XOR, CS1). Disambiguated by POSITION (prefix = no left operand vs infix = a
+//     left operand present), which maps onto this grammar's TDOPP prefix (IndexExpr) vs postfix (BitXor,
+//     Cs1.grammar:667) split.
+//   * Version gate — IDS_FeatureIndexOperator (Errors/MessageID.cs:177, "C# 8.0 features" block :616 ->
+//     LanguageVersion.CSharp8 :634, `// semantic check`), checked in Binder/Expressions/Binder_
+//     Expressions.cs:2683 — a BINDER (semantic) check. The PARSER accepts the form wherever the rule
+//     exists (CS8 only, per the plan).
+//   * Syntax tests — Test/Syntax/Parsing/ExpressionParsingTests.cs: IndexExpression (5280, `^1`),
+//     RangeExpression_Binary_WithIndexes (5337, `^5..^3` — the `..` range is T3.8.3b; only the `^` bounds
+//     are in scope here).
+//
+// CS8 only.
+
+// === Index-from-end `^` (C# 8.0). Re-declares Cs1 Expression (append, T0.3 merge); APPENDS the IndexExpr
+// prefix. A `^` PREFIX operator (like the Cs5 `await`, Cs5.grammar:74, and the Cs7 `ref`/`throw`,
+// Cs7.grammar:295/362): `^` + expression. It is a PREFIX alternative (it starts with the "^" literal, NOT
+// a self-Ref to Expression, so the TDOPP builder classifies it as a prefix, Parser.cs:137-149) and is
+// tried among the prefix alternatives at the START of an expression. The operand is `Expression : Unary`
+// (a ReqRef with Precedence = the Unary level, RuleGenerator.cs:90-94): minPrecedence = Unary's binding
+// power (15), so the operand binds tighter than all binary operators (Multiplicative bp 14 and below) —
+// `^ x + y` = `(^ x) + y` — and the Comma (binding power 1, the lowest) is NOT applicable, so the operand
+// does NOT absorb a following `,` in a comma-separated context (e.g. an indexer argument list `x[^i, ^j]`).
+// This is the TDOPP Comma fix (T3.3.2) handled by the `: Unary` precedence — no separate `Expression :
+// Comma` is needed. Roslyn GetPrefixUnaryExpression (SyntaxKindFacts.cs:436-437) + GetPrecedence
+// (LanguageParser.cs:11300-11301, IndexExpression -> Precedence.Unary). ===
+//
+// Disambiguation with the `^` BITWISE-XOR (longest-match, no equal-length tie): the `^` PREFIX (IndexExpr)
+// and the `^` BINARY (BitXor postfix, Cs1.grammar:667) are in DIFFERENT TDOPP phases — the prefix is tried
+// at the START of an expression (no left operand), the postfix is applied AFTER a left operand. They are
+// mutually exclusive:
+//   * `^1` (index-from-end): PrimaryExpr FAILS (no Primary matches the `^` symbol); IndexExpr -> `^ 1`.
+//     Sole successful prefix.
+//   * `x ^ y` (bitwise-XOR): PrimaryExpr -> `x`; IndexExpr FAILS (the start is `x`, not `^`). The BitXor
+//     POSTFIX (bp LogicalXor) then applies to `x` -> `x ^ y`. The `^` prefix is NEVER tried.
+//   * `x ^ ^1`: BitXor postfix on `x`; its RHS (Expression : LogicalXor) starts with `^` -> IndexExpr.
+//     -> `x ^ (^1)` (index-from-end binds tighter than XOR; Roslyn Unary > LogicalXor).
+//
+// Version purity: at v7 the IndexExpr prefix is ABSENT, so `x[^1]` REJECTS (the indexer's inner Expression
+// starts with `^`; PrimaryExpr fails, no other prefix matches `^`; the BitXor POSTFIX requires a left
+// operand and cannot start the expression). At v8 it PARSES. The bitwise-XOR (`x ^ y`) is UNCHANGED at
+// v1-v8 (the `^` prefix is absent at v1-v7; at v8 it only applies at the START of an expression, so it does
+// not interfere with `x ^ y`) — no regression.
+Expression =
+    | IndexExpr = "^" Expression : Unary;

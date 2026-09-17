@@ -92,7 +92,8 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 - [ ] T3.8 CS8: switch expressions, using declarations, `..`/`^`, `??=`, NRT-аннотации, default interface members → `Cs8.grammar` (v8) + тесты
   - [✅] T3.8.1 switch expressions (+ setup `Cs8.grammar` + version table + csproj) → `Cs8.grammar` + тесты (D: bug fix in Cs7 Pattern — ConstantPattern excludes lambda forms via two negative lookaheads, was greedily matching the whole arm as a lambda; version-count test updated for Cs8)
   - [✅] T3.8.2 using declarations (`using FileStream f = new(...);`) → `Cs8.grammar` + тесты (D1: the task's no-regression form `using (var f = new X()) { }` parses ONLY at v1 (var reserved at v2+, no `var` alt in ResourceAcquisition) — PRE-EXISTING limitation, not a regression; no-regression test uses concrete type `using (int x = Foo()) { }` at v1+v7; D2: single declarator + REQUIRED initializer (`using T f;` rejected); D3: `await using` out of scope; D4: modifiers out of scope)
-  - [ ] T3.8.3 range/index (`..`/`^`) (`x[1..^1]`, `x[..5]`, `x[2..]`) → `Cs8.grammar` + тесты
+  - [~] T3.8.3a index-from-end `^` (`x[^1]`, `x[^2..^1]`-готовность) → `Cs8.grammar` + тесты
+  - [ ] T3.8.3b range `..` (`x[1..^1]`, `x[..5]`, `x[2..]`) → `Cs8.grammar` + тесты
   - [ ] T3.8.4 `??=` (null-coalescing assignment) → `Cs8.grammar` + тесты
   - [ ] T3.8.5 NRT-аннотации (`string?`, `string!`) → `Cs8.grammar` + тесты
   - [ ] T3.8.6 default interface members → `Cs8.grammar` + тесты
