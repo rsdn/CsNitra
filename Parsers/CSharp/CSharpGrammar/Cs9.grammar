@@ -91,3 +91,37 @@ RecordModifier =
     | "abstract"
     | "sealed"
     | "unsafe";
+
+// === `with` expression (C# 9.0, record with expression, T3.9.2). ===
+// A `with` expression copies a record with some properties changed:
+//   var p2 = p with { X = 10 };
+//   var p3 = new Point(1, 2) with { Y = 20 };
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp/Portable):
+//   * ParseWithExpression (Parser/LanguageParser.cs:13458-13479): `openBrace = EatToken(OpenBraceToken)`,
+//     then ParseCommaSeparatedSyntaxList(allowTrailingSeparator: true, requireOneElement: false) with
+//     each element = ParseExpressionCore(). Returns WithExpression(receiver, withKeyword,
+//     InitializerExpression(WithInitializerExpression, openBrace, list, closeBrace)).
+//   * GetOperatorExpressionKind (11785-11786): `with` is recognized as the WithExpression operator ONLY
+//     when a `{` follows the `with` keyword (`token1Kind == WithKeyword && PeekToken(1) == OpenBrace`).
+//   * Dispatched in the binary-expression path (11614-11615): the receiver is the left sub-expression.
+//   * WithExpressionSyntax (Syntax.xml.Internal.Generated.cs:5843-5847): ExpressionSyntax expression
+//     (receiver) + SyntaxToken withKeyword + InitializerExpressionSyntax initializer.
+//
+// The `with` expression is a POSTFIX expression: a record (primary) expression followed by
+// `with { ... }`. Modeled as a PostfixOp alternative (re-declared, T0.3 append-merge, as Cs4's
+// NamedInvocation / Cs6's NullConditional*), so it is applied inside PrimaryExpr = Primary PostfixOp*
+// (Cs1.grammar:637). The `{ ... }` body reuses the Cs3 Initializer (Cs3.grammar:103); its
+// InitializerElement (Cs3.grammar:125-127) handles both a member assignment (`X = 10`) and a plain
+// expression — exactly the `with` initializer element forms.
+//
+// "with" is a CONTEXTUAL keyword (NOT in the Cs1 ReservedKeyword, Cs1.grammar:537-618), so it is matched
+// here as a plain literal and remains a valid identifier name elsewhere (consistent with "record",
+// T3.9.1). CS9 only: at v8 the WithExpr alternative is absent, so `p with { ... }` leaves the `with { }`
+// unconsumed and REJECTS.
+//
+// Boundary: the reused Initializer uses the default (Forbidden) trailing-separator behavior, so a
+// trailing comma (`p with { X = 10, }`) is rejected — a minor deviation from Roslyn
+// (allowTrailingSeparator: true), acceptable for the minimal task.
+PostfixOp =
+    | WithExpr = "with" Initializer;

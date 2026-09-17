@@ -100,8 +100,8 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
   - [✅] T3.8.5 NRT-аннотации (`string?`, `string!`) → `Cs8.grammar` + тесты (TDOPP Type postfixes `?`/`!`, 1-char literals; два новых уровня TypeNullable/TypeNotNull merged at TypeArray anchor; disambiguated от ! (NOT) и ? (ternary))
   - [✅] T3.8.6 default interface members → `Cs8.grammar` + тесты (InterfaceMethod re-declared, reuse MethodBody; Cs1 ;-only form stays для no-body, tie -> Cs1)
 - [~] T3.9 CS9: records, `with {}`, init-only, top-level statements, static abstract в интерфейсах
-  - [~] T3.9.1 records (record declaration) + setup `Cs9.grammar` + version table + csproj → `Cs9.grammar` + тесты
-  - [ ] T3.9.2 `with {}` (record with expression) → `Cs9.grammar` + тесты
+  - [✅] T3.9.1 records (record declaration) + setup `Cs9.grammar` + version table + csproj → `Cs9.grammar` + тесты (RecordDeclaration, contextual keyword, reuses Parameter/BaseList/ClassBody; setup: csproj + v9)
+  - [~] T3.9.2 `with {}` (record with expression) → `Cs9.grammar` + тесты
   - [ ] T3.9.3 init-only (init accessor) → `Cs9.grammar` + тесты
   - [ ] T3.9.4 top-level statements → `Cs9.grammar` + тесты
   - [ ] T3.9.5 static abstract в интерфейсах → `Cs9.grammar` + тесты
