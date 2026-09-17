@@ -429,3 +429,71 @@ Primary =
 // int, TypeName = x -> PARSES.
 ParameterModifier =
     | "in";
+
+// ============================================================================
+// T3.7.3 — C# 7.2 `ref struct` + `readonly struct`.
+//
+// Two CS7.2 features — struct modifiers:
+//   * `ref struct` — `ref struct S { }` (a ref struct — can only contain ref fields, must be
+//     allocated on the stack). The `ref` is a struct modifier BEFORE the `struct` keyword.
+//   * `readonly struct` — `readonly struct S { }` (a readonly struct). The `readonly` is a struct
+//     modifier BEFORE the `struct` keyword.
+//
+// Both are C# 7.2 in Roslyn and both are SEMANTIC (binder) checks, so the PARSER accepts the form
+// wherever the rule exists (CS7 only, per the plan's decision: CS7.1/7.2 features go into
+// Cs7.grammar, version 7; the version-purity boundary is v6 rejects / v7 accepts).
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp):
+//   * Form — `ref`/`readonly` is a MODIFIER on the struct declaration (before the `struct` keyword).
+//     DeclarationTreeBuilder.cs:798-805: `ReadOnlyKeyword` + Struct -> `IDS_FeatureReadOnlyStructs`;
+//     `RefKeyword` + Struct -> `IDS_FeatureRefStructs`. Confirmed by RefStructs.cs:28 (RefStructSimple,
+//     `ref struct S1{}` / `public ref struct S2{}`) and ReadOnlyStructs.cs:27 (ReadOnlyStructSimple,
+//     `readonly struct S1{}` / `public readonly struct S2{}` / `readonly public struct S3{}`) and
+//     ReadOnlyStructs.cs:138 (ReadOnlyRefStruct, `readonly ref struct S1{}` / `unsafe readonly public
+//     ref struct S2{}` — both modifiers, any order).
+//   * Version gates (both C# 7.2, both `// semantic check`) — MessageID.cs:152 (`IDS_FeatureRefStructs`),
+//     :153 (`IDS_FeatureReadOnlyStructs`); both map to `LanguageVersion.CSharp7_2` (MessageID.cs:657-658,
+//     in the "C# 7.2 features" block 652-661). Confirmed by RefStructs.cs:44 (RefStructSimpleLangVer)
+//     and ReadOnlyStructs.cs:64 (ReadOnlyStructSimpleLangVer): at C# 7, `ref struct`/`readonly struct`
+//     -> ERR_FeatureNotAvailableInVersion7 "ref structs"/"readonly structs" "7.2".
+//   * `ref`/`readonly` are ONLY struct modifiers (NOT class/interface/enum/delegate) — RefStructs.cs:67
+//     (RefStructErr: `ref class`/`ref interface`/`ref delegate` -> ERR_BadMemberFlag "modifier 'ref' is
+//     not valid for this item") and ReadOnlyStructs.cs:92 (ReadOnlyClassErr: `readonly class`/
+//     `readonly delegate`/`readonly interface` -> ERR_BadMemberFlag). So they are added to
+//     `StructModifier` ONLY (not to ClassModifier/InterfaceModifier/EnumModifier/DelegateModifier).
+//
+// CS7 only.
+
+// === `ref` / `readonly` struct modifiers (C# 7.2). Re-declares Cs1 StructModifier (append, T0.3
+// merge) to add "ref" and "readonly". The Cs1 union (Cs1.grammar:53-59) is
+// `public | private | protected | internal | abstract | unsafe`; Cs2 APPENDS "partial"
+// (Cs2.grammar:264-265); the merged v7 union adds "ref" and "readonly". Distinct words -> no
+// equal-length tie. `ref` (Cs1 ReservedKeyword:591) and `readonly` (Cs1 ReservedKeyword:590) are
+// RESERVED keywords, so neither can be a Type/TypeName (Cs1.grammar:23 `TypeName = !ReservedKeyword
+// Identifier`) -> the existing `StructDeclaration` CANNOT match `ref struct ...` / `readonly struct
+// ...` (its `StructModifier*` matches zero and the leading token would have to be the reserved
+// ref/readonly, which is not a `Type`). Both `StructDeclaration` alternatives (Cs1:36 and the Cs2
+// re-declarations Cs2:69/Cs2:145) use `StructModifier*`, so both accept the new modifiers. This is the
+// SAME pattern as T3.6.4 (`ref`/`readonly` -> MethodModifier), T3.7.2 (`in` -> ParameterModifier), and
+// the Cs2 `partial` -> StructModifier addition. Roslyn DeclarationTreeBuilder.cs:798-805 +
+// RefStructs.cs:28 + ReadOnlyStructs.cs:27. ===
+//
+// Disambiguation (longest-match, no equal-length tie):
+//   * `ref struct S { }` (a ref struct, v7): StructModifier* = ref, "struct", TypeName=S, StructBody.
+//     Field FAILS (`ref` is not a FieldModifier; Type=ref fails — ref is reserved); Method FAILS
+//     (MethodModifier*=ref, then Type=struct fails — struct is reserved). Sole match.
+//   * `readonly struct S { }` (a readonly struct, v7): StructModifier* = readonly, "struct",
+//     TypeName=S, StructBody. Field FAILS (FieldModifier*=readonly, then Type=struct fails — struct is
+//     reserved); Method FAILS (MethodModifier*=readonly, then Type=struct fails). Sole match.
+//   * `readonly int x;` (a readonly FIELD, every version): Field -> FieldModifier=readonly, Type=int,
+//     VariableDeclarator=x, ; (matches). StructDeclaration -> StructModifier*=readonly, then "struct"
+//     expected but `int` found -> FAILS. So Field is the sole match (no regression at any version). The
+//     `readonly` struct modifier and the `readonly` field modifier are DIFFERENT rules (StructModifier vs
+//     FieldModifier) — no conflict.
+//
+// Version purity: at v6 "ref"/"readonly" are NOT StructModifiers, so `ref struct S { }` /
+// `readonly struct S { }` REJECT (StructModifier* matches zero; "struct" expected but the reserved
+// ref/readonly found). At v7 they PARSE.
+StructModifier =
+    | "ref"
+    | "readonly";
