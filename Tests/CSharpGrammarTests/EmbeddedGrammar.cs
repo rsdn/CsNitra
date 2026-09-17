@@ -18,6 +18,7 @@ public static class EmbeddedGrammar
         new(6,  "Cs6.grammar",  "Cs6.grammar"),
         new(7,  "Cs7.grammar",  "Cs7.grammar"),
         new(8,  "Cs8.grammar",  "Cs8.grammar"),
+        new(9,  "Cs9.grammar",  "Cs9.grammar"),
         new(11, "Cs11.grammar", "Cs11.grammar"),
     ];
 
