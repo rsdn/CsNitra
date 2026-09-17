@@ -125,3 +125,43 @@ RecordModifier =
 // (allowTrailingSeparator: true), acceptable for the minimal task.
 PostfixOp =
     | WithExpr = "with" Initializer;
+
+// === `init` accessor (C# 9.0, init-only setter, T3.9.3). ===
+// An `init` accessor is like a `set` accessor but is only available during object initialization:
+//   public int X { get; init; }
+//   public int Y { get; set; init; }
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers\CSharp\Portable):
+//   * `init` is a CONTEXTUAL keyword (NOT reserved): GetContextualKeyword
+//     (Syntax/SyntaxKindFacts.cs:1419-1420, `case "init": return SyntaxKind.InitKeyword;`). Hence it
+//     is matched here as a plain literal and remains a valid identifier/type name elsewhere (consistent
+//     with `record`/`with`, T3.9.1/T3.9.2).
+//   * `init` is a FIRST-CLASS accessor name, parsed by the SAME generic accessor parser as
+//     `get`/`set`: ParseAccessorDeclaration (Parser/LanguageParser.cs:4632-4729) eats an
+//     IdentifierToken (4646) and maps it via GetAccessorKind (4648, 4737-4748:
+//     `SyntaxKind.InitKeyword => SyntaxKind.InitAccessorDeclaration`, 4743). The body may be a block
+//     (`{`, 4683-4687), an arrow (`=>`, 4683), or a semicolon / auto form (`;`, 4688-4690).
+//   * Accessor-level access modifiers are allowed (`private init;`), per the Roslyn parse test
+//     (Test/Syntax/Parsing/AccessorDeclarationParsingTests.cs:511-526: an AccessorList with a
+//     GetAccessorDeclaration `get;` + an InitAccessorDeclaration `private init;`).
+//   * Version gate — IDS_FeatureInitOnlySetters (Errors/MessageID.cs:210, :601 `// semantic check`)
+//     -> a BINDER/semantic (C# 9.0) feature; the PARSER accepts `init` wherever an accessor is parsed.
+//     Version purity comes from the rule being Cs9-only.
+//
+// The required `init` forms (`get; init;`, `get; set; init;`) are AUTO (semicolon) accessors, so they
+// belong to the Cs3 auto-property path. Re-declaring `AutoPropertyAccessorList` (append, T0.3 merge)
+// ADDS the two `init` shapes to the existing 4 (Cs3.grammar:182-186); the Cs3 `Property` rule
+// (Cs3.grammar:176) references it by name, so it picks up the new shapes at v9.
+//
+// Longest-match, no tie: for `get; init;` the new AutoGetInit (10 chars) beats the Cs3
+// AutoGetterOnly (4 chars); for `get; set; init;` the new AutoGetSetInit (15 chars) beats the Cs3
+// AutoGetSet (9 chars). Neither collides with the Cs3 shapes (which require `set`, not `init`).
+//
+// CS9 only: at v8 the two `init` shapes are absent, so `get; init;` leaves `init;` unconsumed and
+// REJECTS (both the Cs3 auto list and the Cs1 all-block list fail).
+//
+// Boundary: block-body `init` (`init { }`) and accessor-level access modifiers (`private init`) are
+// valid C# 9 but OUT OF SCOPE for the minimal task (the required tests are the auto forms only).
+AutoPropertyAccessorList =
+    | AutoGetInit    = "get" ";" "init" ";"
+    | AutoGetSetInit = "get" ";" "set" ";" "init" ";";
