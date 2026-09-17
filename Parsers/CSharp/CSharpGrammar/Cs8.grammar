@@ -373,3 +373,49 @@ Type =
 // postfix loop (entry minPrecedence 0). Only NEW names appear before the anchor -> the merge succeeds
 // (a name already present after the anchor would fail, CsNitraTypeChecker.cs:116-117).
 precedence TypeNullable, TypeNotNull, TypeArray;
+
+// ============================================================================
+// T3.8.6 — C# 8.0 default interface members (methods with bodies in interfaces).
+//
+// A default interface method is a MethodDeclarationSyntax with a Body (Block) or an
+// ExpressionBody (ArrowExpressionClause) — the SAME node Roslyn uses for a class method. Roslyn has
+// NO separate "interface method" node; whether a body is allowed is a BINDER concern (default
+// interface members are C# 8.0).
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp/Portable/Parser/LanguageParser.cs):
+//   * ParseMethodDeclaration (3679-3736): after the parameter list + constraint clauses, calls
+//     ParseBlockAndExpressionBodiesWithSemicolon (3722) and builds MethodDeclaration(attributes,
+//     modifiers, type, …, blockBody, expressionBody, semicolon) (3724-3735).
+//   * ParseBlockAndExpressionBodiesWithSemicolon (3593-3631): the THREE mutually exclusive body
+//     forms, disambiguated by the leading token — `;` (3600-3606, no body), `{` ->
+//     ParseMethodOrAccessorBodyBlock (3608-3610, block body), `=>` -> ParseArrowExpressionClause
+//     (3612-3614) + a required `;` (3618-3621, expression body).
+//   * Version gate — default interface members are C# 8.0 (a binder/semantic check in real C#; the
+//     plan's boundary). The PARSER accepts a body-bearing interface method only at CS8.
+//
+// CS8 only.
+//
+// Mechanism: re-declare Cs1 InterfaceMethod (append, T0.3 merge). Cs1 InterfaceMethod
+// (Cs1.grammar:281) REQUIRES ";" (C# 1.0 interface methods have no body). The Cs8 alternative REUSES
+// MethodBody (Cs1.grammar:267 = `Block | ";"`, extended by Cs6.grammar:103-104 with the
+// `=> Expression ";"` form) — the SAME body rule the class Method (Cs1.grammar:265) uses. So an
+// interface method may now have a block body, an expression body, or (via the Cs1 alternative) no
+// body.
+//
+// Disambiguation (longest-match-wins; the body forms are mutually exclusive with the Cs1 ";" form):
+//   * `void M() { }` (block): the Cs1/Cs2 ";" alternatives fail (a `{` follows `)`, not `;`); the
+//     Cs8 MethodBody=Block matches. Sole match.
+//   * `void N() => 42;` (expression): the ";" alternatives fail (a `=>` follows `)`, not `;`); the
+//     Cs8 MethodBody=ExpressionBody matches. Sole match.
+//   * `void P();` (no body): the Cs1 ";" alternative and the Cs8 MethodBody=";" tie at the same
+//     length -> resolves to the Cs1 alternative (loaded first, Parser.cs:296-316) -> the C# 1.0
+//     interface method. Still allowed.
+//
+// Version purity: at v7 the Cs8 alternative is ABSENT, so `void M() { }` / `void N() => 42;` in an
+// interface REJECT (no InterfaceMember alternative allows a method body — InterfaceMethod is
+// ";"-only at v1-v7). At v8 they PARSE. `void P();` (no body) parses at v1-v8 (unchanged).
+//
+// Note: the re-declared alternative shares MethodModifier with the class Method, so `virtual`/
+// `abstract`/etc. are syntactically accepted on a default interface method (a binder error in real
+// C# — parser-vs-binder split, consistent with T2.1.3).
+InterfaceMethod = Attributes? MethodModifier* Type TypeName "(" ParameterList? ")" MethodBody;
