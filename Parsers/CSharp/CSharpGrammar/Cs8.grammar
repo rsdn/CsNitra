@@ -317,3 +317,59 @@ Expression =
 // `=` is one) — no regression.
 Expression =
     | CoalesceAssign = Expression "??=" Expression : Assignment, right;
+
+// ============================================================================
+// T3.8.5 — C# 8.0 nullable-reference-type (NRT) annotations `?` / `!` on type names.
+//
+// A type name may be followed by `?` (nullable) or `!` (non-null): `string?`, `string!`, `int?`,
+// `int!`, `MyClass?`, `MyClass!`. In CsNitra both are 1-char type-suffix LITERALS (a `StartsWith`
+// match, Rules.cs:76-77) — the SAME mechanism as the `.` literal (`MemberAccess = "." Identifier`,
+// Cs1.grammar:734) and the `*` / `[]` type postfixes (Cs1.grammar:511-512). NOT terminals;
+// `CSharpTerminals.cs` is NOT modified.
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp\Portable):
+//   * `?` — the `ParseType` postfix loop (Parser/LanguageParser.cs:7614-7676): the `QuestionToken`
+//     case (7618-7629) calls `TryEatNullableQualifierIfApplicable` (7682) and, on success, wraps the
+//     type in `NullableType` (7623, `_syntaxFactory.NullableType(type, question)`). `NullableTypeSyntax`
+//     is the only NRT-related type node (Generated/.../Syntax.xml.Syntax.Generated.cs:797).
+//   * `!` — there is NO `NotNullTypeSyntax` / `NotNullType` kind anywhere in the syntax tree
+//     (searched src/Compilers/CSharp). Roslyn represents the non-null annotation as a `NullableAnnotation`
+//     (flow-state metadata), not as a distinct node. Syntactically the `!` is a one-char type suffix,
+//     exactly like `?`. So the grammar models both as type-suffix literals in the `Type` postfix loop.
+//   * Version gate — NRT is a C# 8.0 feature (the plan's boundary; Roslyn's is a binder/semantic check).
+//
+// CS8 only.
+//
+// Mechanism (TDOPP): the `Type` rule (Cs1.grammar:508-512) is a left-recursive TDOPP rule whose
+// postfixes are `*` (TypePointer, bp 2) and `[]` (TypeArray, bp 3). The postfix loop
+// (Parser.cs:337-416) does NOT update `minPrecedence` within the loop, so every postfix with
+// precedence > the rule's entry `minPrecedence` (0 for a plain `Type` Ref) applies, in INPUT ORDER,
+// until none match. Hence `?` / `!` can be added as two more `Type` postfixes at any level > 0 and
+// they compose in any order with `*` / `[]` (e.g. `int?[]`, `int[]?`, `string?[]`). Two NEW
+// precedence levels (TypeNullable, TypeNotNull) are added just above TypeArray (the `precedence`
+// statement below, merged at the TypeArray anchor — CsNitraTypeChecker.cs:67-122).
+//
+// Disambiguation (longest-match, no equal-length tie):
+//   * `!` (NRT suffix) vs `!` (logical NOT, Cs1.grammar:640 `UnaryNot = "!" Expression : Unary`):
+//     DIFFERENT TDOPP rules — the suffix is a `Type` postfix (tried only while parsing a `Type`),
+//     the NOT is an `Expression` prefix (tried only while parsing an `Expression`). `string!` is a
+//     type; `!x` is an expression. They never compete at the same position.
+//   * `?` (NRT suffix) vs `?` (ternary, Cs1.grammar:674 `Conditional = Expression "?" ...`): same
+//     split — the suffix is a `Type` postfix, the ternary `?` is an `Expression` postfix. `string?`
+//     is a type; `a ? b : c` is an expression. No conflict.
+//
+// Version purity: at v7 the `Type` re-declaration (Cs8-only) is ABSENT, so `string!` / `int!` /
+// `MyClass!` REJECT (no `Type` postfix consumes the trailing `!`; the field declaration sees `!` where
+// `;` is expected). The `?` suffix is likewise absent at v1-v7 (it was never modeled — Cs1.grammar:503-504,
+// and Cs1TypeTests.Invalid_NrtAnnotation_Fails / Invalid_NullableValueType_Fails assert `?` fails at v1).
+// At v8 both `?` and `!` PARSE. No pre-existing rule is modified -> no regression at v1-v7.
+Type =
+    | NullableType = Type : TypeNullable "?"
+    | NotNullType = Type : TypeNotNull "!";
+
+// New `Type`-suffix levels (T3.8.5). Merged at the `TypeArray` anchor (CsNitraTypeChecker.cs:67-122):
+// the two NEW names are inserted immediately before `TypeArray`, so the final order is … Assignment,
+// TypeNullable, TypeNotNull, TypeArray, TypePointer, Comma. Both are > 0, so they apply in the `Type`
+// postfix loop (entry minPrecedence 0). Only NEW names appear before the anchor -> the merge succeeds
+// (a name already present after the anchor would fail, CsNitraTypeChecker.cs:116-117).
+precedence TypeNullable, TypeNotNull, TypeArray;
