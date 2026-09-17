@@ -229,3 +229,43 @@ Expression =
 // no Primary matches `..` — and no other prefix starts with `..`). At v8 it PARSES.
 Expression =
     | RangePrefix = ".." Expression : Range;
+
+// ============================================================================
+// T3.8.3d — C# 8.0 range operator `..` (UNARY POSTFIX form only: `left ..`, no right operand).
+//
+// The UNARY POSTFIX range `2 ..` (C# 8.0, the start-only form) is a TDOPP POSTFIX operator on `Expression`
+// at the SAME `Range` precedence level the T3.8.3b binary `RangeBinary` uses (Roslyn Precedence.Range,
+// LanguageParser.cs:11308-11309). The start-only form is parsed in ParseExpressionContinued.
+// tryExpandExpression (LanguageParser.cs:11617-11625): `RangeExpression(leftOperand, ..,
+// CanStartExpression() ? ParseSubExpression(Precedence.Range) : null)` — when nothing expression-start
+// follows the `..`, the right operand is null (the start-only form). The `..` is applied AFTER the left
+// operand (a POSTFIX); there is NO right operand. Associativity: `RangeExpression` is not in Roslyn's
+// IsRightAssociative list (11173-11195) — the binary form is left-associative; the postfix form has no
+// right operand so no associativity applies.
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp\Portable):
+//   * Form + precedence — tryExpandExpression (LanguageParser.cs:11617-11625): the right operand is
+//     `ParseSubExpression(Precedence.Range)` when `CanStartExpression()` else `null`. GetPrecedence
+//     (11308-11309): RangeExpression -> Precedence.Range.
+//   * Operator recognition — GetExpressionOperatorTokenKindAndExpressionKind (LanguageParser.cs:
+//     11742-11744): `..` -> (DotDotToken, RangeExpression).
+//   * Version gate — CS8 (the plan's boundary; Roslyn's is a binder/semantic check).
+//
+// `..` is the SAME 2-char LITERAL as the T3.8.3b/T3.8.3c forms (a `StartsWith` match, Rules.cs:76-77).
+// NOT a terminal. This is a POSTFIX (a self-Ref to Expression as the first element, Parser.cs:137-146):
+// the builder strips the `Expression : Range` self-Ref, and since the `rest` (`[".."]`) has no ReqRef it
+// falls back to the first element's precedence (`Range`, Parser.cs:144-145) and emits a postfix matching
+// the bare `..` (no right operand).
+//
+// Disambiguation with the T3.8.3b BINARY form (longest-match-wins, Parser.cs:386): both are POSTFIX at the
+// `Range` level. For `2 .. 3` the `RangeBinary` postfix consumes `2 .. 3` (longer) and wins; for `2 ..`
+// (nothing after) `RangeBinary` FAILS (no right operand after the `..`) and the `RangePostfix` postfix
+// matches the bare `..` -> `2 ..`. The `.` member-access (one dot + Identifier, Cs1.grammar:731, a
+// PostfixOp-loop postfix) needs an Identifier after the single `.`, so a bare `..` never matches it (no
+// regression).
+//
+// Version purity: at v7 the RangePostfix is ABSENT, so `2 ..` REJECTS (the left operand `2` is parsed,
+// then no postfix consumes the trailing `..` and the statement sees `..` where `;` is expected). At v8 it
+// PARSES.
+Expression =
+    | RangePostfix = Expression : Range "..";

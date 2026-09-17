@@ -90,14 +90,27 @@ public class Cs8RangeBinaryTests
     public void RangeBinary_RejectedAtV7()
         => AssertFailsV7("class C { void M() { var r = 1 .. 2; } }");
 
-    // === NEGATIVE (version 8, malformed): a MISSING right operand. ===
-    // `1 ..` (the start-only form) is T3.8.3d (out of scope here). At v8 the RangeBinary POSTFIX
-    // REQUIRES an `Expression : Range` after the `..`; the next token is `;` (not an expression start)
-    // -> the postfix fails -> the left operand is `1`, and `.. ;` is leftover -> REJECTS.
+    // === POSITIVE (version 8, T3.8.3d): the start-only `1 ..` form now parses. ===
+    // T3.8.3b originally expected `1 ..` to REJECT (the start-only form was "out of scope, T3.8.3d").
+    // T3.8.3d added the UNARY POSTFIX `..` (start-only form, `RangePostfix = Expression : Range ".."`,
+    // Cs8.grammar): the left operand `1` is parsed, then the `RangePostfix` POSTFIX matches the bare
+    // `..` (the `RangeBinary` POSTFIX fails — no right operand after the `..`) -> `1 ..` parses. The
+    // start-only form is now VALID at v8 (Roslyn tryExpandExpression, LanguageParser.cs:11617-11625,
+    // right operand null when CanStartExpression() is false). See Cs8RangePostfixTests and
+    // docs/CSharpParserPlan-progressT3.8.3d.md.
 
     [TestMethod]
-    public void RangeBinary_MissingRightOperand_Rejected()
-        => AssertFailsV8("class C { void M() { var r = 1 .. ; } }");
+    public void RangePostfix_StartOnly_ParsesAtV8()
+        => AssertParsesV8("class C { void M() { var r = 1 .. ; } }");
+
+    // === NEGATIVE (version 7, version-purity): the start-only `..` is not available at v7. ===
+    // At v7 the RangePostfix POSTFIX is ABSENT; the left operand `1` is parsed, then no postfix consumes
+    // the trailing `..` (MemberAccess fails: the char after the first `.` is `.`, not an identifier), so
+    // the statement sees `..` where `;` is expected -> REJECTS. At v8 it PARSES.
+
+    [TestMethod]
+    public void RangePostfix_StartOnly_RejectedAtV7()
+        => AssertFailsV7("class C { void M() { var r = 1 .. ; } }");
 
     // === helpers ===
 
