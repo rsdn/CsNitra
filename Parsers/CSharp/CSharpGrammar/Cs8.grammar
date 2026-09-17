@@ -41,3 +41,54 @@ Expression =
 // mechanism Cs4 Argument uses). Single-sequence rule ending in a precedence-qualified RuleRef (a
 // SimpleRule, not an anonymous alternative, not in a group — the two T3.3.2 meta-grammar constraints).
 SwitchArm = Pattern "=>" Expression : Comma;
+
+// ============================================================================
+// T3.8.2 — C# 8.0 using declarations.
+//
+// A using declaration is a NEW STATEMENT form: `using Type Identifier = Expression ;` (or
+// `using var Identifier = Expression ;`). It is a local-variable-declaration-like statement with a
+// leading `using` keyword (automatic resource disposal at the end of the scope).
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp\Portable):
+//   * Structure — ParseLocalDeclarationStatement (Parser/LanguageParser.cs:10482-10579): a using
+//     declaration is a LocalDeclarationStatement with a usingKeyword (and optional awaitKeyword). If
+//     the current token is UsingKeyword it is eaten (10491-10495), then modifiers + type + variables
+//     + Semicolon. Form: `[await] using` + modifiers? + type + variables + `;`. The task's form is the
+//     single-declarator-with-initializer case (`using T id = expr ;` / `using var id = expr ;`).
+//   * Version gate — IDS_FeatureUsingDeclarations (Errors/MessageID.cs:182, `// semantic check` :620),
+//     checked in Binder/UsingStatementBinder.cs:98 via CheckFeatureAvailability — a BINDER (semantic)
+//     check, C# 8.0. The PARSER accepts the form wherever the rule exists (CS8 only, per the plan).
+//   * Version-purity test — UsingDeclarationTests.cs:830 (UsingDeclarationsWithLangVer7_3): `using
+//     IDisposable x = null;` gives CS8652 at C# 7.3, parses at C# 8.0.
+//   * The `using` STATEMENT (`using ( ... ) ...`) is C# 1.0 (Cs1 UsingStatement, :935) — UNCHANGED.
+//
+// CS8 only.
+
+// === Using declaration (C# 8.0). Re-declares Cs1 Statement (append, T0.3 merge). The new
+// alternative REQUIRES the reserved "using" keyword followed by a type (or "var") + identifier +
+// "=" + expression + ";" (REQUIRED-new-construct). Roslyn ParseLocalDeclarationStatement
+// (LanguageParser.cs:10482). ===
+//
+// Disambiguation (longest-match, no equal-length tie):
+//   * vs UsingStatement ("using" "(" ResourceAcquisition ")" Statement, Cs1:935): after "using", the
+//     using declaration has a type/var while the using statement has "(". A token is either "(" or a
+//     type/var, not both -> mutually exclusive.
+//   * vs every other Statement alternative: "using" is reserved (Cs1 ReservedKeyword:614), so it is
+//     NOT an IdentifierName and NO other Statement alternative starts with it.
+//   * vs LocalVariableDeclaration / ExpressionStatement / LabeledStatement: the reserved "using" is
+//     not a Type/expression-start/identifier -> they all FAIL.
+//
+// Version purity: at v7 the UsingDeclaration is ABSENT (Cs8-only), so `using FileStream f = ...`
+// REJECTS (UsingStatement fails on the missing "("; no other Statement starts with the reserved
+// "using"). At v8 it PARSES. The using STATEMENT is untouched (no regression at v1-v7).
+Statement =
+    | UsingDeclaration = "using" UsingDeclarationType !ReservedKeyword Identifier "=" Expression ";";
+
+// The using declaration's type: a real type OR the "var" keyword. Named union (the meta-grammar
+// forbids `|` inside a group). "var" is reserved at v2+ (Cs2:186-187), so it is NOT a TypeName
+// (TypeName = !ReservedKeyword Identifier) and Type NEVER matches "var" -> the two alternatives are
+// mutually exclusive (no equal-length tie). Roslyn: the variable type is `var` or an explicit type
+// (ParseLocalDeclaration, LanguageParser.cs:10517).
+UsingDeclarationType =
+    | Type
+    | "var";
