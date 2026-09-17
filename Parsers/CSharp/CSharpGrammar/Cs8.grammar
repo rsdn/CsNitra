@@ -192,3 +192,40 @@ Expression =
 // one) — no regression.
 Expression =
     | RangeBinary = Expression : Range ".." Expression : Range;
+
+// ============================================================================
+// T3.8.3c — C# 8.0 range operator `..` (UNARY PREFIX form only: `.. right`, no left operand).
+//
+// The UNARY PREFIX range `.. 2` (C# 8.0) is a TDOPP PREFIX operator on `Expression` at the `Range`
+// precedence level (the SAME level the T3.8.3b binary `RangeBinary` uses; Roslyn Precedence.Range,
+// LanguageParser.cs:11308-11309). The prefix `..` is parsed in parseUnaryOrPrimaryExpression
+// (LanguageParser.cs:11478-11486): a `..` token with leftOperand: null and a right operand
+// ParseSubExpression(Precedence.Range). This is the end-only form (T3.8.3c); the start-only form
+// (`2 ..`) is T3.8.3d.
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp\Portable):
+//   * Form + precedence — parseUnaryOrPrimaryExpression (LanguageParser.cs:11478-11486):
+//     IsAtDotDotToken() -> RangeExpression(leftOperand: null, EatDotDotToken(),
+//     ParseSubExpression(Precedence.Range)). GetPrecedence (11308-11309): RangeExpression ->
+//     Precedence.Range. The `..` is a PREFIX unary (no left operand), NOT a binary operator.
+//   * Precedence ordering — Precedence enum (LanguageParser.cs:11197-11221): … Multiplicative, Switch,
+//     Range, Unary, Cast … — Range sits between Multiplicative and Unary (tighter than Multiplicative,
+//     looser than Unary). The CsNitra `Range` level (Cs1.grammar, added in T3.8.3b) is the SAME level.
+//   * Associativity — a PREFIX unary operator has no associativity flag (its single operand is on the
+//     right); the operand binds at Precedence.Range (ParseSubExpression(Precedence.Range)), so it
+//     absorbs only operators tighter than Range (Unary, Cast, primary/postfix) and stops at Range or
+//     looser.
+//   * Version gate — CS8 (the plan's boundary; Roslyn's is a binder/semantic check).
+//
+// `..` is the SAME 2-char LITERAL as the T3.8.3b binary form (a `StartsWith` match, Rules.cs:76-77).
+// NOT a terminal. The prefix is tried at the START of an expression (no left operand); the T3.8.3b
+// binary `RangeBinary` is a POSTFIX (a left operand is present) — DIFFERENT TDOPP phases, so they are
+// mutually exclusive by position: `.. 2` (starts with `..`) -> RangePrefix; `1 .. 2` (starts with `1`)
+// -> PrimaryExpr `1` + RangeBinary postfix. The `.` member-access (one dot + Identifier,
+// Cs1.grammar:731) needs an Identifier after the single `.`, so a bare `..` never matches it (no
+// regression).
+//
+// Version purity: at v7 the RangePrefix is ABSENT, so `.. 2` REJECTS (at the start, PrimaryExpr fails —
+// no Primary matches `..` — and no other prefix starts with `..`). At v8 it PARSES.
+Expression =
+    | RangePrefix = ".." Expression : Range;
