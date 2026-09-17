@@ -84,12 +84,18 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
   - [✅] T3.6.3 Локальные функции: `void M() { void N() { } N(); }` (в т.ч. `async`/`static`/generics) → `Cs7.grammar` + тесты (D1: `void N();` ";"-body → LocalVariableDeclaration tie, unlike Roslyn; D4: generic invocation `N<int>()` pre-existing gap — declaration-only form tested)
   - [✅] T3.6.4 `out var` + `ref`-возврат/локальные + `ref readonly` (ref-семантика) + `ref`-выражение → `Cs7.grammar` + тесты (D1: `ref readonly` — C# 7.2 в Roslyn, задача требует в CS7; D2: plain `out x`/`ref x` аргументы — pre-existing gap (не парсятся ни в одной версии), задача добавляет только `out var`; D3: `ref x = ref _y;` парсится как присваивание `(ref x) = (ref _y)`, а не как ref-локальная)
   - [✅] T3.6.5 Разделители цифр (`1_000_000`) + `throw` как выражение (`x = c ? throw e : 5`) → `Cs7.grammar` + тесты (D1: `int X = _100;` (separator at start) — false premise, parses as identifier `_100`; octal separator not added — no octal rule in the grammar)
-- [ ] T3.7 CS7.1–7.2: `default`, `in`, `ref struct`, type/constant patterns → `Cs7.grammar` (v7) + тесты
+- [✅] T3.7 CS7.1–7.2: `default`, `in`, `ref struct`, type/constant patterns → `Cs7.grammar` (v7) + тесты
    - [✅] T3.7.1 `default` literal (`int x = default;`) → `Cs7.grammar` + тесты (D1: `default(Type)` — false premise, не существовала в Cs1, добавлена как C# 1.0; D2: «trailing space» `default ;` парсится (trivia); D3: `default(5)` парсится как вызов)
   - [✅] T3.7.2 `in` parameter (`void M(in int x)`) → `Cs7.grammar` + тесты (D1: `in` IS reserved (Cs1:571) — task's "not reserved" false premise, beneficial for mutual exclusivity; D2: `foreach (var x in y)` parses only at v1 (var reserved at v2+), no-regression test uses concrete `int`; D3: `IEnumerable<int>` not a Type (no generic type-arg list), test uses `int[]`; D4: `in` argument (call site `M(in x)`) out of scope)
   - [✅] T3.7.3 `ref struct` (`ref struct S { }`) + `readonly struct` → `Cs7.grammar` + тесты (D1: both `ref struct`/`readonly struct` are C# 7.2 in Roslyn (MessageID.cs:657-658, both semantic check); D2: `ref`/`readonly` added to StructModifier ONLY (NOT class/interface/enum/delegate — Roslyn ERR_BadMemberFlag); D3: `ref`/`readonly` ARE reserved (Cs1:591/590) — task's premise correct, beneficial for mutual exclusivity; D4: `readonly ref struct`/`readonly public struct` (combined/reordered modifiers) parse at v7 (correct superset, Roslyn any-order ParseModifiers))
   - [✅] T3.7.4 type/constant patterns (verify already done in T3.6.2; generic type patterns `is List<int>` ALREADY parse — no grammar change) → `Cs7.grammar` + тесты (D1: generic TYPE pattern `x is List<int>` parses at v2+/v6 (Cs1 TypeIs C#1.0 + Cs2 generic type) — task's "reject at v6" false premise, written as no-regression positive; D2: "generic type patterns (C# 7.2)" is a mischaracterization — it's C# 1.0 `is` + C# 2.0 generic type (Roslyn BindIsOperator binds as type first; IDS_FeaturePatternMatching C#7.0 gates only the fallback constant/declaration); D3: no grammar change needed — pure verification + tests)
-- [ ] T3.8 CS8: switch expressions, using declarations, `..`/`^`, `??=`, NRT-аннотации, default interface members
+- [ ] T3.8 CS8: switch expressions, using declarations, `..`/`^`, `??=`, NRT-аннотации, default interface members → `Cs8.grammar` (v8) + тесты
+  - [~] T3.8.1 switch expressions (+ setup `Cs8.grammar` + version table + csproj) → `Cs8.grammar` + тесты
+  - [ ] T3.8.2 using declarations (`using FileStream f = new(...);`) → `Cs8.grammar` + тесты
+  - [ ] T3.8.3 range/index (`..`/`^`) (`x[1..^1]`, `x[..5]`, `x[2..]`) → `Cs8.grammar` + тесты
+  - [ ] T3.8.4 `??=` (null-coalescing assignment) → `Cs8.grammar` + тесты
+  - [ ] T3.8.5 NRT-аннотации (`string?`, `string!`) → `Cs8.grammar` + тесты
+  - [ ] T3.8.6 default interface members → `Cs8.grammar` + тесты
 - [ ] T3.9 CS9: records, `with {}`, init-only, top-level statements, static abstract в интерфейсах
 - [ ] T3.10 CS10: file-scoped `namespace`, `global using`
 - [ ] T3.11 CS11: raw-строки, generic attributes, `required`, `params Span<T>`

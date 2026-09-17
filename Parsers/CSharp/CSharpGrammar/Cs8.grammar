@@ -1,0 +1,43 @@
+// Cs8.grammar — C# 8.0: switch expressions (T3.8.1).
+//
+// T0.3 merge semantics: re-declaring a rule name APPENDS alternatives (declaration order across
+// files); it does NOT modify the Cs1 alternative. The engine is longest-match-wins and an
+// equal-length tie resolves to the FIRST alternative (declaration order, Parser.cs:296-316). So a
+// re-declared Cs8 alternative is reachable only when it is MUTUALLY EXCLUSIVE with the existing ones.
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp/Portable/Parser):
+//   * Structure — ParseSwitchExpression (LanguageParser_Patterns.cs:593-658):
+//     SwitchExpression(governingExpression, switchKeyword, OpenBrace, arms, CloseBrace); arms is a
+//     comma-separated list of SwitchExpressionArm(pattern, whenClause, =>, expression) (629-637). The
+//     arm pattern is ParsePattern(Precedence.Coalescing); the arm value is ParseExpressionCore().
+//   * Operator recognition — GetExpressionOperatorTokenKindAndExpressionKind (LanguageParser.cs:11782):
+//     a `switch` token followed by `{` yields SyntaxKind.SwitchExpression; it is formed in the
+//     operator loop (ParseExpressionContinued.tryExpandExpression, 11557-11612), i.e. a POSTFIX-like
+//     operator on the governing expression.
+//   * Precedence — GetPrecedence (LanguageParser.cs:11271-11273): SwitchExpression -> Precedence.Switch
+//     (the enum, 11197-11221, orders ... Additive, Multiplicative, Switch, Range, Unary, Cast, ...
+//     Primary). The switch expression binds TIGHTER than every binary operator; the governing
+//     expression is parsed at the Switch precedence (a "Unary-tighter" expression).
+//   * Version gate — IDS_FeatureSwitchExpression (Errors/MessageID.cs:191, :631-634) ->
+//     LanguageVersion.CSharp8 (a BINDER/semantic check, Binder_Statements.cs:396).
+//
+// CS8 only.
+
+// === Switch expression (C# 8.0). Re-declares Cs1 Expression (append, T0.3 merge) as a TDOPP POSTFIX
+// operator at the Unary level (the nearest existing level tighter than every binary operator; Roslyn
+// Precedence.Switch sits between Multiplicative and Unary). The operand is the PREFIX (a primary-ish
+// expression: Primary / unary / cast) — the postfix `rest` is "switch" "{" ... "}" (Parser.cs:141).
+// It REQUIRES the reserved "switch" keyword (followed by "{") after the operand (REQUIRED-new-construct),
+// so it is MUTUALLY EXCLUSIVE with every existing postfix (none starts with "switch"; "switch" is
+// reserved, Cs1 ReservedKeyword:603). Roslyn ParseSwitchExpression (LanguageParser_Patterns.cs:593).
+// ===
+Expression =
+    | SwitchExpression = Expression : Unary "switch" "{" SwitchArm ("," SwitchArm)* "}";
+
+// A switch expression arm: Pattern "=>" Expression (Roslyn SwitchExpressionArm,
+// LanguageParser_Patterns.cs:629). The Pattern is the T3.6.2 Pattern rule (type/constant/declaration/
+// discard/var). The arm value is `Expression : Comma` (minPrecedence = Comma bp 1) so it does NOT
+// absorb the "," arm separator via the Comma operator (the TDOPP Comma fix, T3.3.2 — the same
+// mechanism Cs4 Argument uses). Single-sequence rule ending in a precedence-qualified RuleRef (a
+// SimpleRule, not an anonymous alternative, not in a group — the two T3.3.2 meta-grammar constraints).
+SwitchArm = Pattern "=>" Expression : Comma;

@@ -113,12 +113,26 @@ Expression =
 // not a Type/Expression); `_` → DiscardPattern (first, wins the equal-length tie); `y` (a bare
 // identifier) → TypePattern (first, wins the equal-length tie with ConstantPattern). Roslyn
 // ParsePrimaryPattern (187) + ParsePatternContinued (284).
+//
+// BUG FIX (T3.8.1): the ConstantPattern is a full TDOPP Expression, which INCLUDES lambda
+// expressions (Cs3 LambdaExpression: `x => ...` / `(x, y) => ...`). In a switch EXPRESSION arm
+// (`Pattern "=>" Expression`, Cs8.grammar) the pattern is directly followed by the arm's `=>`, so the
+// ConstantPattern matched the WHOLE arm as a lambda (e.g. `_ => "other"`), consuming the arm's `=>`
+// and failing the arm. The two negative lookaheads exclude the two lambda forms (a simple
+// non-reserved identifier + `=>`, or a parenthesized parameter list + `=>`) so the ConstantPattern
+// matches only a real constant (literal / identifier / member access / null / true / false). A bare
+// identifier constant NOT followed by `=>` (e.g. `case a:`) still matches (the lookahead passes); in
+// a switch arm it falls through to the TypePattern (the first equal-length alternative) — the syntax
+// still parses (a documented semantic difference, see the Cs8 test). This is a Cs7 change (the
+// Pattern rule lives in Cs7) but a bug fix (the ConstantPattern was too greedy); it does NOT change
+// any T3.6.2 pattern — the `is` / switch-statement patterns are never followed by `=>`, so the
+// lookaheads pass and the behavior is unchanged.
 Pattern =
     | DiscardPattern     = "_"
     | DeclarationPattern = Type !ReservedKeyword Identifier
     | VarPattern         = "var" !ReservedKeyword Identifier
     | TypePattern        = Type
-    | ConstantPattern    = Expression;
+    | ConstantPattern    = !(!ReservedKeyword Identifier "=>") !("(" (LambdaParameter; ",")* ")" "=>") Expression;
 
 // === Pattern switch (C# 7.0). Re-declares Cs1 CaseLabel (append, T0.3 merge). The Cs1
 // CaseLabel = "case" Constant ":" (Cs1.grammar:901) handles `case 5:` / `case "a":` at every version.
