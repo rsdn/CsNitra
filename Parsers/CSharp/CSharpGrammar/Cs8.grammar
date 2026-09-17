@@ -269,3 +269,51 @@ Expression =
 // PARSES.
 Expression =
     | RangePostfix = Expression : Range "..";
+
+// ============================================================================
+// T3.8.4 — C# 8.0 null-coalescing assignment `??=` operator.
+//
+// The null-coalescing assignment `a ??= b` (C# 8.0) is a TDOPP POSTFIX (binary) operator on `Expression`
+// at the EXISTING `Assignment` precedence level (the LOOSEST expression level, Cs1.grammar:629) — the
+// SAME level as the simple assignment `Assign = Expression "=" Expression : Assignment, right`
+// (Cs1.grammar:675). `??=` is a 3-char grammar LITERAL (a `StartsWith` match, Rules.cs:76-77) — the SAME
+// mechanism as the `..` (2-char) literal used by `RangeBinary`/`RangePrefix`/`RangePostfix` (T3.8.3b/c/d)
+// and every other operator literal in the grammar (`"=="`, `"++"`, …). NOT a terminal;
+// `CSharpTerminals.cs` is NOT modified.
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp\Portable):
+//   * Form + precedence — GetPrecedence (Parser/LanguageParser.cs:11245-11246):
+//     `case SyntaxKind.CoalesceAssignmentExpression: return Precedence.Assignment;`. The `Precedence`
+//     enum (11197-11221) places `Assignment` at the loosest expression level (`Assignment = Expression
+//     = 0`), just above the Comma — the SAME level as `=` and every other assignment operator.
+//   * Associativity — IsRightAssociative (LanguageParser.cs:11173-11195) returns `true` for
+//     `CoalesceAssignmentExpression` (11189) — the SAME as `SimpleAssignmentExpression` (11177). Hence
+//     the `, right` flag (right-associative), identical to `Assign`.
+//   * Operator recognition — GetAssignmentExpression (Syntax/SyntaxKindFacts.cs:772-773):
+//     `QuestionQuestionEqualsToken` -> `CoalesceAssignmentExpression`; IsAssignmentExpression
+//     (SyntaxKindFacts.cs:698-719) includes it.
+//   * Version gate — IDS_FeatureCoalesceAssignmentExpression (Errors/MessageID.cs:174, semantic check
+//     :613) -> a BINDER (semantic) check, C# 8.0. The PARSER accepts the form wherever the rule exists
+//     (CS8 only, per the plan).
+//   * Syntax test — Test/Syntax/Parsing/ExpressionParsingTests.cs:5086 (`o1 ??= o2` ->
+//     CoalesceAssignmentExpression).
+//
+// CS8 only.
+//
+// Disambiguation (longest-match-wins, no equal-length tie):
+//   * vs `Conditional = Expression "?" Expression ":" Expression : Conditional` (Cs1.grammar:674): for
+//     `a ??= b`, the `Conditional` postfix matches `a` + `?` (1 char) but then needs a middle `Expression`
+//     starting at `?= b` — `?` cannot start an expression (no Primary/prefix matches `?`), so
+//     `Conditional` FAILS. The `CoalesceAssign` postfix matches `a` + `??=` (3 chars) + `b` -> the only
+//     successful match wins.
+//   * vs the `..` range postfixes (T3.8.3b/c/d): different literal (`??=` vs `..`), mutually exclusive.
+//   * The `??` null-coalescing operator is NOT modeled in the grammar (no `Coalescing` level) -> no
+//     conflict.
+//
+// Version purity: at v7 the CoalesceAssign postfix is ABSENT, so `a ??= b` REJECTS (the left operand `a`
+// is parsed, then no postfix consumes `??=`: `Conditional` fails on the middle operand, `Assign` needs a
+// bare `=` not `??=`, no other postfix matches `??=`; the statement sees `??=` where `;` is expected). At
+// v8 it PARSES. The simple assignment `a = b` is UNCHANGED at v1-v8 (the `??=` literal needs three chars;
+// `=` is one) — no regression.
+Expression =
+    | CoalesceAssign = Expression "??=" Expression : Assignment, right;

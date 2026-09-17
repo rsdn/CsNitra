@@ -95,8 +95,8 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
   - [✅] T3.8.3a index-from-end `^` (`x[^1]`, `x[^2..^1]`-готовность) → `Cs8.grammar` + тесты (D: `^` — symbol, не word-keyword; TDOPP prefix `: Unary`; префикс/бинарный `^` различаются фазой TDOPP)
   - [✅] T3.8.3b бинарный оператор `..` (`1 .. 2`) → `Cs8.grammar` + тесты (D: новый уровень Range в Cs1 (между Unary и Multiplicative); `..` — 2-char literal, не терминал; только spaced form, no-space `1..2` out of scope — Real/`1.` literal trap)
   - [✅] T3.8.3c унарный префиксный оператор `..` (`.. 2`) → `Cs8.grammar` + тесты (TDOPP prefix `.. Expression : Range`, Roslyn parseUnaryOrPrimaryExpression; префикс/бинарный различаются фазой TDOPP)
-  - [~] T3.8.3d унарный постфиксный оператор `..` (`2 ..`) → `Cs8.grammar` + тесты
-  - [ ] T3.8.4 `??=` (null-coalescing assignment) → `Cs8.grammar` + тесты
+  - [✅] T3.8.3d унарный постфиксный оператор `..` (`2 ..`) → `Cs8.grammar` + тесты (TDOPP postfix `Expression : Range ..`, без правого операнда; disambiguation с RangeBinary через longest-match)
+  - [~] T3.8.4 `??=` (null-coalescing assignment) → `Cs8.grammar` + тесты
   - [ ] T3.8.5 NRT-аннотации (`string?`, `string!`) → `Cs8.grammar` + тесты
   - [ ] T3.8.6 default interface members → `Cs8.grammar` + тесты
 - [ ] T3.9 CS9: records, `with {}`, init-only, top-level statements, static abstract в интерфейсах
