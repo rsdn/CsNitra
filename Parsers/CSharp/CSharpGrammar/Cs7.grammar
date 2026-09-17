@@ -346,3 +346,47 @@ Constant =
 // alternative matches the reserved "throw" in the conditional's middle branch). At v7 it PARSES.
 Expression =
     | ThrowExpression = "throw" Expression : Unary;
+
+// ============================================================================
+// T3.7.1 — C# 7.1 `default` literal.
+//
+// The `default` LITERAL (C# 7.1): the `default` keyword ALONE as a value of any type (no `(...)`,
+// no `:`). `int x = default;`. Roslyn ParseDefaultExpression (LanguageParser.cs:12633): after the
+// `default` keyword, if the next token is NOT `(` → `LiteralExpression(DefaultLiteralExpression)`
+// (the literal form, the else branch). Version gate: IDS_FeatureDefaultLiteral (MessageID.cs:142),
+// a SEMANTIC check (Binder_Expressions.cs:753) — C# 7.1. The PARSER accepts the form wherever the
+// rule exists (CS7 only, per the plan's decision: CS7.1/7.2 features go into Cs7.grammar, version 7).
+//
+// The C# 1.0 typed form `default ( Type )` is a SEPARATE rule added to Cs1.grammar (DefaultTyped,
+// T3.7.1). The `default:` switch label is the UNCHANGED Cs1 DefaultLabel (Cs1.grammar:904).
+//
+// CS7 only.
+
+// === `default` literal (C# 7.1). Re-declares Cs1 Primary (append, T0.3 merge). The `default`
+// literal REQUIRES the `default` keyword ALONE (no `(`, no `:`), so it is MUTUALLY EXCLUSIVE with:
+//   * the Cs1 `DefaultTyped` (`default ( Type )`, Cs1.grammar): `default` alone has no `(`, so
+//     DefaultTyped FAILS; `default ( ... )` has a `(`, so at the Primary level DefaultTyped (the whole
+//     `default ( Type )`) is LONGER than the bare `default` literal and wins the longest-match. No tie.
+//   * the Cs1 `DefaultLabel` (`default :`, Cs1.grammar:904): a DIFFERENT rule (SwitchLabel, not
+//     Primary/Expression) — only reached in a switch-section context, never in an expression context.
+//   * every other Primary alternative: `default` is a reserved keyword (Cs1 ReservedKeyword:553), so it
+//     is NOT an IdentifierName and NO other Primary alternative starts with it.
+// `default` alone -> DefaultLiteral (sole match). Roslyn ParseDefaultExpression (12633) +
+// TestTargetTypedDefaultWithCSharp7_1 (ExpressionParsingTests.cs:4769). ===
+//
+// Disambiguation (longest-match, no equal-length tie):
+//   * `default` alone (e.g. `int x = default;`): DefaultTyped FAILS (no `(` after `default`);
+//     DefaultLiteral matches `default`. Sole match.
+//   * `default(int)` (a typed default, every version): DefaultTyped matches `default(int)` (longer);
+//     DefaultLiteral matches `default` (shorter) — and the PostfixOp* Invocation `(int)` FAILS (`int`
+//     is a reserved keyword, not an Expression), so the literal branch stays at `default`. DefaultTyped
+//     wins (longest-match) → parsed as a typed default (the correct shape, not a call).
+//   * `default:` (a switch label, every version): a SwitchSection context → DefaultLabel (a SwitchLabel,
+//     not a Primary). The Primary rule is not involved. Unchanged (no regression).
+//
+// Version purity: at v6 the DefaultLiteral is ABSENT (DefaultTyped is present, Cs1), so `default`
+// alone REJECTS (no Primary alternative matches the reserved `default` alone) while `default(int)`
+// still PARSES (via DefaultTyped, no regression). At v7 the DefaultLiteral is present, so `default`
+// alone PARSES.
+Primary =
+    | DefaultLiteral = "default";

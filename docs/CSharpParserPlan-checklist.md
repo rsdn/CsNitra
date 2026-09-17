@@ -84,7 +84,11 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
   - [✅] T3.6.3 Локальные функции: `void M() { void N() { } N(); }` (в т.ч. `async`/`static`/generics) → `Cs7.grammar` + тесты (D1: `void N();` ";"-body → LocalVariableDeclaration tie, unlike Roslyn; D4: generic invocation `N<int>()` pre-existing gap — declaration-only form tested)
   - [✅] T3.6.4 `out var` + `ref`-возврат/локальные + `ref readonly` (ref-семантика) + `ref`-выражение → `Cs7.grammar` + тесты (D1: `ref readonly` — C# 7.2 в Roslyn, задача требует в CS7; D2: plain `out x`/`ref x` аргументы — pre-existing gap (не парсятся ни в одной версии), задача добавляет только `out var`; D3: `ref x = ref _y;` парсится как присваивание `(ref x) = (ref _y)`, а не как ref-локальная)
   - [✅] T3.6.5 Разделители цифр (`1_000_000`) + `throw` как выражение (`x = c ? throw e : 5`) → `Cs7.grammar` + тесты (D1: `int X = _100;` (separator at start) — false premise, parses as identifier `_100`; octal separator not added — no octal rule in the grammar)
-- [ ] T3.7 CS7.1–7.2: `default`, `in`, `ref struct`, type/constant patterns
+- [ ] T3.7 CS7.1–7.2: `default`, `in`, `ref struct`, type/constant patterns → `Cs7.grammar` (v7) + тесты
+   - [✅] T3.7.1 `default` literal (`int x = default;`) → `Cs7.grammar` + тесты (D1: `default(Type)` — false premise, не существовала в Cs1, добавлена как C# 1.0; D2: «trailing space» `default ;` парсится (trivia); D3: `default(5)` парсится как вызов)
+  - [ ] T3.7.2 `in` parameter (`void M(in int x)`) → `Cs7.grammar` + тесты
+  - [ ] T3.7.3 `ref struct` (`ref struct S { }`) + `readonly struct` → `Cs7.grammar` + тесты
+  - [ ] T3.7.4 type/constant patterns (verify already done in T3.6.2; add generic type patterns `is List<int>` if not) → `Cs7.grammar` + тесты
 - [ ] T3.8 CS8: switch expressions, using declarations, `..`/`^`, `??=`, NRT-аннотации, default interface members
 - [ ] T3.9 CS9: records, `with {}`, init-only, top-level statements, static abstract в интерфейсах
 - [ ] T3.10 CS10: file-scoped `namespace`, `global using`
