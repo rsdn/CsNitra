@@ -154,3 +154,41 @@ UsingDeclarationType =
 // not interfere with `x ^ y`) — no regression.
 Expression =
     | IndexExpr = "^" Expression : Unary;
+
+// ============================================================================
+// T3.8.3b — C# 8.0 range operator `..` (BINARY form only: `left .. right`, both operands present).
+//
+// The BINARY range `1 .. 2` (C# 8.0) is a TDOPP POSTFIX (binary) operator on `Expression` at the NEW
+// `Range` precedence level (added to the Cs1 precedence list, between `Unary` and `Multiplicative` —
+// Roslyn Precedence.Range, LanguageParser.cs:11215, orders … Multiplicative, Switch, Range, Unary,
+// Cast …). Only the binary form is in scope here; the end-only (`.. 2`) and start-only (`2 ..`) forms
+// are separate sub-points (T3.8.3c / T3.8.3d).
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp\Portable):
+//   * Form + precedence — GetPrecedence (LanguageParser.cs:11308-11309): RangeExpression ->
+//     Precedence.Range. The binary form is a POSTFIX (the `..` is applied after the left operand):
+//     ParseExpressionContinued.tryExpandExpression (LanguageParser.cs:11617-11625) forms
+//     RangeExpression(leftOperand, .., ParseSubExpression(Precedence.Range)).
+//   * Operator recognition — GetExpressionOperatorTokenKindAndExpressionKind (LanguageParser.cs:11744):
+//     `..` -> (DotDotToken, RangeExpression).
+//   * Version gate — CS8 (the plan's boundary; Roslyn's is a binder/semantic check).
+//   * Syntax test — Test/Syntax/Parsing/ExpressionParsingTests.cs: RangeExpression_Binary (5318, `1..2`).
+//
+// `..` is a 2-char LITERAL (a `StartsWith` match, Rules.cs:76-77) — the SAME mechanism as the 1-char `.`
+// literal used by `MemberAccess = "." Identifier` (Cs1.grammar:731). It is NOT a terminal (no `DotDot`
+// terminal is added). The `.` member-access lives in the `PostfixOp*` loop (a DIFFERENT phase, run while
+// resolving the prefix) and REQUIRES an Identifier after the single `.`, so a bare `..` (second char is
+// `.`, not an identifier) never matches `MemberAccess` -> the two are mutually exclusive. The `..` literal
+// is matched only by this RangeBinary postfix (no other postfix starts with `..`).
+//
+// Disambiguation (longest-match-wins; the `1 .` real-literal trap is AVOIDED by the required spaces in
+// `1 .. 2`): for `1 .. 2`, the space after `1` stops `DecimalRealLiteral` (`[0-9]+\.[0-9]*`) from matching
+// `1.`, so the left operand is `DecInt`=`1`; then the RangeBinary postfix matches `.. 2`. (The no-space
+// form `1..2` is out of scope — see the progress doc for the `Real`/`1.` boundary.)
+//
+// Version purity: at v7 the RangeBinary postfix is ABSENT, so `1 .. 2` REJECTS (the left operand `1` is
+// parsed, then no postfix consumes `..` and the statement sees `..` where `;` is expected). At v8 it
+// PARSES. The `.` member-access (`x.y`) is UNCHANGED at v1-v8 (the `..` literal needs two dots; `x.y` has
+// one) — no regression.
+Expression =
+    | RangeBinary = Expression : Range ".." Expression : Range;

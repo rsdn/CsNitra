@@ -620,8 +620,11 @@ ReservedKeyword =
 // === ВРЕМЕННОЕ (T3.5.1) — T2.3 заменит на полную TDOPP-таблицу C# 1.0 ===
 // T2.3.2: Cast — самый жёсткий уровень (выше Unary): каст-операнд парсится на нём, поэтому не
 // поглощает бинарные операторы (см. CastExpr). Roslyn: Precedence.Cast (LanguageParser.cs:12848).
+// T3.8.3b: Range — НОВЫЙ уровень между Unary и Multiplicative (Roslyn Precedence.Range,
+// LanguageParser.cs:11215: … Multiplicative, Switch, Range, Unary, Cast …). Используется Cs8
+// RangeBinary (`..`); на v1-v7 уровень существует, но ни один оператор его не использует (no-op).
 precedence
-    Cast, Unary, Multiplicative, Additive, Relational, Equality,
+    Cast, Unary, Range, Multiplicative, Additive, Relational, Equality,
     LogicalAnd, LogicalXor, LogicalOr, CondAnd, CondOr,
     Conditional, Assignment, Comma;
 
