@@ -106,8 +106,8 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
   - [✅] T3.9.4 top-level statements → `Cs9.grammar` + тесты (CompilationUnit += GlobalStatement* NamespaceMember*, re-declared; disambiguation via longest-match + full-consumption)
   - [✅] T3.9.5 static abstract в интерфейсах → `Cs9.grammar` + тесты (InterfaceMember += StaticAbstractInterfaceMethod/Property; Cs1/Cs2/Cs8 InterfaceMethod restricted to InterfaceMethodModifier для version purity)
 - [~] T3.10 CS10: file-scoped `namespace`, `global using`
-  - [~] T3.10.1 file-scoped `namespace` + setup `Cs10.grammar` + version table + csproj → `Cs10.grammar` + тесты
-  - [ ] T3.10.2 `global using` → `Cs10.grammar` + тесты
+  - [✅] T3.10.1 file-scoped `namespace` + setup `Cs10.grammar` + version table + csproj → `Cs10.grammar` + тесты (FileScopedNamespaceDeclaration = namespace QualifiedName ; NamespaceBody?; setup: csproj + v10)
+  - [~] T3.10.2 `global using` → `Cs10.grammar` + тесты
 - [ ] T3.11 CS11: raw-строки, generic attributes, `required`, `params Span<T>`
 - [ ] T3.12 CS12: primary constructors (классы), collection expressions, list patterns, `not`/`and`/`or`
 - [ ] T3.13 CS13: extension members, `field`, `event field`

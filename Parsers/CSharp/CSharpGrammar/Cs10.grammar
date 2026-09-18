@@ -1,4 +1,4 @@
-// Cs10.grammar — C# 10.0: file-scoped namespace (T3.10.1).
+// Cs10.grammar — C# 10.0: file-scoped namespace (T3.10.1), global using directive (T3.10.2).
 //
 // A file-scoped namespace uses a single ";" instead of a "{ ... }" block:
 //   namespace MyNamespace;
@@ -46,9 +46,52 @@
 // namespace B;") is accepted by the parser (nested in A's body) but is a BINDER error; consistent
 // with the plan's parser/binder separation.
 
-// === Namespace member union: APPEND the file-scoped namespace (T0.3 merge). ===
+// T3.10.2 — C# 10.0: the `global using` directive.
+//
+// A `global using` is a using directive with a `global` prefix that applies to the entire assembly:
+//   global using System;
+//   global using static System.Console;
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src\Compilers\CSharp\Portable):
+//   * ParseUsingDirective (Parser/LanguageParser.cs:942-1010): the FIRST token is an OPTIONAL `global`
+//     (949-951: `CurrentToken.ContextualKind == GlobalKeyword ? EatToken() : null`), then the REQUIRED
+//     `using` (955), an OPTIONAL `static` (956, `TryEatToken(StaticKeyword)`), an optional `unsafe`,
+//     an optional alias (`IsNamedAssignment() ? ParseNameEquals() : null`, 967), the name
+//     (`alias == null ? ParseQualifiedName() : ParseType()`, 1000), and the `;` (1006).
+//   * UsingDirectiveSyntax (Syntax/UsingDirectiveSyntax.cs:21-22, Syntax.xml.Syntax.Generated.cs:9518):
+//     `GlobalKeyword UsingKeyword StaticKeyword? UnsafeKeyword? Alias? NamespaceOrType SemicolonToken`.
+//   * Version gate — a BINDER/semantic (C# 10.0) feature: `MessageID.IDS_FeatureGlobalUsing` is checked
+//     in Declarations/DeclarationTreeBuilder.cs:484-485 when `usingDirective.GlobalKeyword` is non-default.
+//     The PARSER accepts the form wherever the rule exists; version purity comes from the rule being
+//     Cs10-only.
+//   * SyntaxKind.GlobalKeyword (Syntax/SyntaxKind.cs:341).
+//
+// Model: a NEW NamespaceMember alternative (T0.3 append-merge). It mirrors the existing UsingDirective
+// (Cs1.grammar:11-13) but with a leading `"global"`, and ADDS the `static` form (the non-global
+// UsingDirective has no `static` form — a pre-existing gap; Roslyn's UsingDirectiveSyntax has `StaticKeyword?`).
+//
+// Disambiguation (longest-match, mutually exclusive on the token right after `using`):
+//   - a TypeName followed by `=`  -> GlobalAliasUsingDirective;
+//   - the reserved `static`       -> GlobalStaticUsingDirective;
+//   - a QualifiedName followed by `;` -> GlobalOpenUsingDirective.
+// `static` is a reserved keyword (Cs1.grammar:619), so `TypeName`/`QualifiedName` (TypeName =
+// !ReservedKeyword Identifier, Cs1.grammar:23) cannot consume it: on `global using static ...` the
+// alias/open alternatives FAIL and only the static alternative matches -> no equal-length tie.
+// vs the Cs1 UsingDirective (Cs1.grammar:11): that starts with `"using"`, this starts with `"global"`
+// -> different first token, so a `global`-prefixed directive only ever matches GlobalUsingDirective.
+//
+// CS10 only: at v9 the GlobalUsingDirective alternative is ABSENT. `global` is not a reserved keyword
+// (absent from Cs1.grammar:556-637) but it is a bare Identifier that no NamespaceMember alternative
+// consumes (each starts with a reserved keyword or `[`) -> `NamespaceMember*` matches zero members,
+// `global using ...` is unconsumed -> REJECTS (see Cs10GlobalUsingTests.*_RejectedAtV9).
+//
+// Boundary (out of scope, matches the non-global UsingDirective): the `unsafe` keyword
+// (`global using unsafe static ...`) is not modeled; Roslyn's UsingDirectiveSyntax has `UnsafeKeyword?`.
+
+// === Namespace member union: APPEND the file-scoped namespace + the global using directive (T0.3 merge). ===
 NamespaceMember =
-    | FileScopedNamespaceDeclaration;
+    | FileScopedNamespaceDeclaration
+    | GlobalUsingDirective;
 
 // File-scoped namespace (C# 10.0): "namespace" QualifiedName ";" NamespaceBody?.
 // The body is the same NamespaceBody (Cs1.grammar:19) as a block-scoped namespace. It is wrapped in
@@ -56,3 +99,10 @@ NamespaceMember =
 // zero-or-many reports a Failure when its element cannot match at the position (e.g. EOF for an
 // empty body), and the Optional swallows that Failure (NoneNode) so "namespace A;" alone is valid.
 FileScopedNamespaceDeclaration = "namespace" QualifiedName ";" NamespaceBody?;
+
+// Global using directive (C# 10.0): "global" "using" [static] [alias =] name ";".
+// Mirrors the Cs1 UsingDirective (Cs1.grammar:11-13) with a leading "global" and an added `static` form.
+GlobalUsingDirective =
+    | GlobalAliasUsingDirective = "global" "using" TypeName "=" QualifiedName ";"
+    | GlobalStaticUsingDirective = "global" "using" "static" QualifiedName ";"
+    | GlobalOpenUsingDirective = "global" "using" QualifiedName ";";
