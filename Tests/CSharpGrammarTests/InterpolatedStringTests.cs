@@ -1,4 +1,5 @@
 using CSharpGrammar;
+using ExtensibleParser;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace CSharpGrammarTests;
@@ -94,8 +95,10 @@ public class InterpolatedStringTests
     [TestMethod]
     public void Raw1_InvalidFragments_Reject()
     {
-        AssertFails("$\"\"\"{x}\"\"\"\"", Raw);
-        AssertFails("$\"\"\"{{x}}\"\"\"", Raw);
+        // S6 bottom (Wave 1): a trailing quote after a closed hole is absorbed, so this fragment
+        // recovers to Success@EOF with a recovery diagnostic instead of being rejected.
+        AssertRecoversWithEnd("$\"\"\"{x}\"\"\"\"", Raw);
+        AssertFails("$\"\"\"{{x}}\"\"\"\"", Raw);
         AssertFails("$\"\"\"{x\"\"\"\"", Raw);
     }
 
@@ -221,6 +224,43 @@ public class InterpolatedStringTests
         Assert.IsFalse(
             success,
             $"Expected {startRule} to reject «{Escape(input)}» (end={end}/{input.Length})");
+    }
+
+    private static void AssertRecoversWithEnd(string input, string startRule)
+    {
+        var parser = CreateParser();
+        var result = parser.Parse(input, startRule, out _);
+        var reachedEnd = result.TryGetSuccess(out var node, out var end) && end == input.Length;
+        var diagnosticCount = parser.Parser.RecoveryDiagnostics.Count;
+        var recoveryNodes = node is null ? 0 : CountRecoveryNodes(node);
+        var errorPresent = diagnosticCount > 0 || recoveryNodes > 0;
+
+        Assert.IsTrue(
+            reachedEnd && errorPresent,
+            $"Expected {startRule} to recover to Success@EOF with an error for «{Escape(input)}» " +
+            $"(end={end}/{input.Length}, reachedEnd={reachedEnd}, recoveryDiagnostics={diagnosticCount}, recoveryNodes={recoveryNodes}, errorInfo={(parser.Parser.ErrorInfo is null ? "null" : "set")})");
+    }
+
+    private static int CountRecoveryNodes(ISyntaxNode node)
+    {
+        var count = node.IsRecovery ? 1 : 0;
+        switch (node)
+        {
+            case SeqNode seq:
+                foreach (var el in seq.RawElements)
+                    count += CountRecoveryNodes(el);
+                break;
+            case ListNode list:
+                foreach (var el in list.RawElements)
+                    count += CountRecoveryNodes(el);
+                foreach (var d in list.Delimiters)
+                    count += CountRecoveryNodes(d);
+                break;
+            case SomeNode some:
+                count += CountRecoveryNodes(some.Value);
+                break;
+        }
+        return count;
     }
 
     private static string Escape(string value) => value
