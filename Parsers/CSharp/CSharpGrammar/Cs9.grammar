@@ -219,3 +219,73 @@ CompilationUnit = GlobalStatement* NamespaceMember*;
 
 // A top-level statement: a Statement wrapped in GlobalStatement (Roslyn GlobalStatementSyntax).
 GlobalStatement = Statement;
+
+// === Static abstract members in interfaces (C# 9.0, T3.9.5). ===
+// A static abstract member is an interface member that is BOTH `static` and `abstract` — it has no
+// body and a class that implements the interface MUST provide a static implementation:
+//   interface IShape {
+//       static abstract double Area { get; }
+//       static abstract void Draw();
+//   }
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers\CSharp\Portable):
+//   * The PARSER does NOT special-case `static abstract`. ParseMemberDeclarationCore
+//     (Parser/LanguageParser.cs:3238) collects ALL modifiers via the generic any-order ParseModifiers
+//     loop (3259; ParseModifiers 1347, GetModifierExcludingScoped 1286), then dispatches to the
+//     method/property parser by the next token. So `static abstract` is just two modifiers at the
+//     parse level (no separate "static abstract" syntax node).
+//   * The static+abstract-in-interface feature is a BINDER/semantic check (the plan's
+//     parser-vs-binder split): MessageID.IDS_FeatureStaticAbstractMembersInInterfaces
+//     (Errors/MessageID.cs:233, :546 "semantic check") -> LanguageVersion.CSharp9. Enforced by
+//     ModifierUtils.CheckFeatureAvailabilityForStaticAbstractMembersInInterfacesIfNeeded
+//     (Symbols/Source/ModifierUtils.cs:216-228) and
+//     CheckFeatureAvailabilityForDefaultInterfaceImplementation (150-197; the static+abstract/
+//     sealed/virtual combination at 161-179). SourceMemberMethodSymbol
+//     (Symbols/Source/SourceMemberMethodSymbol.cs:1098-1100) and SourcePropertySymbol
+//     (Symbols/Source/SourcePropertySymbol.cs:470) flag the static+abstract form.
+//
+// Version purity (CS9 only): `static` and `abstract` are ALREADY MethodModifiers (Cs1.grammar:293,
+// :296), so the Cs1/Cs2/Cs8 InterfaceMethod (`MethodModifier* Type ...`) would otherwise ACCEPT
+// `static abstract ...` at v1-v8 (verified empirically: `interface I { static abstract void Draw(); }`
+// parsed at v1 before this change). To make it CS9-only, T3.9.5 restricts those three InterfaceMethod
+// rules to `InterfaceMethodModifier` (Cs1.grammar, MethodModifier MINUS static/abstract), so at
+// v1-v8 NO InterfaceMember alternative matches `static abstract ...` -> REJECT. At v9 the two
+// Cs9-only StaticAbstractInterface* rules below are the sole matchers.
+//
+// Disambiguation (longest-match-wins, mutually exclusive with the existing alternatives):
+//   * `static abstract void Draw();` — the Cs1/Cs2/Cs8 InterfaceMethod FAIL (InterfaceMethodModifier
+//     cannot consume `static`/`abstract`, so `Type` sees the reserved `static` and fails); only
+//     StaticAbstractInterfaceMethod matches. Sole match.
+//   * `static abstract double Area { get; }` — the Cs1 InterfaceProperty FAIL (PropertyModifier
+//     consumes `static` then `Type` sees the reserved `abstract`); only StaticAbstractInterfaceProperty
+//     matches. Sole match.
+//
+// Boundary (out of scope for the minimal task): a static interface member WITH a body
+// (`static void Draw() { }`, C# 9) and static-abstract members carrying `new`/other method modifiers
+// (`new static abstract ...`) are NOT modeled; only the `static abstract` (no-body) method/property
+// forms with an optional LEADING access modifier (canonical order) are accepted.
+//
+// === InterfaceMember: APPEND the two static-abstract alternatives (T0.3 merge). ===
+InterfaceMember =
+    | StaticAbstractInterfaceMethod
+    | StaticAbstractInterfaceProperty;
+
+// A static abstract interface method: optional access modifiers + `static abstract` + return type +
+// name + parameter list + `;` (no body — abstract members have no body). Roslyn: the parser treats
+// `static abstract` as plain modifiers (LanguageParser.cs:3259); the no-body `;` mirrors the C# 1.0
+// interface method (Cs1.grammar:281) and the binder requires a static implementation.
+StaticAbstractInterfaceMethod = Attributes? InterfaceAccessModifier* "static" "abstract" Type TypeName "(" ParameterList? ")" ";";
+
+// A static abstract interface property: optional access modifiers + `static abstract` + type + name +
+// semicolon accessors (no body). Mirrors the C# 1.0 interface property (Cs1.grammar:209) accessor form
+// (InterfaceAccessor = AccessorName ";", Cs1.grammar:212).
+StaticAbstractInterfaceProperty = Attributes? InterfaceAccessModifier* "static" "abstract" Type TypeName "{" InterfaceAccessor+ "}" ";"?;
+
+// Access modifiers allowed on an interface member (public/private/protected/internal). Only an access
+// modifier may precede the REQUIRED `static abstract` (the canonical C# order, e.g. `public static
+// abstract`); other method modifiers (`new`, `virtual`, ...) are a binder concern and out of scope.
+InterfaceAccessModifier =
+    | "public"
+    | "private"
+    | "protected"
+    | "internal";

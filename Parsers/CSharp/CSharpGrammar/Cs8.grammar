@@ -415,7 +415,8 @@ precedence TypeNullable, TypeNotNull, TypeArray;
 // interface REJECT (no InterfaceMember alternative allows a method body — InterfaceMethod is
 // ";"-only at v1-v7). At v8 they PARSE. `void P();` (no body) parses at v1-v8 (unchanged).
 //
-// Note: the re-declared alternative shares MethodModifier with the class Method, so `virtual`/
-// `abstract`/etc. are syntactically accepted on a default interface method (a binder error in real
-// C# — parser-vs-binder split, consistent with T2.1.3).
-InterfaceMethod = Attributes? MethodModifier* Type TypeName "(" ParameterList? ")" MethodBody;
+// Note: the re-declared alternative uses InterfaceMethodModifier (Cs1, MethodModifier minus
+// static/abstract) so `virtual`/`override`/etc. are syntactically accepted on a default interface
+// method (a binder error in real C# — parser-vs-binder split, consistent with T2.1.3) while
+// `static`/`abstract` stay CS9-only (T3.9.5 StaticAbstractInterface* rules).
+InterfaceMethod = Attributes? InterfaceMethodModifier* Type TypeName "(" ParameterList? ")" MethodBody;

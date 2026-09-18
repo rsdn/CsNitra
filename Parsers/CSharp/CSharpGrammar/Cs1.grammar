@@ -278,7 +278,7 @@ ConstructorInitializerKeyword =
 
 Destructor = Attributes? MethodModifier* "~" TypeName "(" ")" Block;
 
-InterfaceMethod = Attributes? MethodModifier* Type TypeName "(" ParameterList? ")" ";";
+InterfaceMethod = Attributes? InterfaceMethodModifier* Type TypeName "(" ParameterList? ")" ";";
 
 // C# 1.0 method modifiers: access + static/virtual/override/abstract/new/extern/sealed/unsafe
 // (Roslyn GetModifierExcludingScoped 1286-1345; ParseModifiers 1347-1484 is a generic any-order
@@ -294,6 +294,25 @@ MethodModifier =
     | "virtual"
     | "override"
     | "abstract"
+    | "new"
+    | "extern"
+    | "sealed"
+    | "unsafe";
+
+// Method modifiers allowed on an INTERFACE method (C# 1.0): MethodModifier MINUS `static` and
+// `abstract`. In C# 1.0 an interface method is implicitly abstract (an explicit `abstract` is a
+// binder error) and CANNOT be `static` (static interface members are C# 9.0, T3.9.5). Excluding
+// `static`/`abstract` here makes `static abstract ...` in an interface REJECT at v1-v8 (version
+// purity); the CS9-only StaticAbstractInterface* rules (Cs9.grammar) are the sole matchers at v9.
+// `virtual`/`override`/`sealed` are kept (syntactically accepted; per-modifier legality is a binder
+// concern, consistent with T2.1.3 / T3.8.6). Used by InterfaceMethod (Cs1:281, Cs2:133, Cs8:421).
+InterfaceMethodModifier =
+    | "public"
+    | "private"
+    | "protected"
+    | "internal"
+    | "virtual"
+    | "override"
     | "new"
     | "extern"
     | "sealed"

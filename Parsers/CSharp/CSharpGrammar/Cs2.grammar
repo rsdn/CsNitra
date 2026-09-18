@@ -130,7 +130,9 @@ Constraint =
 Method = Attributes? MethodModifier* Type TypeName "(" ParameterList? ")" ConstraintClause+ MethodBody;
 
 // Interface methods end with `;` (no body); constraints appear before the `;`.
-InterfaceMethod = Attributes? MethodModifier* Type TypeName "(" ParameterList? ")" ConstraintClause+ ";";
+// Uses InterfaceMethodModifier (Cs1, MethodModifier minus static/abstract) so `static abstract`
+// stays CS9-only (T3.9.5).
+InterfaceMethod = Attributes? InterfaceMethodModifier* Type TypeName "(" ParameterList? ")" ConstraintClause+ ";";
 
 // === Re-declared type declarations (T3.1.1.2): ConstraintClause+ REQUIRED. ===
 // As in T3.1.1.1 (D1), the greedy TypeName consumes the `<...>` type-parameter list, so the

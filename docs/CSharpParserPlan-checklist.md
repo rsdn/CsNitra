@@ -103,8 +103,8 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
   - [✅] T3.9.1 records (record declaration) + setup `Cs9.grammar` + version table + csproj → `Cs9.grammar` + тесты (RecordDeclaration, contextual keyword, reuses Parameter/BaseList/ClassBody; setup: csproj + v9)
   - [✅] T3.9.2 `with {}` (record with expression) → `Cs9.grammar` + тесты (WithExpr = with Initializer, PostfixOp, reuses Cs3 Initializer; contextual keyword)
   - [✅] T3.9.3 init-only (init accessor) → `Cs9.grammar` + тесты (AutoPropertyAccessorList += get;init; и get;set;init;, append-merge onto Cs3; contextual keyword)
-  - [~] T3.9.4 top-level statements → `Cs9.grammar` + тесты
-  - [ ] T3.9.5 static abstract в интерфейсах → `Cs9.grammar` + тесты
+  - [✅] T3.9.4 top-level statements → `Cs9.grammar` + тесты (CompilationUnit += GlobalStatement* NamespaceMember*, re-declared; disambiguation via longest-match + full-consumption)
+  - [~] T3.9.5 static abstract в интерфейсах → `Cs9.grammar` + тесты
 - [ ] T3.10 CS10: file-scoped `namespace`, `global using`
 - [ ] T3.11 CS11: raw-строки, generic attributes, `required`, `params Span<T>`
 - [ ] T3.12 CS12: primary constructors (классы), collection expressions, list patterns, `not`/`and`/`or`
