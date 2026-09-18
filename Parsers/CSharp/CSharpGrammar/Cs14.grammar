@@ -58,3 +58,32 @@ ExtensionParameterList = "(" (Parameter; ",")+ ")";
 ExtensionBody =
     | ClassBody
     | ";";
+
+// === ref field (T3.14.2, C# 14.0). ===
+// A `ref` field is a field declared with the `ref` modifier: `ref int _value;` (and `ref readonly
+// int _value;`). Roslyn parses it through the STANDARD field-declaration path (ParseNormalFieldDeclaration,
+// LanguageParser.cs:5200-5220): `ref` is a general declaration modifier (GetModifierExcludingScoped,
+// LanguageParser.cs:1322-1323 -> DeclarationModifiers.Ref), consumed by the any-order ParseModifiers loop
+// (1347) and riding in the field's modifiers list. The binder folds `ref`/`ref readonly` into the type
+// (SkipRefInField, SourceMemberFieldSymbol.cs:533-534; RefKind.Ref / RefKind.RefReadOnly) and enforces the
+// C# version (IDS_FeatureRefFields, MessageID.cs:262/557 — a "semantic check"), so the PARSER accepts the
+// form and the version gate is the binder's concern.
+//
+// The grammar models `ref` as a MODIFIER (consistent with Cs7 MethodModifier `ref` return, Cs7.grammar:237,
+// and Cs7 StructModifier `ref struct`, Cs7.grammar:512): re-declare FieldModifier (append, T0.3 merge) to
+// add "ref" to the Cs1 union (Cs1.grammar:155-165) + Cs11 `required` (Cs11.grammar:93). The Cs1 Field
+// (Cs1.grammar:148) then consumes `ref` as a field modifier and parses Type + VariableDeclarator.
+//
+// Disambiguation (longest-match, no equal-length tie):
+//   * `ref int x;` (a ref FIELD): Field -> FieldModifier=ref, Type=int, VariableDeclarator=x, ; (matches).
+//     Method (Cs7 MethodModifier=ref) -> MethodModifier=ref, Type=int, TypeName=x, then `(` expected but
+//     `;` found -> FAILS. So Field is the sole match.
+//   * `ref int M() { }` (a ref RETURN method, Cs7): Field -> FieldModifier=ref, Type=int,
+//     VariableDeclarator=M, then `;`/`,` expected but `(` found -> FAILS; Method -> MethodModifier=ref,
+//     Type=int, TypeName=M, (), MethodBody (matches). So Method is the sole match (no regression).
+//
+// Version purity: at v<=13 `ref` is NOT a FieldModifier, so `ref int x;` -> FieldModifier* matches zero,
+// Type=ref fails (ref is a reserved keyword, Cs1.grammar:632) -> Field FAILS; Method FAILS (no `(` after
+// the name) -> no member alternative matches -> REJECTS. At v14 the merged FieldModifier consumes `ref`.
+FieldModifier =
+    | "ref";

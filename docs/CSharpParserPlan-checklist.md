@@ -123,8 +123,8 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
   - [✅] T3.13.2 `event field` → `Cs13.grammar` + тесты (EventTail += EventFieldInit = = Expression ;; три EventTail взаимно исключают друг друга по leading token)
   - [→] T3.13.3 extension members → перенесено в T3.14.1 (это `extension` container, фича C# 14 по MessageID.cs:515)
 - [~] T3.14 CS14: `ref`-поля, extension members (`extension` container) + остаток фич по данным T1.1
-  - [~] T3.14.1 extension members (`extension` container) + setup `Cs14.grammar` + version table + csproj → `Cs14.grammar` + тесты
-  - [ ] T3.14.2 `ref`-поля → `Cs14.grammar` + тесты
+  - [✅] T3.14.1 extension members (`extension` container) + setup `Cs14.grammar` + version table + csproj → `Cs14.grammar` + тесты (ExtensionDeclaration = extension TypeParameterList? (params) ConstraintClause* (ClassBody | ;); setup: csproj + v14)
+  - [~] T3.14.2 `ref`-поля → `Cs14.grammar` + тесты
 
 ## Этап 4 — Закаливание
 
