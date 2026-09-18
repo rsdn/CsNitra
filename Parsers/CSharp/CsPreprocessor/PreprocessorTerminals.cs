@@ -1,4 +1,9 @@
+using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using CSharpGrammar;
 using ExtensibleParser;
 
@@ -196,7 +201,7 @@ public static class PreprocessorTerminals
                 if (c is '\n' or '\r')
                     return false;
                 if (c == '#')
-                    return true;
+                    return !MultiLineStrings.IsInsideSpan(input, pos);
                 if (!char.IsWhiteSpace(c))
                     return false;
             }
@@ -209,6 +214,128 @@ public static class PreprocessorTerminals
                 if (input[pos] == '\n')
                     return pos - startPos + 1;
             return input.Length - startPos;
+        }
+    }
+
+    // T4.4.3 — a line-start '#' inside a multi-line string literal is NOT a directive-start. The
+    // string extent is obtained by parsing the string as a C# Expression with the main C# parser's
+    // `Expression` rule (no hand-rolled string-content scanning): a string literal is exactly what is
+    // at the detected start, so the parsed Expression spans precisely the literal (plus, in the rare
+    // case of a following operator, only same/later CODE lines — never a directive line). Spans that
+    // contain a newline are recorded; a '#' inside any such span is rejected as a directive-start.
+    private static class MultiLineStrings
+    {
+        private const string ExpressionRule = "Expression";
+
+        // Cs11 = raw strings (""""...""""), the newest string form that can span lines. Cs1 supplies
+        // regular/verbatim/char + the base Expression; Cs6 interpolated. Loading the ascending run
+        // mirrors the intended grammar composition (EmbeddedGrammar.LoadGrammarUpTo).
+        private const int MaxGrammarVersion = 11;
+
+        // The CSharpParser.Parser is a mutable, non-thread-safe instance (its Parse mutates
+        // memo/cache/error state). Instead of a shared parser guarded by a global lock (which would
+        // serialize all concurrent parses), give each thread its OWN parser: lazily built once per
+        // thread on first use, then reused. The expensive grammar build is paid once PER THREAD
+        // (acceptable), and no lock is needed because each thread's parser is used only by that thread.
+        [ThreadStatic]
+        private static CSharpParser? _parser;
+
+        // Parsing is synchronous per source on one thread, and MSTest runs methods on separate
+        // threads, so a reference-keyed per-thread cache is both efficient (computed once per input)
+        // and safe under method-level parallelism.
+        [ThreadStatic]
+        private static string? _cachedInput;
+
+        [ThreadStatic]
+        private static IReadOnlyList<(int Start, int End)>? _cachedSpans;
+
+        public static bool IsInsideSpan(string input, int pos)
+        {
+            foreach (var (start, end) in GetSpans(input))
+                if (pos >= start && pos < end)
+                    return true;
+            return false;
+        }
+
+        private static IReadOnlyList<(int Start, int End)> GetSpans(string input)
+        {
+            if (ReferenceEquals(_cachedInput, input))
+                return _cachedSpans!;
+
+            _cachedInput = input;
+            _cachedSpans = ComputeSpans(input);
+            return _cachedSpans;
+        }
+
+        private static IReadOnlyList<(int Start, int End)> ComputeSpans(string input)
+        {
+            var spans = new List<(int Start, int End)>();
+            var pos = 0;
+            var length = input.Length;
+            while (pos < length)
+            {
+                // A string starts at '@'+'"' (verbatim) or '"' (regular or raw; a preceding '$' run is
+                // an interpolated prefix — the expression start is still the quote/quote-run).
+                var c = input[pos];
+                var isStringStart = c == '"' || (c == '@' && pos + 1 < length && input[pos + 1] == '"');
+                if (!isStringStart)
+                {
+                    pos++;
+                    continue;
+                }
+
+                var exprLength = ParseExpressionLength(input, pos);
+                if (exprLength <= 0)
+                {
+                    pos++;
+                    continue;
+                }
+
+                var end = pos + exprLength;
+                if (input.IndexOf('\n', pos, exprLength) >= 0)
+                    spans.Add((pos, end));
+
+                pos = end;
+            }
+
+            return spans;
+        }
+
+        private static int ParseExpressionLength(string input, int exprStart)
+        {
+            var result = GetParser().Parser.Parse(input, ExpressionRule, out _, exprStart);
+            return result.TryGetSuccess(out _, out var end) ? end - exprStart : -1;
+        }
+
+        private static CSharpParser GetParser()
+        {
+            var parser = _parser;
+            if (parser is null)
+                _parser = parser = BuildParser();
+            return parser;
+        }
+
+        private static CSharpParser BuildParser()
+        {
+            var assembly = typeof(CSharpParser).Assembly;
+            var grammars = new List<(string Text, string Path)>();
+            for (var version = 1; version <= MaxGrammarVersion; version++)
+            {
+                var suffix = $"Cs{version}.grammar";
+                grammars.Add((Load(assembly, suffix), suffix));
+            }
+
+            return new CSharpParser(grammars, CSharpTerminals.Trivia(), CSharpTerminals.GetAll());
+        }
+
+        private static string Load(Assembly assembly, string resourceSuffix)
+        {
+            var resourceName = assembly.GetManifestResourceNames()
+                .Single(n => n.EndsWith(resourceSuffix, StringComparison.Ordinal));
+            using var stream = assembly.GetManifestResourceStream(resourceName)
+                ?? throw new InvalidOperationException($"Embedded resource '{resourceSuffix}' not found in {assembly.FullName}");
+            using var reader = new StreamReader(stream);
+            return reader.ReadToEnd();
         }
     }
 }
