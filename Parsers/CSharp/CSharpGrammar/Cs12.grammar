@@ -139,6 +139,88 @@ Primary =
 // acceptable for the minimal task. The optional list-pattern designation (`TryParseSimpleDesignation`,
 // e.g. `[1, 2, 3] as x`) is out of scope; the slice models the bare ".." plus an optional trailing
 // Pattern (the Roslyn sub-pattern).
+// ============================================================================
+// T3.12.4 — C# 12.0 `not`/`and`/`or` pattern composition (+ relational patterns).
+//
+// A pattern can be composed with the contextual keywords `not` (prefix, highest precedence),
+// `and` (binary, middle), `or` (binary, lowest):
+//   x is not null
+//   x is > 0 and < 10
+//   x is 1 or 2 or 3
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp/Portable/Parser/LanguageParser_Patterns.cs):
+//   * ParseDisjunctivePattern (58-71): `or` is the LOWEST precedence (a loop of ParseConjunctivePattern).
+//   * ParseConjunctivePattern (104-117): `and` is the MIDDLE precedence (a loop of ParseNegatedPattern).
+//   * ParseNegatedPattern (158-185): `not` is the HIGHEST precedence (a right-recursive prefix).
+//   * Relational pattern — ParsePrimaryPattern (217-228): `<`/`<=`/`>`/`>=`/`==`/`!=` + a
+//     ParseSubExpression(Precedence.Relational) — a PRIMARY pattern (needed for `> 0 and < 10`).
+//   * Version gate — pattern composition + relational patterns are semantic (binder) features; the
+//     PARSER accepts the form wherever the rule exists. Version purity comes from the rules being
+//     Cs12-only (at v<=11 they are ABSENT, so a composed / relational pattern REJECTS).
+//
+// CONSTRAINT (why PrimaryPattern exists): the meta-grammar only lets a rule reference TOP-LEVEL rules
+// (named alternatives are just labels, not referenceable rules). The base patterns are ALTERNATIVES of
+// `Pattern`, not top-level rules, so the composition cannot reference "a base pattern" directly. And a
+// left-recursive cycle `Pattern -> DisjunctivePattern -> ConjunctivePattern -> NegatedPattern ->
+// Pattern` would hit the parse-depth guard (Parser.Recovery.cs:152-163) and FAIL. So the composition
+// references a SEPARATE top-level rule `PrimaryPattern` (the base patterns, duplicated) that does NOT
+// include the composition.
+//
+// Disambiguation (longest-match-wins, no equal-length tie for the composed forms):
+//   * A SIMPLE pattern (`int`, `5`, `> 0`) matches BOTH a base alternative (e.g. TypePattern, declared
+//     first in `Pattern`) and the DisjunctivePattern path (-> ... -> PrimaryPattern -> the same base
+//     pattern) at the SAME length -> the FIRST (base alternative) wins. So simple patterns parse exactly
+//     as before (no regression).
+//   * A COMPOSED pattern (`int and string`, `1 or 2 or 3`, `not null`) matches NO base alternative
+//     (they stop before `and`/`or`/`not` — those are contextual keywords, not operators) -> the
+//     DisjunctivePattern is the SOLE match (longer). So composition works.
+//
+// CS12 only: at v<=11 the DisjunctivePattern / RelationalPattern alternatives and the
+// PrimaryPattern / ConjunctivePattern / NegatedPattern rules are ABSENT, so `not`/`and`/`or`
+// composition and relational patterns match no Pattern alternative and REJECT.
+//
+// Boundary: the relational-pattern operand is `Expression : Relational` (Roslyn
+// ParseSubExpression(Precedence.Relational)). `and`/`or`/`not` are CONTEXTUAL keywords (plain
+// identifiers, NOT in ReservedKeyword), so a bare `and`/`or`/`not` in a pattern position is still a
+// valid identifier (TypePattern) — a documented deviation from Roslyn's contextual-keyword resolution
+// (not in the task's test list).
 Pattern =
     | ListPattern  = "[" (Pattern; ",")* "]"
-    | SlicePattern = ".." Pattern?;
+    | SlicePattern = ".." Pattern?
+    | RelationalPattern  = RelationalOperator Expression : Relational
+    | DisjunctivePattern = ConjunctivePattern ("or" ConjunctivePattern)*;
+
+// `and` composition (middle precedence): a loop of NegatedPattern separated by `and`. Roslyn
+// ParseConjunctivePattern (104-117).
+ConjunctivePattern = NegatedPattern ("and" NegatedPattern)*;
+
+// `not` composition (highest precedence): a right-recursive `not` prefix, or a primary (base) pattern.
+// Roslyn ParseNegatedPattern (158-185).
+NegatedPattern =
+    | NotPrefix = "not" NegatedPattern
+    | PrimaryPattern;
+
+// A primary (base) pattern — the leaf of the composition. Duplicated from the `Pattern` base
+// alternatives (Cs7.grammar:130-135 + the Cs12 T3.12.3 ListPattern/SlicePattern + the new
+// RelationalPattern) because the composition must reference a rule that does NOT include the
+// composition (the left-recursion guard, see the T3.12.4 header comment).
+PrimaryPattern =
+    | DiscardPattern     = "_"
+    | DeclarationPattern = Type !ReservedKeyword !("and") !("or") Identifier
+    | VarPattern         = "var" !ReservedKeyword !("and") !("or") Identifier
+    | TypePattern        = Type
+    | ConstantPattern    = !(!ReservedKeyword Identifier "=>") !("(" (LambdaParameter; ",")* ")" "=>") Expression
+    | ListPattern        = "[" (Pattern; ",")* "]"
+    | SlicePattern       = ".." Pattern?
+    | RelationalPattern  = RelationalOperator Expression : Relational;
+
+// A relational-pattern operator (C# 12.0, T3.12.4). Roslyn ParsePrimaryPattern (217-228) accepts
+// `<`/`<=`/`>`/`>=`/`==`/`!=`. Longest-match-wins picks `>=` over `>` (and `<=` over `<`) for the
+// two-character forms; the one-character forms are the sole match.
+RelationalOperator =
+    | ">"
+    | ">="
+    | "<"
+    | "<="
+    | "=="
+    | "!=";

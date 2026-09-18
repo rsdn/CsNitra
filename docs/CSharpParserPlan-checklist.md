@@ -116,8 +116,8 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
 - [~] T3.12 CS12: primary constructors (классы), collection expressions, list patterns, `not`/`and`/`or`
   - [✅] T3.12.1 primary constructors (классы) + setup `Cs12.grammar` + version table + csproj → `Cs12.grammar` + тесты (ClassDeclaration re-declared с REQUIRED ClassPrimaryConstructorParameterList; setup: csproj + v12)
   - [✅] T3.12.2 collection expressions `[]` → `Cs12.grammar` + тесты (Primary += CollectionExpr = [ (Expression,)* ]; sole match for [ in primary position)
-  - [~] T3.12.3 list patterns → `Cs12.grammar` + тесты
-  - [ ] T3.12.4 `not`/`and`/`or` (pattern composition) → `Cs12.grammar` + тесты
+  - [✅] T3.12.3 list patterns → `Cs12.grammar` + тесты (Pattern += ListPattern = [ (Pattern,)* ] и SlicePattern = .. Pattern?; list pattern — PATTERN, не Primary)
+  - [~] T3.12.4 `not`/`and`/`or` (pattern composition) → `Cs12.grammar` + тесты
 - [ ] T3.13 CS13: extension members, `field`, `event field`
 - [ ] T3.14 CS14: `ref`-поля + остаток фич по данным T1.1
 
