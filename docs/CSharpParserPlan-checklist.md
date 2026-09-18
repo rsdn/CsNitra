@@ -110,8 +110,8 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
   - [✅] T3.10.2 `global using` → `Cs10.grammar` + тесты (GlobalUsingDirective: alias/static/open forms, NamespaceMember alternative)
 - [~] T3.11 CS11: raw-строки, generic attributes, `required`, `params Span<T>`
   - [✅] T3.11.1 raw-строки (interpolated `$"""..."""` — non-interpolated уже в Cs11) → `Cs11.grammar` + тесты (version-purity fix: RawInterpolatedStringLiteral перенесён из Cs6 в Cs11, подключён к Primary)
-  - [~] T3.11.2 generic attributes → `Cs11.grammar` + тесты
-  - [ ] T3.11.3 `required` → `Cs11.grammar` + тесты
+  - [✅] T3.11.2 generic attributes → `Cs11.grammar` + тесты (AttributeTypeName re-declared с REQUIRED type argument list; Cs1 AttributeName decoupled от generic TypeName)
+  - [~] T3.11.3 `required` → `Cs11.grammar` + тесты
   - [ ] T3.11.4 `params Span<T>` → `Cs11.grammar` + тесты
 - [ ] T3.12 CS12: primary constructors (классы), collection expressions, list patterns, `not`/`and`/`or`
 - [ ] T3.13 CS13: extension members, `field`, `event field`
