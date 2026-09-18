@@ -18,6 +18,10 @@ public sealed class PreprocessorInterpreter(string source, IEnumerable<string> c
 
     private const string CodeUnterminatedIf = "CS1024";
 
+    private const string CodeMultipleElse = "CS1034";
+
+    private const string CodeElifAfterElse = "CS1035";
+
     private readonly char[] _text = source.ToCharArray();
 
     private readonly DirectiveStack _stack = new(commandLineSymbols.ToList());
@@ -103,7 +107,14 @@ public sealed class PreprocessorInterpreter(string source, IEnumerable<string> c
                         DiagnosticSeverity.Error,
                         "Unexpected '#elif' directive",
                         CodeStrayElif);
-                _stack.Elif(EvaluateCondition(directive));
+                else if (_stack.CurrentFrameHasElse)
+                    AddDiagnostic(
+                        directiveLine,
+                        DiagnosticSeverity.Error,
+                        "'#elif' directive after '#else'",
+                        CodeElifAfterElse);
+                else
+                    _stack.Elif(EvaluateCondition(directive));
                 break;
             case "Else":
                 if (!_stack.HasUnfinishedIf)
@@ -112,7 +123,14 @@ public sealed class PreprocessorInterpreter(string source, IEnumerable<string> c
                         DiagnosticSeverity.Error,
                         "Unexpected '#else' directive",
                         CodeStrayElse);
-                _stack.Else();
+                else if (_stack.CurrentFrameHasElse)
+                    AddDiagnostic(
+                        directiveLine,
+                        DiagnosticSeverity.Error,
+                        "Multiple '#else' directives",
+                        CodeMultipleElse);
+                else
+                    _stack.Else();
                 break;
             case "EndIf":
                 if (!_stack.HasUnfinishedIf)

@@ -19,6 +19,8 @@ public sealed class DirectiveStack
 
     public bool HasUnfinishedIf => _ifStack.Count > 0;
 
+    public bool CurrentFrameHasElse => _ifStack.Count > 0 && _ifStack.Peek().HasElse;
+
     public bool If(bool condition)
     {
         var branchTaken = _isActive && condition;
@@ -47,6 +49,7 @@ public sealed class DirectiveStack
         var frame = _ifStack.Peek();
         var branchTaken = frame.EndIsActive && !frame.PreviousBranchTaken;
         frame.PreviousBranchTaken = frame.PreviousBranchTaken || branchTaken;
+        frame.HasElse = true;
         _isActive = branchTaken;
         return branchTaken;
     }
@@ -95,6 +98,8 @@ public sealed class DirectiveStack
         public bool EndIsActive { get; init; }
 
         public bool PreviousBranchTaken { get; set; }
+
+        public bool HasElse { get; set; }
     }
 
     private sealed record DefineOp(string Symbol, bool IsDefined);
