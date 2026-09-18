@@ -119,6 +119,58 @@ public sealed class S6BottomTests
         Assert.IsFalse(candidates.Any(x => x.Rank == 6));
     }
 
+    // ============ A5-7: регион > 1000 символов -> дно работает (S6 без MaxSkip) ============
+    // Module := ZeroOrMany(Number), короткий корректный префикс + >1000 символов хвостового мусора.
+    // S6 не имеет MaxSkip (DefaultMaxSkip=1000) -> скан до EOF, хвост целиком покрыт абсорбером.
+    [TestMethod]
+    public void Test_S6_Region_LongerThanMaxSkip_FullyCovered()
+    {
+        var parser = new Parser(S6Terminals.Trivia());
+        parser.Rules["Module"] = [new ZeroOrMany(S6Terminals.Number(), "Numbers")];
+        parser.BuildTdoppRules();
+
+        var input = "12 34 56 " + new string('#', 1500);
+        var result = parser.Parse(input, "Module", out _);
+
+        Assert.IsTrue(result.TryGetSuccess(out var node, out var end), $"expected Success, got {result.ResultKind}");
+        Assert.AreEqual(input.Length, end, "S6 bottom must reach EOF");
+        Assert.IsNull(parser.ErrorInfo);
+
+        // абсорбер покрывает хвост длиннее DefaultMaxSkip=1000 - S6 истинное дно, не обрезано по MaxSkip.
+        var absorber = FindAbsorbers(node).Single();
+        Assert.AreEqual(input.Length, absorber.EndPos, "absorber must reach EOF");
+        Assert.IsTrue(absorber.EndPos - absorber.StartPos > 1000, $"absorber must cover >1000 chars, got {absorber.EndPos - absorber.StartPos}");
+    }
+
+    // ============ A5-7: `}` внутри строки - задокументированное базовое поведение (R1/B3 уточнят) ============
+    // `}` в стоп-наборе (Terminators кадра Body). В хвосте строка "abc}def" с `}` внутри.
+    // Текущее поведение (скан не string-aware): есть абсорбер, оканчивающийся на `}` внутри строки
+    // (скан остановился на `}`, а не прошёл строку целиком). R1/B3 (волны 3/5) сделают скан
+    // string-aware -> тогда хвост покроется одним абсорбером до EOF (без остановки на `}` внутри строки).
+    [TestMethod]
+    public void Test_S6_ClosingBraceInsideString_DocumentedBaseline()
+    {
+        var parser = new Parser(S6Terminals.Trivia());
+        parser.Rules["Item"] = [new Literal("x")];
+        parser.Rules["Body"] = [new RecoveryRule(new OneOrMany(new Ref("Item"), "Items"), new RecoveryOptions { Terminators = [new Literal("}")] })];
+        parser.Rules["Module"] = [new Seq([new Literal("{"), new Ref("Body")], "Module")];
+        parser.BuildTdoppRules();
+
+        var input = "{x \"abc}def\" GARBAGE";
+        var result = parser.Parse(input, "Module", out _);
+
+        Assert.IsTrue(result.TryGetSuccess(out var node, out var end), $"expected Success, got {result.ResultKind}");
+        Assert.AreEqual(input.Length, end, "bottom must reach EOF");
+
+        // базовое поведение: скан не string-aware -> абсорбер оканчивается на `}` внутри строки.
+        // (R1/B3 уточнят: после string-aware скана такого абсорбера не будет.)
+        var bracePos = input.IndexOf('}');
+        var absorbers = FindAbsorbers(node).ToList();
+        Assert.IsTrue(
+            absorbers.Any(a => a.EndPos == bracePos),
+            $"current (non-string-aware) behavior: an absorber must end at the closing brace inside the string (pos {bracePos}); got [{string.Join(" ", absorbers.Select(a => a.StartPos + ".." + a.EndPos))}]");
+    }
+
 }
 
 #endif

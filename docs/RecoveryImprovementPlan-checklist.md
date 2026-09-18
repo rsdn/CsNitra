@@ -11,7 +11,7 @@ Status: `[ ]` not started · `[~]` in progress (exactly one) · `[✅]` done · 
 
 ## Wave 1 — contract and bottom: "always to the end + all errors"
 - [✅] 1.1 A1: S6 "guaranteed progress" last-resort candidate (rank 6, generated always when E<EOF incl. snapshot==null; absorber [E..S) to known-good point or EOF; Ref→memo-patch, loop-level→loop absorber, else Absorb injection; snapshot==null→synthetic start-rule frame).
-- [ ] 1.2 A5-7: S6 = panic bottom (stop-set = terminators (FOLLOW-union over stack, fallback rule-level) ∪ anchor-First; no snapshot requirement; no MaxSkip; strict regions excluded C1).
+- [✅] 1.2 A5-7: S6 = panic bottom (stop-set = terminators (FOLLOW-union over stack, fallback rule-level) ∪ anchor-First; no snapshot requirement; no MaxSkip; strict regions excluded C1).
 - [ ] 1.3 A4-2: "report and continue" — on limit exhaustion emit `RecoveryDiagnostic(Kind.Unrecovered, E, ...)`, fall to S6 bottom, continue iterations; result = list of diagnostics + tree over whole input. Move `MaxRecoveryIterations` into profile / raise for IDE (D1.1 100+ errors must finish).
 - [ ] 1.4 A5-4: bottom-contract of result — IDE profile returns `Success<T>` with tree covering whole input (absorbers), not `Failed(FatalError)`; `Failed` only in Compiler profile; `Unrecovered`/`InsufficientStack` diagnostics on tree. Remove `InvalidOperationException` on Partial@EOF in consumers (CsNitraParser.cs:140-153).
 - [ ] 1.5 C1: audit progress guarantee (I1) — from `Recover` with `FatalError` exit only when `Recoverable:false`; S6+MaxSkip (S6 ignores MaxSkip), S6+nested strict regions (S6 does not "close" a strict region). Contract tests green.
@@ -56,6 +56,7 @@ Status: `[ ]` not started · `[~]` in progress (exactly one) · `[✅]` done · 
 - [ ] 7.7 E: structurally for code generation — keep `RecoveryEngine.Generate` clean; `Injection` + `MemoPatch` only patch units (do not complicate); document "re-pass of prefix is cheap" property; do not introduce global chart.
 
 ## Deviations
+- 1.2: pure verification + tests (no production change — 1.1's S6 already satisfied all 4 A5-7 requirements). `}`-in-string scan is NOT string-aware (documented baseline, stops at in-string `}`); R1/B3 (Waves 3/5) will refine.
 - 1.1: `ApplyPatches` reordered to Hygiene-before-Apply (S6 needs it); this made S2/S3 `PatchMemo` a no-op → real regression + stack overflow (NotPredicate cycle no longer broken). Fixed by `PatchMemo` creating a prec-0 key when none exist. S6 absorber starts at `parseEnd` (not `e`) to cover the actual trailing region when `ErrorPos > parseEnd`. Full suite 336/0/2.
 - 0.1+0.2 combined into one subagent (tightly coupled: the D1 corpus report surfaces the D2-core counters). Done together in `RecoveryCorpusTests.cs`.
 - D1.1 (120 errors) baseline: Success@EOF=False (120 > MaxRecoveryIterations=64), passes=65. This is the Wave-1 acceptance metric (A4-2/A3). D1.7 baseline resync=11 (Wave-5 A5-1 acceptance metric).
