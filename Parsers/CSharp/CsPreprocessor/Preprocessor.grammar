@@ -7,11 +7,25 @@ Line =
 DirectiveLine = Ws* "#" Directive;
 
 Directive =
+    | If
+    | Elif
     | Else
     | EndIf
     | Define
     | Undef
+    | Error
+    | Warning
+    | LineDir
+    | Region
+    | EndRegion
+    | Pragma
+    | Nullable
+    | Shebang
     | BadDirective;
+
+If = "if" Ws* LineEnd;
+
+Elif = "elif" Ws* LineEnd;
 
 Else = "else" LineEnd;
 
@@ -21,10 +35,35 @@ Define = "define" Ws+ Symbol LineEnd;
 
 Undef = "undef" Ws+ Symbol LineEnd;
 
+Error = "error" LineEnd;
+
+Warning = "warning" LineEnd;
+
+LineDir = "line" LineEnd;
+
+Region = "region" LineEnd;
+
+EndRegion = "endregion" LineEnd;
+
+Pragma = "pragma" LineEnd;
+
+Nullable = "nullable" LineEnd;
+
+Shebang = "!" LineEnd;
+
 BadDirective = !KnownKeyword Symbol LineEnd;
 
 KnownKeyword =
+    | "if"
+    | "elif"
     | "else"
     | "endif"
     | "define"
-    | "undef";
+    | "undef"
+    | "error"
+    | "warning"
+    | "line"
+    | "region"
+    | "endregion"
+    | "pragma"
+    | "nullable";
