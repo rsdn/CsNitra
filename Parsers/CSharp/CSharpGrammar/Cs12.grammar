@@ -1,0 +1,54 @@
+// Cs12.grammar — C# 12.0: primary constructors for classes (T3.12.1).
+//
+// A primary constructor for a class is a class declaration with a parameter list (like a record's
+// positional parameter list). The parameters are in scope in the class body:
+//   class MyClass(int x, string y)
+//   {
+//       // x and y are available here
+//   }
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp/Portable/Parser/LanguageParser.cs):
+//   * ParseMainTypeDeclaration (1789): the common parser for class/struct/interface/record/extension.
+//   * name = ParseIdentifierToken() (1821); typeParameters = ParseTypeParameterList() (1824).
+//   * paramList (1827-1828): `CurrentToken.Kind == OpenParenToken || isExtension
+//     ? ParseParenthesizedParameterList(...) : null` — the parameter list is present only when "("
+//     follows the (type-parameter) name. For a class this is the PRIMARY CONSTRUCTOR.
+//   * baseList (1830): ParseBaseList() (the ": Base" list).
+//   * body (1847-1914): `;` (no body) OR `{` members* `}` with an optional trailing `;`.
+//   * constructTypeDeclaration (1965-2078), ClassKeyword case (1974-1988): builds ClassDeclaration
+//     with the paramList slot (1982) — the primary constructor.
+//   * ParseParenthesizedParameterList (4750): requireOneElement:false (an empty "()" is allowed).
+//   * Version gate — a class primary constructor is a C# 12 feature (binder/semantic). The PARSER
+//     accepts the form wherever the rule exists; version purity comes from the rule being Cs12-only.
+//
+// T0.3 merge semantics: re-declaring ClassDeclaration here APPENDS a new alternative to the Cs1
+// ClassDeclaration (Cs1.grammar:34) and the Cs2 ClassDeclaration (Cs2.grammar:67). The new alternative
+// REQUIRES the ClassPrimaryConstructorParameterList (REQUIRED-new-construct), so it is MUTUALLY
+// EXCLUSIVE with both:
+//   * Cs1 (no param list): for `class C(int x) { }` the Cs1 alternative sees "(" where it expects a
+//     BaseList (":") or ClassBody ("{") and FAILS; only the Cs12 alternative matches. No tie.
+//   * Cs2 (REQUIRED TypeParameterList): for `class C(int x) { }` the Cs2 alternative sees "(" where
+//     it expects "<" and FAILS. No tie.
+//   * The greedy merged TypeName (Cs2.grammar:44) consumes a generic name (`class C<T>(int x) { }`
+//     -> TypeName = `C<T>`), so the generic primary-constructor form is handled without an explicit
+//     TypeParameterList here (Boundary decision D1, Cs2.grammar:16-28).
+// The TypeDeclaration union (Cs1.grammar:27-32) references ClassDeclaration by name, so it picks up
+// the new alternative automatically (no need to re-declare TypeDeclaration, unlike the Cs9 record).
+//
+// CS12 only: at v<=11 the Cs12 ClassDeclaration alternative is ABSENT, so `class C(int x) { }` leaves
+// the "(...)" unconsumed and REJECTS.
+//
+// ClassPrimaryConstructorParameterList = "(" (Parameter,)* ")" — empty allowed (`class C() { }`).
+// Reuses Cs1 Parameter (Cs1.grammar:472). A dedicated rule (not reusing Cs9 RecordParameterList) keeps
+// this file's dependencies confined to Cs1 (consistent with the inlining pattern in Cs11.grammar).
+
+// === Class declaration with a primary constructor (C# 12.0). ===
+// Roslyn ParseMainTypeDeclaration paramList (LanguageParser.cs:1827-1828) + ClassKeyword case
+// (1974-1988). The parameter list sits between the (greedy) TypeName and the optional BaseList,
+// exactly as in Roslyn. The body reuses Cs1 ClassBody (Cs1.grammar:102).
+ClassDeclaration = Attributes? ClassModifier* "class" TypeName ClassPrimaryConstructorParameterList BaseList? ClassBody ";"?;
+
+// The class primary-constructor parameter list: "(" (param,)* ")" — empty allowed (`class C() { }`).
+// Roslyn ParseParenthesizedParameterList (LanguageParser.cs:4750), requireOneElement:false. Reuses
+// Cs1 Parameter (Cs1.grammar:472).
+ClassPrimaryConstructorParameterList = "(" (Parameter; ",")* ")";
