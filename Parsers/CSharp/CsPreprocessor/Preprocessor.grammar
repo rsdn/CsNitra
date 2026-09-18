@@ -1,0 +1,5 @@
+PreprocessorFile = Line*;
+
+Line =
+    | DirectiveLine
+    | CodeLine;

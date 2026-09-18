@@ -5,7 +5,7 @@
 
 - [✅] T0.1 Проект CsPreprocessor + типы + `Run` (заглушка)
 - [✅] T0.2 Тестовый проект CsPreprocessorTests (smoke)
-- [ ] T1.1 Грамматика: `PreprocessorFile`/`Line`/`CodeLine` (плитка всего текста)
+- [✅] T1.1 Грамматика: `PreprocessorFile`/`Line`/`CodeLine` (плитка всего текста)
 - [ ] T1.2 Грамматика: все виды директив → узлы
 - [ ] T1.3 Грамматика: условие `#if`/`#elif` (TDOPP)
 - [ ] T2.1 Интерпретатор (visitor): каркас stack + active/inactive + сборка `Text`
