@@ -6,6 +6,18 @@ namespace CsPreprocessor;
 
 public sealed class PreprocessorInterpreter(string source, IEnumerable<string> commandLineSymbols) : ISyntaxVisitor
 {
+    private const string CodeError = "CS1029";
+
+    private const string CodeWarning = "CS1030";
+
+    private const string CodeStrayElse = "CS1025";
+
+    private const string CodeStrayElif = "CS1028";
+
+    private const string CodeStrayEndIf = "CS1023";
+
+    private const string CodeUnterminatedIf = "CS1024";
+
     private readonly char[] _text = source.ToCharArray();
 
     private readonly DirectiveStack _stack = new(commandLineSymbols.ToList());
@@ -13,6 +25,8 @@ public sealed class PreprocessorInterpreter(string source, IEnumerable<string> c
     private readonly List<Diagnostic> _diagnostics = [];
 
     private readonly List<LineDirective> _lineDirectives = [];
+
+    private readonly Stack<IfPosition> _openIfs = new();
 
     public PreprocessResult? Result { get; private set; }
 
@@ -27,6 +41,17 @@ public sealed class PreprocessorInterpreter(string source, IEnumerable<string> c
 
         foreach (var line in node.Elements)
             ProcessLine(line);
+
+        if (_openIfs.Count > 0)
+        {
+            var openIf = _openIfs.Peek();
+            AddDiagnostic(
+                openIf.StartPos,
+                openIf.EndPos,
+                DiagnosticSeverity.Error,
+                "Undefined '#if' directive",
+                CodeUnterminatedIf);
+        }
 
         Result = new PreprocessResult(new string(_text), _diagnostics, _lineDirectives);
     }
@@ -68,16 +93,53 @@ public sealed class PreprocessorInterpreter(string source, IEnumerable<string> c
         switch (directive.Kind)
         {
             case "If":
+                _openIfs.Push(new IfPosition(directiveLine.StartPos, directiveLine.EndPos));
                 _stack.If(EvaluateCondition(directive));
                 break;
             case "Elif":
+                if (!_stack.HasUnfinishedIf)
+                    AddDiagnostic(
+                        directiveLine,
+                        DiagnosticSeverity.Error,
+                        "Unexpected '#elif' directive",
+                        CodeStrayElif);
                 _stack.Elif(EvaluateCondition(directive));
                 break;
             case "Else":
+                if (!_stack.HasUnfinishedIf)
+                    AddDiagnostic(
+                        directiveLine,
+                        DiagnosticSeverity.Error,
+                        "Unexpected '#else' directive",
+                        CodeStrayElse);
                 _stack.Else();
                 break;
             case "EndIf":
+                if (!_stack.HasUnfinishedIf)
+                    AddDiagnostic(
+                        directiveLine,
+                        DiagnosticSeverity.Error,
+                        "Unexpected '#endif' directive",
+                        CodeStrayEndIf);
+                else
+                    _openIfs.Pop();
                 _stack.EndIf();
+                break;
+            case "Error":
+                if (_stack.IsActive)
+                    AddDiagnostic(
+                        directiveLine,
+                        DiagnosticSeverity.Error,
+                        GetMessageText(directive, "error"),
+                        CodeError);
+                break;
+            case "Warning":
+                if (_stack.IsActive)
+                    AddDiagnostic(
+                        directiveLine,
+                        DiagnosticSeverity.Warning,
+                        GetMessageText(directive, "warning"),
+                        CodeWarning);
                 break;
             case "Define":
                 _stack.Define(GetSymbolText(directive));
@@ -106,6 +168,21 @@ public sealed class PreprocessorInterpreter(string source, IEnumerable<string> c
 
     private string GetSymbolText(SeqNode directive)
         => directive.Elements.OfType<TerminalNode>().FirstOrDefault(t => t.Kind == "Symbol")?.ToString(source) ?? string.Empty;
+
+    private void AddDiagnostic(SeqNode line, DiagnosticSeverity severity, string message, string? code)
+        => AddDiagnostic(line.StartPos, line.EndPos, severity, message, code);
+
+    private void AddDiagnostic(int start, int end, DiagnosticSeverity severity, string message, string? code)
+        => _diagnostics.Add(new Diagnostic(message, start, end, severity, code));
+
+    private string GetMessageText(SeqNode directive, string defaultMessage)
+    {
+        var lineEnd = directive.Elements.OfType<TerminalNode>().FirstOrDefault(t => t.Kind == "LineEnd");
+        var text = lineEnd?.ToString(source)?.Trim() ?? string.Empty;
+        if (text.Length >= 2 && text[0] == '"' && text[^1] == '"')
+            text = text[1..^1];
+        return text.Length == 0 ? defaultMessage : text;
+    }
 
     private bool EvaluateCondition(SeqNode directive)
     {
@@ -153,4 +230,6 @@ public sealed class PreprocessorInterpreter(string source, IEnumerable<string> c
             _text[i] = ' ';
         }
     }
+
+    private sealed record IfPosition(int StartPos, int EndPos);
 }
