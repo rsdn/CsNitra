@@ -1,0 +1,58 @@
+// Cs10.grammar — C# 10.0: file-scoped namespace (T3.10.1).
+//
+// A file-scoped namespace uses a single ";" instead of a "{ ... }" block:
+//   namespace MyNamespace;
+//
+//   class MyClass { }
+// vs the block-scoped form (Cs1.grammar:17):
+//   namespace MyNamespace
+//   {
+//       class MyClass { }
+//   }
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src\Compilers\CSharp\Portable):
+//   * ParseNamespaceDeclarationCore (Parser/LanguageParser.cs:247-328): after the "namespace"
+//     keyword + ParseQualifiedName(), the parser branches on the next token:
+//       - SemicolonToken (264-267): eat ";" -> FILE-SCOPED namespace;
+//       - OpenBraceToken / possible member (268-273): eat "{" -> BLOCK-scoped namespace.
+//     The file-scoped path calls ParseNamespaceBody (292) with parentKind
+//     FileScopedNamespaceDeclaration and builds FileScopedNamespaceDeclaration
+//     (attributeLists, modifiers, namespaceToken, name, semicolon, body.Externs, body.Usings,
+//     body.Members) (295-303).
+//   * FileScopedNamespaceDeclarationSyntax (Syntax.xml.Syntax.Generated.cs:9789): NamespaceKeyword
+//     (9813) + Name (9815) + SemicolonToken (9817) + Externs/Usings/Members (9819-9823). The body
+//     (externs, usings, members) is the SAME member set as a block-scoped namespace body.
+//   * SyntaxKind.FileScopedNamespaceDeclaration (Syntax/SyntaxKind.cs:800); IsNamespaceDeclaration
+//     (SyntaxKindFacts.cs:399).
+//   * Version gate — a BINDER/semantic (C# 10.0) feature; the PARSER accepts the form wherever the
+//     rule exists. Version purity comes from the rule being Cs10-only.
+//
+// Model: a NEW NamespaceMember alternative (T0.3 append-merge) — a file-scoped namespace is a
+// member (like a block-scoped NamespaceDeclaration, Cs1.grammar:17) whose body is the SAME
+// NamespaceBody (Cs1.grammar:19, NamespaceMember*) a block-scoped namespace uses. The greedy
+// NamespaceBody* consumes the rest of the file (Roslyn: the file-scoped body runs to end-of-file,
+// 292), so all subsequent using/extern/namespace/type members belong to it.
+//
+// Disambiguation FileScopedNamespaceDeclaration vs NamespaceDeclaration (longest-match, mutually
+// exclusive): both start "namespace" + QualifiedName; the token after the name disambiguates —
+// "{" -> block-scoped (NamespaceDeclaration requires the literal "{", Cs1.grammar:17), ";" ->
+// file-scoped. A token cannot be both, so no equal-length tie.
+//
+// CS10 only: at v9 the FileScopedNamespaceDeclaration alternative is ABSENT, so "namespace a;"
+// matches no NamespaceMember (the block-scoped NamespaceDeclaration needs "{") -> unconsumed ->
+// REJECTS (see Cs1RoslynDirectiveTests.Namespace_FileScopedSemicolon_Fails, v1).
+//
+// Boundary (parser-vs-binder split): a SECOND file-scoped namespace after the first ("namespace A;
+// namespace B;") is accepted by the parser (nested in A's body) but is a BINDER error; consistent
+// with the plan's parser/binder separation.
+
+// === Namespace member union: APPEND the file-scoped namespace (T0.3 merge). ===
+NamespaceMember =
+    | FileScopedNamespaceDeclaration;
+
+// File-scoped namespace (C# 10.0): "namespace" QualifiedName ";" NamespaceBody?.
+// The body is the same NamespaceBody (Cs1.grammar:19) as a block-scoped namespace. It is wrapped in
+// Optional ("?") exactly like the block-scoped NamespaceDeclaration (Cs1.grammar:17): the engine's
+// zero-or-many reports a Failure when its element cannot match at the position (e.g. EOF for an
+// empty body), and the Optional swallows that Failure (NoneNode) so "namespace A;" alone is valid.
+FileScopedNamespaceDeclaration = "namespace" QualifiedName ";" NamespaceBody?;
