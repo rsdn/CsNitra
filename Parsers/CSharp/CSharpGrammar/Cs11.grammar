@@ -95,3 +95,20 @@ FieldModifier =
 
 PropertyModifier =
     | "required";
+
+// === params Span<T> / params ReadOnlySpan<T> (T3.11.4, C# 11.0) ===
+// In C# 11 the `params` modifier accepts Span<T> and ReadOnlySpan<T> (not just arrays). In Roslyn
+// this is a BINDER change (SourceComplexParameterSymbol.cs:1720-1723, IDS_FeatureParamsCollections /
+// FirstClassSpan -> C# 11; :1747 ERR_ParamsMustBeCollection), NOT a parser change: the parser
+// (LanguageParser.cs:4938 ParseParameter -> ParseType, 4958) accepts `params <any type>` in every
+// version. For version purity the Cs1 base ParamsType (Cs1.grammar) excludes `Span<...>` /
+// `ReadOnlySpan<...>` via negative lookaheads, so v<=10 REJECTS them; this Cs11 alternative
+// (T0.3 append-merge onto Cs1 ParamsParameter) ACCEPTS them at v11. The type-argument list is
+// INLINED (not the Cs2 TypeArgumentList rule) because Cs11.grammar can be loaded without
+// Cs2.grammar (RawStringLiteralRuleTests load only Cs1+Cs11). `Span`/`ReadOnlySpan` are plain
+// identifiers (whole-word literals), not keywords.
+ParamsParameter = "params" SpanOrReadOnlySpan "<" (Type; ",")+ ">" TypeName;
+
+SpanOrReadOnlySpan =
+    | "Span"
+    | "ReadOnlySpan";

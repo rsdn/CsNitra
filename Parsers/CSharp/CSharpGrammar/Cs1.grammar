@@ -464,12 +464,26 @@ EnumMemberValue = "=" Constant;
 
 ParameterList = (Parameter; ",")+;
 
-Parameter = Attributes? ParameterModifier* Type TypeName;
+// `params` is a dedicated form (ParamsParameter), not a plain ParameterModifier: in C# 11 the
+// `params` type widens from arrays to Span<T>/ReadOnlySpan<T> (T3.11.4, Cs11.grammar), so the
+// params type is version-gated. Pre-11 ParamsType excludes Span<...>/ReadOnlySpan<...> (negative
+// lookaheads); Cs11 appends a ParamsParameter alternative that accepts them. PlainParameter keeps
+// the original `ParameterModifier* Type TypeName` for ref/out/(this|in in later versions).
+Parameter = Attributes? ParameterForm;
+
+ParameterForm =
+    | ParamsParameter
+    | PlainParameter;
+
+PlainParameter = ParameterModifier* Type TypeName;
 
 ParameterModifier =
     | "ref"
-    | "out"
-    | "params";
+    | "out";
+
+ParamsParameter = "params" ParamsType TypeName;
+
+ParamsType = !("Span" "<") !("ReadOnlySpan" "<") Type;
 
 Attributes = AttributeList*;
 
