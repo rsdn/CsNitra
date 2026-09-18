@@ -119,8 +119,8 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
   - [✅] T3.12.3 list patterns → `Cs12.grammar` + тесты (Pattern += ListPattern = [ (Pattern,)* ] и SlicePattern = .. Pattern?; list pattern — PATTERN, не Primary)
   - [✅] T3.12.4 `not`/`and`/`or` (pattern composition) → `Cs12.grammar` + тесты (RelationalPattern + DisjunctivePattern; ConjunctivePattern/NegatedPattern/PrimaryPattern/RelationalOperator; not highest, and middle, or lowest)
 - [~] T3.13 CS13: extension members, `field`, `event field`
-  - [~] T3.13.1 `field` keyword (accessor body) + setup `Cs13.grammar` + version table + csproj → `Cs13.grammar` + тесты
-  - [ ] T3.13.2 `event field` → `Cs13.grammar` + тесты
+  - [✅] T3.13.1 `field` keyword (accessor body) + setup `Cs13.grammar` + version table + csproj → `Cs13.grammar` + тесты (FieldExpr = field, ReservedKeyword += field, expression-bodied accessors; setup: csproj + v13)
+  - [~] T3.13.2 `event field` → `Cs13.grammar` + тесты
   - [ ] T3.13.3 extension members (`T.X`) → `Cs13.grammar` + тесты
 - [ ] T3.14 CS14: `ref`-поля + остаток фич по данным T1.1
 

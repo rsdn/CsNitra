@@ -79,3 +79,18 @@ Property = Attributes? PropertyModifier* Type TypeName "{" ExpressionBodiedAcces
 ExpressionBodiedAccessorList =
     | ExprGetterOnly = "get" "=>" Expression ";"
     | ExprGetSet = "get" "=>" Expression ";" "set" "=>" Expression ";";
+
+// === Event field (C# 13.0, T3.13.2). ===
+// An event field is an event declaration with an initializer (like a field):
+//   public event Action MyEvent = () => { };
+// Roslyn: ParseEventDeclaration (LanguageParser.cs:5082-5095) -> IsFieldDeclaration (3429-3468) ->
+// ParseEventFieldDeclaration (5222-5255): `event` + Type + name + `= Expression` + `;`
+// (EventFieldDeclarationSyntax, Syntax.xml.Syntax.Generated.cs:12407; SyntaxKind.EventFieldDeclaration
+// = 8874, SyntaxKind.cs:827). The `= Expression` initializer is the C# 13.0 addition (MessageID
+// IDS_FeatureEventFields). Re-declares EventTail (append, T0.3 merge): the Cs1 Event (Cs1.grammar:429)
+// references EventTail, so it picks up this third tail form automatically. The three EventTail
+// alternatives are mutually exclusive by leading token (`;` vs `{` vs `=`) -> no equal-length tie.
+// CS13 only: at v<=12 the `= Expression ;` tail is absent, so `event ... = ...;` matches no EventTail
+// -> the Event rule fails -> REJECT.
+EventTail =
+    | EventFieldInit = "=" Expression ";";
