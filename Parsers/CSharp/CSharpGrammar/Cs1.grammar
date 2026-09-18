@@ -477,7 +477,15 @@ AttributeList = "[" (Attribute; "," : ?)+ "]";
 
 Attribute = AttributeName AttributeArgumentList?;
 
-AttributeName = TypeName NamespaceSegment*;
+// T3.11.2 — attribute type name decoupled from the generic TypeName (Cs2): here it is NON-generic
+// (C# 1-10 reject generic attributes); the generic alternative (TypeArgumentList) is re-declared in
+// Cs11. AttributeNamespaceSegment = "." AttributeTypeName mirrors NamespaceSegment but stays tied to
+// the attribute name so qualified generic attributes ([N.List<T>]) are also C# 11-only.
+AttributeName = AttributeTypeName AttributeNamespaceSegment*;
+
+AttributeTypeName = !ReservedKeyword Identifier;
+
+AttributeNamespaceSegment = "." AttributeTypeName;
 
 AttributeArgumentList = "(" (AttributeArgument; ",")* ")";
 

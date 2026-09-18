@@ -43,3 +43,18 @@ RawFormat = ":" RawFormatText;
 Primary =
     | RawStringLiteral
     | RawInterpolatedStringLiteral;
+
+// === Generic attribute (T3.11.2, C# 11.0) ===
+// Generic attribute = an attribute whose attribute type carries a type argument list:
+//   [MyAttribute<int>]   [MyAttribute<int, string>]
+// Re-declares Cs1 AttributeTypeName (non-generic) with a REQUIRED type argument list, so it is
+// mutually exclusive with the Cs1 non-generic alternative (longest-match, no tie). This is what
+// makes generic attributes C# 11-only: at v<=10 AttributeTypeName is non-generic, so the "<" of a
+// type argument list is left unconsumed and the attribute list fails.
+// The type argument list is INLINED (not the Cs2 TypeArgumentList rule) because Cs11.grammar can be
+// loaded without Cs2.grammar (e.g. RawStringLiteralRuleTests load only Cs1+Cs11); inlining keeps
+// this rule's dependencies confined to Cs1 (ReservedKeyword, Identifier terminal, Type). The body is
+// identical to Cs2 TypeArgumentList (LanguageParser.cs:6545). Roslyn: ParseAttribute
+// (LanguageParser.cs:1181) -> ParseQualifiedName (7031) -> ParseSimpleName (6182): identifier +
+// optional "<" TypeArgumentList ">" -> GenericName.
+AttributeTypeName = !ReservedKeyword Identifier "<" (Type; ",")+ ">";
