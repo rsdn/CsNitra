@@ -3,8 +3,8 @@
 План: `docs/CsPreprocessor.md`. Один субагент на подпункт. Статусы:
 `[ ]` не начат · `[~]` в работе (ровно один) · `[✅]` готово · `[❌]` провал.
 
-- [~] T0.1 Проект CsPreprocessor + типы + `Run` (заглушка)
-- [ ] T0.2 Тестовый проект CsPreprocessorTests (smoke)
+- [✅] T0.1 Проект CsPreprocessor + типы + `Run` (заглушка)
+- [✅] T0.2 Тестовый проект CsPreprocessorTests (smoke)
 - [ ] T1.1 Грамматика: `PreprocessorFile`/`Line`/`CodeLine` (плитка всего текста)
 - [ ] T1.2 Грамматика: все виды директив → узлы
 - [ ] T1.3 Грамматика: условие `#if`/`#elif` (TDOPP)

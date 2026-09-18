@@ -69,6 +69,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CSharpGrammarTests", "Tests
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CsPreprocessor", "Parsers\CSharp\CsPreprocessor\CsPreprocessor.csproj", "{888545A6-44F6-4B20-8A19-BACD8DACE9C5}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CsPreprocessorTests", "Tests\CsPreprocessorTests\CsPreprocessorTests.csproj", "{54AEF150-7692-424D-8A56-7A18AA568FF9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -221,6 +223,14 @@ Global
 		{888545A6-44F6-4B20-8A19-BACD8DACE9C5}.Release|Any CPU.Build.0 = Release|Any CPU
 		{888545A6-44F6-4B20-8A19-BACD8DACE9C5}.Release|x64.ActiveCfg = Release|Any CPU
 		{888545A6-44F6-4B20-8A19-BACD8DACE9C5}.Release|x64.Build.0 = Release|Any CPU
+		{54AEF150-7692-424D-8A56-7A18AA568FF9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{54AEF150-7692-424D-8A56-7A18AA568FF9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{54AEF150-7692-424D-8A56-7A18AA568FF9}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{54AEF150-7692-424D-8A56-7A18AA568FF9}.Debug|x64.Build.0 = Debug|Any CPU
+		{54AEF150-7692-424D-8A56-7A18AA568FF9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{54AEF150-7692-424D-8A56-7A18AA568FF9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{54AEF150-7692-424D-8A56-7A18AA568FF9}.Release|x64.ActiveCfg = Release|Any CPU
+		{54AEF150-7692-424D-8A56-7A18AA568FF9}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -248,6 +258,7 @@ Global
 		{BBC993E8-B297-4018-B5AE-20DBB5E394E6} = {BBB0FD44-042F-47F0-8484-0E0BB075DFA1}
 		{80C1380D-60CF-4855-9774-4C709BB669DD} = {BFC5E780-F61A-4D8B-84BF-939EB831FD84}
 		{888545A6-44F6-4B20-8A19-BACD8DACE9C5} = {BBB0FD44-042F-47F0-8484-0E0BB075DFA1}
+		{54AEF150-7692-424D-8A56-7A18AA568FF9} = {BFC5E780-F61A-4D8B-84BF-939EB831FD84}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {1CFBB9ED-FF57-4990-B1C7-F31EB1F3BDAB}
