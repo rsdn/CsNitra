@@ -89,7 +89,7 @@ public sealed class PatchRollbackTests
         if (snapshot is null)
             throw new InvalidOperationException("No snapshot captured for: " + input);
         var e = snapshot.Pos;
-        var candidates = RecoveryEngine.Generate(e, snapshot, input, parser, result.ResultKind);
+        var candidates = RecoveryEngine.Generate(e, snapshot, input, parser, result.ResultKind, "Start", 0, e);
         return (parser, input, snapshot, e, candidates);
     }
 

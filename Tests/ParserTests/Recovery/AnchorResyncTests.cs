@@ -60,7 +60,7 @@ public sealed class AnchorResyncTests
         var e = snapshot!.Pos;
         Assert.AreEqual(18, e);
 
-        var candidates = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Failure);
+        var candidates = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Failure, "Start", 0, e);
 
         var c = candidates.Single(x => x.Rank == 2);
         Assert.AreEqual("S2:Statement:T1:18", c.Id);
@@ -94,7 +94,7 @@ public sealed class AnchorResyncTests
         var e = snapshot!.Pos;
         Assert.AreEqual(18, e);
 
-        var candidates = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Failure);
+        var candidates = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Failure, "Start", 0, e);
 
         var c = candidates.Single(x => x.Rank == 2);
         Assert.AreEqual("S2:Statement:T1:22", c.Id);
@@ -134,7 +134,7 @@ public sealed class AnchorResyncTests
         stack[0] = stack[0] with { Options = new RecoveryOptions { CanStart = [new Ref("MemberStart")] } };
         var rebuilt = snapshot with { Stack = stack };
 
-        var candidates = RecoveryEngine.Generate(e, rebuilt, input, parser, Result.Kind.Failure);
+        var candidates = RecoveryEngine.Generate(e, rebuilt, input, parser, Result.Kind.Failure, "Start", 0, e);
 
         var t2 = candidates.Single(x => x.Id == "S2:Statement:T2:18");
         Assert.AreEqual(18, t2.Pos);

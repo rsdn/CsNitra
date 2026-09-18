@@ -36,6 +36,7 @@ public sealed class T1AnchorReproTests
     public void Test_T1_AuthorAnchor_ResyncToNextItem()
     {
         var parser = new Parser(T1AnchorTerminals.Trivia());
+        parser.MaxRecoveryAttemptsPerPosition = 16;
         parser.Rules["Item"] =
         [
             new Seq([new Literal("int"), T1AnchorTerminals.Ident(), new Literal(";")], "Item"),

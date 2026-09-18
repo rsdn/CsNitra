@@ -85,9 +85,15 @@ public partial class Parser
     }
 
     // Патч для всех прецедентов (e, rule, prec'), присутствующих в memo (TDOPP, §3.4 S3).
+    // Порядок Hygiene→Apply (A1/S6): Hygiene может удалить Failure на (pos, rule) до Apply —
+    // тогда ключей нет и без этого патч no-op'ит, re-парс не видит абсорбер (регресс S2/S3 +
+    // потеря memo, ломающего рекурсию NotPredicate → stack overflow). Создаём прецедент 0.
     public void PatchMemo(string rule, int pos, Result value)
     {
-        foreach (var key in _memo.Keys.Where(k => k.pos == pos && k.rule == rule).ToList())
+        var keys = _memo.Keys.Where(k => k.pos == pos && k.rule == rule).ToList();
+        if (keys.Count == 0)
+            keys.Add((pos, rule, 0));
+        foreach (var key in keys)
         {
             OnMemoWritten(key);
             _memo[key] = value;
@@ -341,7 +347,8 @@ public partial class Parser
             if (!TryCandidate(CandidateS0(e, snapshot, startRule)))
             {
                 EngineGenerateCalls++;
-                foreach (var candidate in Recovery.RecoveryEngine.Generate(e, snapshot, input, this, result.ResultKind))
+                var parseEnd = result.TryGetSuccess(out _, out var pe) ? pe : result.TryGetPartial(out _, out var pp) ? pp : 0;
+                foreach (var candidate in Recovery.RecoveryEngine.Generate(e, snapshot, input, this, result.ResultKind, startRule, currentStartPos, parseEnd))
                     if (TryCandidate(candidate))
                         break;
             }
@@ -417,11 +424,13 @@ public partial class Parser
     }
 
     // Патчи кандидата + Hygiene в одном атомарном логy (всё для отката). Интеграция цикла (1.3).
+    // Hygiene ДО Apply: S6-дно (A1) memo-патчит start-правило на currentStartPos — если Hygiene шёл бы после,
+    // он удалил бы этот патч (scope b) и ре-парс не увидел бы Success@EOF. S1-S5 патчат другие позиции, для них порядок неважен.
     public PatchLog ApplyPatches(RecoveryCandidate candidate, int e, FailureSnapshot? snapshot, string startRule, int currentStartPos)
     {
         BeginPatchLog();
-        candidate.Apply(this);
         HygieneCore(e, snapshot, startRule, currentStartPos);
+        candidate.Apply(this);
         return EndPatchLog();
     }
 

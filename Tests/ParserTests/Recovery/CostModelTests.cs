@@ -114,7 +114,7 @@ public sealed class CostModelTests
         var frame = new StackFrame("Start", 0, new RuleFrameLocation(0), [EofTerminal.Instance], null);
         var snapshot = new FailureSnapshot(e, [frame], new Literal("a"), [EofTerminal.Instance]);
 
-        var candidates = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Success);
+        var candidates = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Success, "Start", 0, e);
         var c = candidates.Single(x => x.Rank == 5);
 
         Assert.AreEqual(CostCalculator.SkipCost(input, e, input.Length) + 1, c.Cost);

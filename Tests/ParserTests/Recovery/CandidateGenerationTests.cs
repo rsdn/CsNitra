@@ -39,7 +39,7 @@ public sealed class CandidateGenerationTests
         Assert.IsNotNull(snapshot);
         var e = snapshot!.Pos;
 
-        var candidates = RecoveryEngine.Generate(e, snapshot, "a", parser, Result.Kind.Failure);
+        var candidates = RecoveryEngine.Generate(e, snapshot, "a", parser, Result.Kind.Failure, "Start", 0, e);
 
         var c = candidates.Single(x => x.Rank == 1);
         Assert.AreEqual("S1:Start:b", c.Id);
@@ -74,7 +74,7 @@ public sealed class CandidateGenerationTests
         var e = snapshot!.Pos;
         Assert.AreEqual(input.Length, e);
 
-        var candidates = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Failure);
+        var candidates = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Failure, "Start", 0, e);
 
         var c = candidates.Single(x => x.Rank == 4);
         Assert.AreEqual("S4:X:EOF", c.Id);
@@ -104,7 +104,7 @@ public sealed class CandidateGenerationTests
         Assert.IsNotNull(snapshot);
         var e = snapshot!.Pos;
 
-        var candidates = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Failure);
+        var candidates = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Failure, "Start", 0, e);
 
         var c = candidates.Single(x => x.Rank == 4);
         Assert.AreEqual(1, c.Cost);
@@ -122,7 +122,7 @@ public sealed class CandidateGenerationTests
         var snapshot = parser.LastSnapshot;
         Assert.IsNotNull(snapshot);
 
-        var candidates = RecoveryEngine.Generate(snapshot!.Pos, snapshot, input, parser, Result.Kind.Failure);
+        var candidates = RecoveryEngine.Generate(snapshot!.Pos, snapshot, input, parser, Result.Kind.Failure, "Start", 0, snapshot.Pos);
         Assert.IsFalse(candidates.Any(x => x.Rank == 4));
     }
 
@@ -136,16 +136,18 @@ public sealed class CandidateGenerationTests
         Assert.IsNotNull(snapshot);
         var e = snapshot!.Pos;
 
-        var candidates = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Failure);
+        var candidates = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Failure, "Start", 0, e);
 
         // S1: FailedTerminal i + Expected {i} + FollowSet(Item) {i, }} → i, } (b — только в follow(Body), не в S1).
         // S4: суффиксы c (Item), } (Body), b (Start) → cost 3.
+        // S6: дно (A1) — всегда при parseEnd < EOF; стоп-набор совпадает на `}` → абсорбер [e..S).
         var ids = candidates.Select(c => c.Id).ToList();
-        Assert.AreEqual(4, ids.Count);
+        Assert.AreEqual(5, ids.Count);
         Assert.AreEqual("S1:Item:i", ids[0]);
         Assert.AreEqual("S1:Item:}", ids[1]);
         Assert.AreEqual("S3:Item:}", ids[2]);
         Assert.AreEqual("S4:Item:EOF", ids[3]);
+        Assert.AreEqual("S6:Start:}", ids[4]);
     }
 
     [TestMethod]
@@ -158,10 +160,10 @@ public sealed class CandidateGenerationTests
         Assert.IsNotNull(snapshot);
         var e = snapshot!.Pos;
 
-        var first = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Failure).Select(c => c.Id).ToList();
-        var second = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Failure).Select(c => c.Id).ToList();
+        var first = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Failure, "Start", 0, e).Select(c => c.Id).ToList();
+        var second = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Failure, "Start", 0, e).Select(c => c.Id).ToList();
 
-        Assert.AreEqual(4, first.Count);
+        Assert.AreEqual(5, first.Count);
         Assert.IsTrue(first.SequenceEqual(second));
     }
 
@@ -178,7 +180,7 @@ public sealed class CandidateGenerationTests
         var frame = new StackFrame("Start", 0, new RuleFrameLocation(0), [EofTerminal.Instance], null);
         var snapshot = new FailureSnapshot(e, [frame], new Literal("a"), [EofTerminal.Instance]);
 
-        var candidates = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Success);
+        var candidates = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Success, "Start", 0, e);
 
         var c = candidates.Single(x => x.Rank == 5);
         Assert.AreEqual("S5:Start:Trailing", c.Id);
@@ -220,7 +222,7 @@ public sealed class CandidateGenerationTests
         var e = snapshot!.Pos;
         Assert.AreEqual(4, e);
 
-        var candidates = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Failure);
+        var candidates = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Failure, "Start", 0, e);
 
         var c = candidates.Single(x => x.Rank == 3);
         Assert.AreEqual("S3:Item:}", c.Id);
@@ -250,7 +252,7 @@ public sealed class CandidateGenerationTests
         var e = snapshot!.Pos;
         Assert.AreEqual(4, e);
 
-        var candidates = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Failure);
+        var candidates = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Failure, "Start", 0, e);
 
         var c = candidates.Single(x => x.Rank == 3);
         Assert.AreEqual("S3:Item:}", c.Id);
@@ -272,11 +274,11 @@ public sealed class CandidateGenerationTests
         Assert.IsNotNull(snapshot);
         var e = snapshot!.Pos;
 
-        var asFailure = RecoveryEngine.Generate(e, snapshot, "a", parser, Result.Kind.Failure);
+        var asFailure = RecoveryEngine.Generate(e, snapshot, "a", parser, Result.Kind.Failure, "Start", 0, e);
         Assert.IsFalse(asFailure.Any(x => x.Rank == 5));
 
         var eofInput = "ab";
-        var asSuccessAtEof = RecoveryEngine.Generate(eofInput.Length, snapshot, eofInput, parser, Result.Kind.Success);
+        var asSuccessAtEof = RecoveryEngine.Generate(eofInput.Length, snapshot, eofInput, parser, Result.Kind.Success, "Start", 0, e);
         Assert.IsFalse(asSuccessAtEof.Any(x => x.Rank == 5));
     }
 
@@ -294,7 +296,7 @@ public sealed class CandidateGenerationTests
         var frame = top with { Options = new RecoveryOptions { TryInsert = [new Literal("a"), new Literal("c")] } };
         var rebuilt = snapshot with { Stack = snapshot.Stack[..^1].Concat([frame]).ToArray() };
 
-        var candidates = RecoveryEngine.Generate(e, rebuilt, "aa", parser, Result.Kind.Failure);
+        var candidates = RecoveryEngine.Generate(e, rebuilt, "aa", parser, Result.Kind.Failure, "Start", 0, e);
 
         Assert.IsFalse(candidates.Any(x => x.TerminalKind == "a"));
         var c = candidates.Single(x => x.TerminalKind == "c");

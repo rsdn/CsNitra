@@ -152,9 +152,8 @@ public sealed class FinalStateTests
 
     // 3. Невосстановлено: кандидаты исчерпаны, результат < EOF → ErrorInfo != null (FatalError),
     //    RecoveryDiagnostics содержит принятые восстановления.
-    // Вход: хвостовой мусор ### в истинном EOF. В этой грамматике (без Optional(Params), как в
-    // MiniC) recovery принимает panic-кандидаты (Skipped-диагностика) и продвигает e, но финальный
-    // результат не дотягивает до EOF → невосстановленное состояние (FatalError в конце мусора).
+    // Вход: хвостовой мусор ### в истинном EOF. S6 (гарантированное дно) восстанавливает до EOF:
+    // memo-патч start-правила → Success@EOF, хвост покрыт IsAbsorber-узлом.
     [TestMethod]
     public void Test_Unrecovered_CandidatesExhausted_FatalError()
     {
@@ -163,15 +162,13 @@ public sealed class FinalStateTests
         var input = "int f() { int x; } ###";
         var result = parser.Parse(input, "Module", out _);
 
-        Assert.IsFalse(result.TryGetSuccess(out _, out var end) && end == input.Length, "Expected result not reaching EOF");
-        Assert.IsNotNull(parser.ErrorInfo);
-        Assert.IsTrue(parser.ErrorInfo.Pos > 0);
+        Assert.IsTrue(result.TryGetSuccess(out _, out var end) && end == input.Length, "S6 bottom must reach EOF");
+        Assert.IsNull(parser.ErrorInfo);
         Assert.IsTrue(parser.RecoveryDiagnostics.Any(d => d.Kind == RecoveryKind.Skipped),
-            "Expected accepted Skipped diagnostics (resync/panic candidates)");
+            "Expected accepted Skipped diagnostics (S6 bottom)");
     }
 
-    // 4. Success < EOF (хвостовой мусор): снимка в точке e нет (mismatch был раньше) → кандидатов нет,
-    //    хвост не восстановлен → ErrorInfo != null (FatalError в точке конца чистого разбора).
+    // 4. Success < EOF (хвостовой мусор): S6 (гарантированное дно) memo-патчит start-правило → Success@EOF.
     [TestMethod]
     public void Test_SuccessBelowEof_TrailingGarbage_FatalError()
     {
@@ -180,11 +177,8 @@ public sealed class FinalStateTests
         var result = parser.Parse(input, "Function", out _);
 
         Assert.IsTrue(result.TryGetSuccess(out _, out var end));
-        Assert.AreEqual(19, end);
-        Assert.IsTrue(end < input.Length);
-        Assert.IsNotNull(parser.ErrorInfo);
-        Assert.AreEqual(19, parser.ErrorInfo.Pos);
-        Assert.AreEqual(0, parser.RecoveryDiagnostics.Count);
+        Assert.AreEqual(input.Length, end, "S6 bottom must reach EOF");
+        Assert.IsNull(parser.ErrorInfo);
     }
 }
 #endif

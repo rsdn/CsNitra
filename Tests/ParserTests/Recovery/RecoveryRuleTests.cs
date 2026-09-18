@@ -209,14 +209,14 @@ public sealed class RecoveryRuleTests
         var e = snapshot!.Pos;
 
         // Без лимита: выведенный якорь Function (bar) в пределах дефолтного MaxSkip → есть S2-кандидат.
-        var noLimit = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Failure);
+        var noLimit = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Failure, "Start", 0, e);
         Assert.IsTrue(noLimit.Any(x => x.Rank == 2), "expected an S2 resync candidate without a MaxSkip limit");
 
         // Малый MaxSkip (кадр Module): якорь bar() дальше лимита → S2-кандидата нет.
         var stack = (StackFrame[])snapshot.Stack.Clone();
         stack[0] = stack[0] with { Options = new RecoveryOptions { MaxSkip = 5 } };
         var limited = snapshot with { Stack = stack };
-        var withLimit = RecoveryEngine.Generate(e, limited, input, parser, Result.Kind.Failure);
+        var withLimit = RecoveryEngine.Generate(e, limited, input, parser, Result.Kind.Failure, "Start", 0, e);
         Assert.IsFalse(withLimit.Any(x => x.Rank == 2), "S2 resync must not reach an anchor beyond MaxSkip");
     }
 
@@ -233,7 +233,7 @@ public sealed class RecoveryRuleTests
         var e = snapshot!.Pos;
 
         // Базово: только выведенные якоря → resync к `int bar()` (Function).
-        var baseline = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Failure);
+        var baseline = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Failure, "Start", 0, e);
         var baseC = baseline.Single(x => x.Rank == 2);
         Assert.AreEqual("Function", baseC.TerminalKind, "baseline resync should use the derived Function anchor");
 
@@ -241,7 +241,7 @@ public sealed class RecoveryRuleTests
         var stack = (StackFrame[])snapshot.Stack.Clone();
         stack[0] = stack[0] with { Options = new RecoveryOptions { Anchors = [new Ref("Foo")] } };
         var withAuthor = snapshot with { Stack = stack };
-        var authorC = RecoveryEngine.Generate(e, withAuthor, input, parser, Result.Kind.Failure).Single(x => x.Rank == 2);
+        var authorC = RecoveryEngine.Generate(e, withAuthor, input, parser, Result.Kind.Failure, "Start", 0, e).Single(x => x.Rank == 2);
         Assert.AreEqual("Foo", authorC.TerminalKind, "author anchor Foo should extend the derived anchors and win by proximity");
         Assert.IsTrue(authorC.Pos < baseC.Pos, "author-anchor resync point should be closer than the derived one");
     }
@@ -314,14 +314,14 @@ public sealed class RecoveryRuleTests
         // Базово: Recoverable=true (по умолчанию) + TryInsert=c → rank-0 кандидат на c.
         var recoverableFrame = top with { Options = new RecoveryOptions { TryInsert = [new Literal("c")] } };
         var recoverableSnapshot = snapshot with { Stack = snapshot.Stack[..^1].Concat([recoverableFrame]).ToArray() };
-        var withRecoverable = RecoveryEngine.Generate(e, recoverableSnapshot, "a", parser, Result.Kind.Failure);
+        var withRecoverable = RecoveryEngine.Generate(e, recoverableSnapshot, "a", parser, Result.Kind.Failure, "Start", 0, e);
         Assert.IsTrue(withRecoverable.Any(x => x.TerminalKind == "c" && x.Rank == 0),
             "baseline: Recoverable=true should generate a rank-0 TryInsert candidate for c");
 
         // Recoverable=false: тот же TryInsert, но engine опции кадра игнорирует → кандидата на c нет.
         var strictFrame = top with { Options = new RecoveryOptions { Recoverable = false, TryInsert = [new Literal("c")] } };
         var strictSnapshot = snapshot with { Stack = snapshot.Stack[..^1].Concat([strictFrame]).ToArray() };
-        var withStrict = RecoveryEngine.Generate(e, strictSnapshot, "a", parser, Result.Kind.Failure);
+        var withStrict = RecoveryEngine.Generate(e, strictSnapshot, "a", parser, Result.Kind.Failure, "Start", 0, e);
         Assert.IsFalse(withStrict.Any(x => x.TerminalKind == "c"),
             "Recoverable=false: the engine must ignore the frame's TryInsert options");
     }

@@ -115,7 +115,7 @@ public sealed class OftenMissedTests
         Assert.IsNotNull(snapshot);
         var e = snapshot!.Pos;
 
-        var candidates = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Failure);
+        var candidates = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Failure, "Start", 0, e);
 
         var c = candidates.Single(x => x.TerminalKind == ";" && x.Pos == e);
         Assert.AreEqual(RecoveryKind.Inserted, c.Diagnostics[0].Kind);

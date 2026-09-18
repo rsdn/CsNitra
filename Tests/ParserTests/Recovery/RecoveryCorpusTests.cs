@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 
 using System.Diagnostics;
 using System.Text;
@@ -112,6 +112,7 @@ public sealed class RecoveryCorpusTests
     private static Parser NewLongestMatchParser()
     {
         var parser = new Parser(CorpusTerminals.Trivia());
+        parser.MaxRecoveryAttemptsPerPosition = 16;
         parser.Rules["Item"] = new Rule[]
         {
             new Seq([new Literal("a"), new Literal("b")], "Long"),

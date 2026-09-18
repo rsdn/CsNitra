@@ -11,17 +11,17 @@ public static class RecoveryEngine
 {
     private const int DefaultMaxSkip = 1000;
 
-    public static List<RecoveryCandidate> Generate(int e, FailureSnapshot? snapshot, string input, Parser parser, Result.Kind resultKind)
+    public static List<RecoveryCandidate> Generate(int e, FailureSnapshot? snapshot, string input, Parser parser, Result.Kind resultKind, string startRule, int currentStartPos, int parseEnd)
     {
         var candidates = new List<RecoveryCandidate>();
 
+        // §3.9: failure inside a strict context (a frame with Recoverable=false) — no repair candidates at all
+        // (S1..S6): the region cannot be soundly fixed, so the parse fails hard (единственный выход FatalError, C1).
+        if (snapshot is not null && snapshot.Stack.Any(f => f.Options is { Recoverable: false }))
+            return candidates;
+
         if (snapshot is not null)
         {
-            // §3.9: failure inside a strict context (a frame with Recoverable=false) — no repair
-            // candidates at all: the region cannot be soundly fixed, so the parse fails hard.
-            if (snapshot.Stack.Any(f => f.Options is { Recoverable: false }))
-                return candidates;
-
             GenerateS1(e, snapshot, input, parser, candidates);
             GenerateS2(e, snapshot, input, parser, candidates);
             GenerateS3(e, snapshot, input, parser, candidates);
@@ -30,6 +30,11 @@ public static class RecoveryEngine
 
         if (resultKind == Result.Kind.Success && e < input.Length)
             GenerateS5(e, snapshot, input, parser, candidates);
+
+        // S6 — гарантированное дно (A1/A5-7): при parseEnd < EOF (фактический хвостовой мусор),
+        // включая snapshot == null. parseEnd (не e) — чтобы ErrorPos на EOF не блокировал генерацию.
+        if (parseEnd < input.Length)
+            GenerateS6(e, parseEnd, snapshot, input, parser, startRule, currentStartPos, candidates);
 
         return Sort(candidates);
     }
@@ -626,6 +631,93 @@ public static class RecoveryEngine
             Apply: p => p.ApplyInjection(t, e, injection),
             Rollback: p => p.RollbackInjection(t, e, hadOld ? old : null),
             Diagnostics: [new RecoveryDiagnostic(e, input.Length, RecoveryKind.Skipped, $"trailing garbage: {length} chars", t, ruleName)]));
+    }
+
+    // S6: гарантированное дно (A1/A5-7): абсорбер [e..S), где S — следующая позиция > e, на которой
+    // совпадает стоп-набор (anchor-First ∪ терминаторы), либо EOF. Без MaxSkip (дно). Генерируется всегда
+    // при e < EOF, включая snapshot == null (чистый стоп без mismatch — инъекция в (e, firstTerminal) не
+    // читается фиксированным Seq, поэтому memo-патч start-правила на currentStartPos, обёртывающий реальный
+    // префикс + абсорбер). Единственный выход с FatalError — строгий регион (C1), отсечён в Generate.
+    private static void GenerateS6(int e, int parseEnd, FailureSnapshot? snapshot, string input, Parser parser, string startRule, int currentStartPos, List<RecoveryCandidate> candidates)
+    {
+        var calculator = parser.FollowCalculator;
+        var terminators = parser.GetTerminators(snapshot?.Stack ?? Array.Empty<StackFrame>());
+
+        // стоп-набор = anchor-First (First-терминалы якорей из Loop-кадров снимка) ∪ терминаторы.
+        var stopSet = new List<Terminal>();
+        if (snapshot is not null)
+        {
+            for (var i = snapshot.Stack.Length - 1; i >= 0; i--)
+            {
+                var frame = snapshot.Stack[i];
+                if (frame.Location is not LoopFrameLocation)
+                    continue;
+                foreach (var anchor in DeriveLoopAnchors(parser, frame.RuleName))
+                    foreach (var t in FirstSets.Get(anchor, calculator))
+                        if (t is not EofTerminal and not EpsilonTerminal && !stopSet.Contains(t, TerminalComparer.Instance))
+                            stopSet.Add(t);
+            }
+        }
+        foreach (var t in terminators)
+            if (!stopSet.Contains(t, TerminalComparer.Instance))
+                stopSet.Add(t);
+
+        // скан от e+1 до EOF (без MaxSkip): S — следующая позиция > e, где совпадает стоп-набор, либо EOF.
+        var s = input.Length;
+        Terminal foundT = EofTerminal.Instance;
+        for (var pos = e + 1; pos <= input.Length; pos++)
+        {
+            Terminal? matched = null;
+            foreach (var t in stopSet)
+            {
+                if (t is EofTerminal)
+                {
+                    if (pos == input.Length)
+                        matched = t;
+                    continue;
+                }
+                if (t.TryMatch(input, pos) >= 0)
+                {
+                    matched = t;
+                    break;
+                }
+            }
+            if (matched is { } m)
+            {
+                s = pos;
+                foundT = m;
+                break;
+            }
+        }
+
+        var cost = CostCalculator.SkipCost(input, e, s);
+        var diagnostic = new RecoveryDiagnostic(e, s, RecoveryKind.Skipped, $"bottom skip to {s}", foundT, startRule);
+
+        // Гарантированное дно: memo-патч start-правила на currentStartPos — Success@S,
+        // обёртывающий реальный префикс + абсорбер [e..S). Ре-парс читает этот memo на первом
+        // шаге → Success@S. SetMemo (явный прецедент 0) — устойчив к trivia-сдвигу и отсутствию
+        // memo на currentStartPos; порядок Hygiene→Apply в ApplyPatches сохраняет патч (A1).
+        var absorber = new TerminalNode("Skipped", parseEnd, s, s - parseEnd, IsRecovery: true, IsAbsorber: true);
+        var prefixNode = parser.Memo.TryGetValue((currentStartPos, startRule, 0), out var prefixResult)
+            && prefixResult.TryGetSuccess(out var pn, out _)
+                ? pn
+                : null;
+        var node = prefixNode is { } prefix
+            ? new SeqNode(startRule, [prefix, absorber], currentStartPos, s)
+            : new SeqNode(startRule, [absorber], parseEnd, s);
+        // MaxFailPos = 0: чтобы IsRecoveryPosition(MaxFailPos) == false при e == S (иначе memo отклоняется).
+        var value = Result.Success(node, s, 0);
+        var olds = CaptureMemo(parser, startRule, currentStartPos);
+        candidates.Add(new RecoveryCandidate(
+            Id: $"S6:{startRule}:{foundT.Kind}",
+            Rank: 6,
+            Pos: s,
+            Cost: cost,
+            RuleName: startRule,
+            TerminalKind: foundT.Kind,
+            Apply: p => p.SetMemo(startRule, currentStartPos, 0, value),
+            Rollback: p => RollbackMemo(p, startRule, currentStartPos, olds),
+            Diagnostics: [diagnostic]));
     }
 
     // Первый терминал правила (по первой альтернативе, с разрешением Ref'ов) — цель абсорбера S5.

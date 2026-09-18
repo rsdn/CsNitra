@@ -1,0 +1,124 @@
+#nullable enable
+
+using ExtensibleParser;
+using ExtensibleParser.Recovery;
+
+#if RECOVERY
+namespace Recovery;
+
+[TerminalMatcher]
+public sealed partial class S6Terminals
+{
+    [Regex(@"\d+")]
+    public static partial Terminal Number();
+
+    [Regex(@"[_\l]\w*")]
+    public static partial Terminal Ident();
+
+    [Regex(@"\s*")]
+    public static partial Terminal Trivia();
+}
+
+[TestClass]
+public sealed class S6BottomTests
+{
+    // ����� ������: ��� IsAbsorber-���� (���������).
+    private static IEnumerable<TerminalNode> FindAbsorbers(ISyntaxNode node)
+    {
+        switch (node)
+        {
+            case TerminalNode t when t.IsAbsorber:
+                yield return t;
+                break;
+            case SeqNode seq:
+                foreach (var el in seq.RawElements)
+                    foreach (var a in FindAbsorbers(el))
+                        yield return a;
+                break;
+            case ListNode list:
+                foreach (var el in list.RawElements)
+                    foreach (var a in FindAbsorbers(el))
+                        yield return a;
+                foreach (var d in list.Delimiters)
+                    foreach (var a in FindAbsorbers(d))
+                        yield return a;
+                break;
+            case SomeNode some:
+                foreach (var a in FindAbsorbers(some.Value))
+                    yield return a;
+                break;
+        }
+    }
+
+    // ============ A1 ������: ������������� Seq-����� (snapshot == null) ============
+    // Module := Expr Expr, Expr := Number (\d+), ���� "12 34 56 78" > ������ Success@6 ��� mismatch
+    // (snapshot == null). �������� � (6, firstTerminal) �� �������� ������������� Seq > S6 memo-������
+    // start-������� �� currentStartPos > Success@EOF, ����� [6..EOF) ������ IsAbsorber-�����.
+    [TestMethod]
+    public void Test_S6_FixedSeq_StartRule_TailCoveredByAbsorber()
+    {
+        var parser = new Parser(S6Terminals.Trivia());
+        parser.Rules["Expr"] = [S6Terminals.Number()];
+        parser.Rules["Module"] = [new Seq([new Ref("Expr"), new Ref("Expr")], "Module")];
+        parser.BuildTdoppRules();
+
+        var input = "12 34 56 78";
+        var result = parser.Parse(input, "Module", out _);
+
+        Assert.IsTrue(result.TryGetSuccess(out var node, out var end), $"expected Success, got {result.ResultKind}");
+        Assert.AreEqual(input.Length, end, "S6 bottom must reach EOF");
+        Assert.IsNull(parser.ErrorInfo);
+
+        // ����� [6..EOF) ������ ���������� (�������� ������� � ��� Number [0..6)).
+        var prefixEnd = 6;
+        var absorber = FindAbsorbers(node).Single();
+        Assert.AreEqual(prefixEnd, absorber.StartPos);
+        Assert.AreEqual(input.Length, absorber.EndPos);
+        Assert.IsTrue(absorber.IsRecovery);
+    }
+
+    // ============ ����������� ����� (snapshot != null): ��������� ����� ����� ����� ============
+    // Module := ZeroOrMany(Number), ����� "###" ����� ��������� ����� > Success@EOF, ����� ������ ����������.
+    [TestMethod]
+    public void Test_S6_LoopBased_StartRule_TrailingGarbage()
+    {
+        var parser = new Parser(S6Terminals.Trivia());
+        parser.Rules["Module"] = [new ZeroOrMany(S6Terminals.Number(), "Numbers")];
+        parser.BuildTdoppRules();
+
+        var input = "12 34 56 ###";
+        var result = parser.Parse(input, "Module", out _);
+
+        Assert.IsTrue(result.TryGetSuccess(out var node, out var end), $"expected Success, got {result.ResultKind}");
+        Assert.AreEqual(input.Length, end, "loop-based start rule must reach EOF");
+        Assert.IsNull(parser.ErrorInfo);
+        Assert.IsTrue(FindAbsorbers(node).Any(), "trailing garbage must be covered by an absorber");
+    }
+
+    // ============ ������� ������ (Recoverable:false): S6 �� ������������ (C1) ============
+    // ������ � ������ Recoverable=false > Generate ���������� ������ ������ (�� S1..S4, �� S5, �� S6).
+    [TestMethod]
+    public void Test_S6_Not_Generated_In_Strict_Region()
+    {
+        var parser = new Parser(S6Terminals.Trivia());
+        var strictLiteral = new RecoveryRule(new Literal("42"), new RecoveryOptions { Recoverable = false });
+        parser.Rules["Expr"] = new Rule[] { strictLiteral };
+        parser.Rules["Module"] = [new Seq([new Literal("a"), new Ref("Expr")], "Mod")];
+        parser.BuildTdoppRules();
+
+        var input = "abc";
+        parser.Parse(input, "Module", out _);
+        var snapshot = parser.LastSnapshot;
+        Assert.IsNotNull(snapshot);
+        var e = snapshot!.Pos;
+        Assert.IsTrue(snapshot.Stack.Any(f => f.Options is { Recoverable: false }), "expected a strict frame in the snapshot");
+
+        var candidates = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Failure, "Module", 0, e);
+
+        Assert.AreEqual(0, candidates.Count, "strict region must yield no candidates (S6 included)");
+        Assert.IsFalse(candidates.Any(x => x.Rank == 6));
+    }
+
+}
+
+#endif
