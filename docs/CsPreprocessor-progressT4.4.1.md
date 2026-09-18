@@ -107,3 +107,45 @@ Minimal, to keep the build green and lines tiling `[0, len)` under the new trivi
   treated as a directive (checked with a throwaway test: same-length output, real directives
   still active, no spurious CS1024). That throwaway test was removed to keep the change set
   minimal; T4.4.3 should add a permanent regression test for comments + strings.
+
+## Tests (T4.4.2)
+
+Status: **done**. New file `Tests/CsPreprocessorTests/CommentDirectiveTests.cs`
+(`[TestClass]`, `sealed`), 6 tests. Follows the `InactiveDirectiveTests` conventions
+(`Run`/`AssertBlanked`/`AssertKept`/`LineSpan` helpers, line spans computed from `source`).
+`Preprocessor.Run(source, symbols)` → `PreprocessResult { Text, Diagnostics }`. Blanked = the
+line's span in `Text` is all `' '`/`'\n'`/`'\r'`; kept = the line's span in `Text` is
+byte-identical to the same span in `source`.
+
+| Test | Source | Asserts |
+|---|---|---|
+| `DefineInsideBlockComment_DoesNotDefine` | `/* c\n#define FOO\n*/\n#if FOO\nint x;\n#endif\n` | `int x;` blanked (FOO not defined); 0 diagnostics; same-length |
+| `HashInsideLineComment_IsNotDirective` | `// #define FOO\nint y;\n` | `int y;` kept verbatim; 0 diagnostics; same-length |
+| `CodeAfterMultiLineComment_IsKept` | `/* a\nb\n*/\nint z;\n` | `int z;` kept verbatim; 0 diagnostics; same-length |
+| `CommentClosesSameLine_ThenRealDirective_Defines` | `/* a */\n#define FOO\n#if FOO\nint x;\n#endif\n` | `int x;` kept verbatim (FOO defined); 0 diagnostics; same-length |
+| `NestedBlockComment_HashInside_DoesNotDefine` | `/* outer /* inner */ #define FOO */\n#if FOO\nint x;\n#endif\n` | `int x;` blanked (FOO not defined); 0 diagnostics; same-length |
+| `HashOnOwnLine_NotInComment_IsDirective` | `#define FOO\n#if FOO\nint x;\n#endif\n` | `int x;` kept verbatim (FOO defined) — contrast; 0 diagnostics; same-length |
+
+The same-length invariant (D2, `Text.Length == source.Length`) is asserted for inputs 1–5 (and
+the contrast test 7). It holds by construction: `PreprocessResult.Text` is built from
+`source.ToCharArray()` and blanking only rewrites chars to `' '` in place.
+
+### Documented comment-nesting behavior (test 5)
+
+The main parser's trivia (`CSharpTerminals.Trivia`, `CSharpTerminals.cs:282-304`) **NESTS**
+block comments via a `depth` counter: `/*` increments, `*/` decrements, and the comment ends
+only when depth reaches 0. This **differs from standard C#**, where `/* */` does *not* nest and
+the first `*/` closes the comment.
+
+Consequently, for `/* outer /* inner */ #define FOO */`:
+- `/*` → depth 1, `/*` → depth 2, `*/` → depth 1, `*/` → depth 0.
+- The **whole first line is one block comment**; `#define FOO` sits **inside** it.
+- So `FOO` is **NOT** defined and the `#if FOO` body (`int x;`) is **blanked**.
+
+(The preprocessor's wrapper `PreprocessorTriviaTerminal` delegates the comment match to this
+same `CSharpTerminals.Trivia()`, so it inherits the nesting behavior — no hand-rolled scan.)
+
+### Test result
+
+`dotnet test Tests/CsPreprocessorTests/CsPreprocessorTests.csproj` → **Passed: 117, Failed: 0,
+Skipped: 0** (111 existing + 6 new). No production bug found.
