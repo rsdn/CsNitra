@@ -165,3 +165,57 @@ PostfixOp =
 AutoPropertyAccessorList =
     | AutoGetInit    = "get" ";" "init" ";"
     | AutoGetSetInit = "get" ";" "set" ";" "init" ";";
+
+// === Top-level statements (C# 9.0, T3.9.4). ===
+// A top-level statement is a statement written at the top level of a file, BEFORE any type /
+// namespace declaration:
+//   Console.WriteLine("Hello, World!");
+//   var x = 42;
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers\CSharp\Portable):
+//   * ParseCompilationUnit (Parser/LanguageParser.cs:168) -> ParseCompilationUnitCore (180) ->
+//     ParseNamespaceBody (410) with parentKind = SyntaxKind.CompilationUnit.
+//   * ParseNamespaceBodyWorker (562): at the top level (isGlobal, 572) the `default` case (726-729)
+//     calls ParseMemberDeclarationOrStatement(parentKind) — which parses EITHER a member declaration
+//     OR a global statement. A statement result is wrapped in a GlobalStatement node (2636-2664,
+//     2782, 2928, 2955) and added to the SAME `Members` list as member declarations (760).
+//   * Disambiguation (584-724): `namespace`/`using`/`extern` are routed to the DIRECTIVE/member path
+//     UNLESS the token after the keyword forces a statement — `using` with a following `(` (661-664,
+//     a using statement) or a possible top-level using-local-declaration, `extern` that is not an
+//     extern-alias directive (633-638). Everything else (an expression, a type name, a block, a
+//     statement keyword) falls through to `default` and is parsed as a member-or-statement.
+//   * GlobalStatementSyntax (Syntax/Syntax.xml.Internal.Generated.cs): a wrapper node holding a
+//     single StatementSyntax — a top-level statement is a Statement wrapped in GlobalStatement.
+//   * Version gate — IDS_FeatureTopLevelStatements -> a BINDER/semantic (C# 9.0) feature; the PARSER
+//     accepts the form wherever the rule exists. Version purity comes from the rule being Cs9-only
+//     (consistent with `record`/`with`/`init`, T3.9.1-3).
+//
+// The compilation unit is re-declared (T0.3 append-merge) to ADD a second alternative to the Cs1
+// `CompilationUnit` (Cs1.grammar:3, `NamespaceMember*`):
+//   CompilationUnit = NamespaceMember* | GlobalStatement* NamespaceMember*
+// The two alternatives are mutually exclusive at the start of the file:
+//   * a file that STARTS with a statement (an expression / `var` / a type name / a block / a
+//     statement keyword) cannot be matched by `NamespaceMember*` (each NamespaceMember starts with a
+//     reserved keyword: using/extern/namespace, or a type-declaration keyword) -> the first
+//     alternative matches 0 members and leaves the input unconsumed -> it FAILS the full-consumption
+//     check (Parser.cs:217), so the second alternative (the top-level-statements path) wins.
+//   * a file that STARTS with a member (using/extern/namespace/type declaration) is matched by the
+//     first alternative; the second alternative also matches (0 statements + the same members) — an
+//     equal-length tie, and the FIRST alternative (Cs1, declaration order) wins (Parser.cs:296-316).
+// `GlobalStatement` is a thin wrapper over `Statement` (Roslyn GlobalStatement holds one statement).
+// `using` is a reserved keyword (Cs1 ReservedKeyword), so a top-level `using X;` is a UsingDirective
+// (member), never a UsingStatement (which requires `(`) -> no statement/member overlap.
+//
+// CS9 only: at v8 the second CompilationUnit alternative is ABSENT (Cs9-only), so a file starting
+// with a statement matches 0 members and REJECTS.
+//
+// Boundary: the minimal task covers a single statement, multiple statements, and statements followed
+// by a type declaration. A statement AFTER a type declaration is rejected (the greedy `GlobalStatement*`
+// stops at the first non-statement, so a trailing statement is left unconsumed — matching Roslyn's
+// "top-level statements must come first" rule).
+
+// === Compilation unit: APPEND the top-level-statements alternative (T0.3 merge). ===
+CompilationUnit = GlobalStatement* NamespaceMember*;
+
+// A top-level statement: a Statement wrapped in GlobalStatement (Roslyn GlobalStatementSyntax).
+GlobalStatement = Statement;
