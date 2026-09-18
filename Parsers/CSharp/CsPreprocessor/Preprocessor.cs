@@ -39,7 +39,7 @@ public sealed class Preprocessor
         if (parseResult is not Success<GrammarAst>(var grammar))
             throw new InvalidOperationException($"Unexpected grammar parse result: {parseResult.GetType().Name}");
 
-        var parser = new Parser(PreprocessorTerminals.NoOpTrivia());
+        var parser = new Parser(PreprocessorTerminals.Trivia());
         parser.BuildFromAst(grammar, new SourceText(grammarText, GrammarResourceSuffix), PreprocessorTerminals.GetAll());
         parser.BuildTdoppRules();
         return parser;

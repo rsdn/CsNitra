@@ -1,10 +1,19 @@
 using System.Collections.Generic;
+using CSharpGrammar;
 using ExtensibleParser;
 
 namespace CsPreprocessor;
 
 public static class PreprocessorTerminals
 {
+    // The engine's trivia: reuses the main C# parser's comment/whitespace scanner
+    // (CSharpTerminals.Trivia) so a '#' inside a /* ... */ comment is not seen as a
+    // directive-start. Unlike the raw C# trivia (which treats newlines as whitespace and
+    // would merge blank lines into the previous line's trailing trivia), this wrapper lets
+    // comments span lines but keeps whitespace from crossing a line boundary, so lines still
+    // tile [0, len).
+    public static Terminal Trivia() => _trivia;
+
     public static Terminal NoOpTrivia() => _noOpTrivia;
 
     public static Terminal CodeLine() => _codeLine;
@@ -22,6 +31,8 @@ public static class PreprocessorTerminals
         Symbol(),
         LineEnd()
     ];
+
+    private static readonly Terminal _trivia = new PreprocessorTriviaTerminal();
 
     private static readonly Terminal _noOpTrivia = new NoOpTriviaTerminal();
 
@@ -44,6 +55,56 @@ public static class PreprocessorTerminals
         public override bool Injectable => false;
 
         public override string ToString() => "NoOpTrivia";
+    }
+
+    private sealed record PreprocessorTriviaTerminal : Terminal
+    {
+        private static readonly Terminal _csharpTrivia = CSharpTerminals.Trivia();
+
+        public PreprocessorTriviaTerminal() : base("PreprocessorTrivia")
+        {
+        }
+
+        public override int TryMatch(string input, int startPos)
+        {
+            var pos = startPos;
+            var length = input.Length;
+            while (pos < length)
+            {
+                // Comment: delegate to the main parser's trivia (handles // and /* */ with
+                // nesting). A comment may span multiple lines, so it is NOT limited to the
+                // current line — this is what hides a '#' inside a multi-line comment.
+                if (input[pos] == '/' && pos + 1 < length && input[pos + 1] is '/' or '*')
+                {
+                    var commentLength = _csharpTrivia.TryMatch(input, pos);
+                    if (commentLength <= 0)
+                        break;
+                    pos += commentLength;
+                    continue;
+                }
+
+                // Whitespace: keep it on the current line (stop at the first '\n') so blank lines
+                // stay distinct and lines still tile [0, len). A '\r' is consumed as whitespace
+                // (consistent with CodeLine's LineLength, which only stops at '\n'), and the
+                // trailing '\n' is left for the line's own terminal (CodeLine / LineEnd) to match.
+                var c = input[pos];
+                if (c == '\n')
+                    break;
+                if (char.IsWhiteSpace(c))
+                {
+                    while (pos < length && char.IsWhiteSpace(input[pos]) && input[pos] != '\n')
+                        pos++;
+                    continue;
+                }
+
+                break;
+            }
+            return pos - startPos;
+        }
+
+        public override bool Injectable => false;
+
+        public override string ToString() => "PreprocessorTrivia";
     }
 
     private sealed record CodeLineTerminal : Terminal
@@ -107,8 +168,18 @@ public static class PreprocessorTerminals
         {
         }
 
-        public override int TryMatch(string input, int startPos) =>
-            LineSupport.LineLength(input, startPos);
+        public override int TryMatch(string input, int startPos)
+        {
+            // Match the rest of the line INCLUDING its line ending (the '\n'), mirroring CodeLine's
+            // LineLength. The engine's trivia (PreprocessorTrivia) stops at '\n', so the newline is
+            // left here to be consumed — this keeps the directive line's node covering the full line
+            // so lines still tile [0, len). For a message (e.g. `#error "boom"`) the content is the
+            // message plus the line ending; the interpreter trims it.
+            for (var pos = startPos; pos < input.Length; pos++)
+                if (input[pos] == '\n')
+                    return pos - startPos + 1;
+            return input.Length - startPos;
+        }
 
         public override bool Injectable => false;
 

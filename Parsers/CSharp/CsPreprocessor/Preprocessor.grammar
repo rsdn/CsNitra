@@ -4,7 +4,7 @@ Line =
     | DirectiveLine
     | CodeLine;
 
-DirectiveLine = Ws* "#" Directive;
+DirectiveLine = "#" Directive;
 
 Directive =
     | If
@@ -23,17 +23,17 @@ Directive =
     | Shebang
     | BadDirective;
 
-If = "if" Ws* Condition LineEnd;
+If = "if" Condition LineEnd;
 
-Elif = "elif" Ws* Condition LineEnd;
+Elif = "elif" Condition LineEnd;
 
 Else = "else" LineEnd;
 
 EndIf = "endif" LineEnd;
 
-Define = "define" Ws+ Symbol LineEnd;
+Define = "define" Symbol LineEnd;
 
-Undef = "undef" Ws+ Symbol LineEnd;
+Undef = "undef" Symbol LineEnd;
 
 Error = "error" LineEnd;
 
@@ -72,12 +72,12 @@ precedence CondUnary, CondEquality, CondLogicalAnd, CondLogicalOr;
 
 Condition =
     | CondPrimary = CondAtom
-    | CondNot     = "!" Ws* Condition : CondUnary
-    | CondEq      = Condition Ws* "==" Ws* Condition : CondEquality
-    | CondNotEq   = Condition Ws* "!=" Ws* Condition : CondEquality
-    | CondAnd     = Condition Ws* "&&" Ws* Condition : CondLogicalAnd
-    | CondOr      = Condition Ws* "||" Ws* Condition : CondLogicalOr;
+    | CondNot     = "!" Condition : CondUnary
+    | CondEq      = Condition "==" Condition : CondEquality
+    | CondNotEq   = Condition "!=" Condition : CondEquality
+    | CondAnd     = Condition "&&" Condition : CondLogicalAnd
+    | CondOr      = Condition "||" Condition : CondLogicalOr;
 
 CondAtom =
-    | Paren = "(" Ws* Condition Ws* ")"
+    | Paren = "(" Condition ")"
     | Symbol;
