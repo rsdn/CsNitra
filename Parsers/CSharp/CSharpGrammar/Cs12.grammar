@@ -91,3 +91,54 @@ ClassPrimaryConstructorParameterList = "(" (Parameter; ",")* ")";
 // collection elements are out of scope (expressions only).
 Primary =
     | CollectionExpr = "[" (Expression; ",")* "]";
+
+// === List pattern (C# 12.0, T3.12.3). ===
+// A list pattern matches a list/collection against a sequence of sub-patterns:
+//   if (list is [1, 2, 3]) { }
+//   if (list is [var first, ..]) { }
+//   if (list is [1, .., 3]) { }
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp/Portable/Parser/LanguageParser_Patterns.cs):
+//   * ParsePrimaryPattern (187-252): `case SyntaxKind.OpenBracketToken: return this.ParseListPattern(
+//     inSwitchArmPattern);` (209-210) — a "[" in pattern position is a LIST PATTERN.
+//   * ParseListPattern (660-678): `openBracket = EatToken(OpenBracketToken)`, then
+//     ParseCommaSeparatedSyntaxList(IsPossibleSubpatternElement, ParsePattern(Precedence.Conditional),
+//     allowTrailingSeparator:true, requireOneElement:false), then `EatToken(CloseBracketToken)`. Returns
+//     ListPattern(openBracket, list, closeBracket, TryParseSimpleDesignation(...)).
+//   * Each element is a FULL Pattern (ParsePattern, 667) — so a list-pattern element can itself be a
+//     constant / var / type / discard / slice / (nested) list pattern.
+//   * Slice pattern — ParsePrimaryPattern (211-216): `case SyntaxKind.DotToken when IsAtDotDotToken():
+//     return _syntaxFactory.SlicePattern(EatDotDotToken(), IsPossibleSubpatternElement() ?
+//     ParsePattern(...) : null)` — a ".." optionally followed by a sub-pattern.
+//   * Version gate — list patterns are a C# 12.0 feature (binder/semantic); the PARSER accepts the form
+//     wherever the rule exists. Version purity comes from the rule being Cs12-only.
+//
+// T0.3 merge: re-declaring Pattern APPENDS ListPattern/SlicePattern to the Cs7 Pattern
+// (Cs7.grammar:130-135). A list pattern STARTS with "[", which no existing Pattern alternative starts
+// with (they start with "_" / a Type / "var" / an Expression). The SlicePattern STARTS with "..", which
+// no existing Pattern alternative starts with either. So both are the SOLE match for a "[" or ".." in
+// pattern position -> no equal-length tie.
+//
+// Disambiguation with the Cs12 CollectionExpr (T3.12.2): the collection expression is a PRIMARY
+// EXPRESSION (Cs12.grammar:92), while the list pattern is a PATTERN. In the `is` expression
+// (TypeIsPattern, Cs7.grammar:108) the RHS is a Pattern (NOT an Expression), so "[1, 2, 3]" after `is`
+// is parsed by the Pattern rule, not the Primary/Expression rule. The two never compete (different
+// syntactic contexts). NOTE: for an ALL-CONSTANT list pattern (`[1, 2, 3]`) the Cs7 ConstantPattern (a
+// full Expression, which at v12 includes the CollectionExpr) ALSO matches at the same length; the FIRST
+// (Cs7 ConstantPattern) wins the tie, so `[1, 2, 3]` in a pattern context is parsed as a
+// ConstantPattern/CollectionExpr, NOT a ListPattern. This is a documented semantic difference (the input
+// still fully parses, and version purity is preserved — at v11 the CollectionExpr is absent, so `[1, 2, 3]`
+// matches no Pattern alternative and REJECTS). The non-constant forms (`[var first, ..]`, `[1, .., 3]`)
+// are parsed as a ListPattern (the ConstantPattern/CollectionExpr fails on the "var" / ".." element).
+//
+// CS12 only: at v<=11 the ListPattern/SlicePattern alternatives are ABSENT, so a list pattern matches no
+// Pattern alternative and REJECTS.
+//
+// Boundary: the element list uses the default (Forbidden) trailing-separator behavior (like the Cs12
+// CollectionExpr), so `[1, 2, 3,]` (Roslyn allowTrailingSeparator:true) is rejected — a minor deviation,
+// acceptable for the minimal task. The optional list-pattern designation (`TryParseSimpleDesignation`,
+// e.g. `[1, 2, 3] as x`) is out of scope; the slice models the bare ".." plus an optional trailing
+// Pattern (the Roslyn sub-pattern).
+Pattern =
+    | ListPattern  = "[" (Pattern; ",")* "]"
+    | SlicePattern = ".." Pattern?;
