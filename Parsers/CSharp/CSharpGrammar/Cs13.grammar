@@ -1,0 +1,81 @@
+// Cs13.grammar — C# 13.0: field keyword (T3.13.1).
+//
+// The `field` keyword refers to the backing field of an auto-property and can be used in the
+// getter/setter body:
+//   class MyClass {
+//       public int Value {
+//           get => field;
+//           set => field = value;
+//       }
+//   }
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp/Portable):
+//   * SyntaxKind.FieldKeyword = 8412 (Syntax/SyntaxKind.cs:349).
+//   * FieldExpressionSyntax — a single-token node for the `field` keyword
+//     (Generated/CSharpSyntaxGenerator/.../Syntax.xml.Main.Generated.cs:3015:
+//     `SyntaxFactory.FieldExpression(SyntaxFactory.Token(SyntaxKind.FieldKeyword))`).
+//   * Parsed in primary-expression position — ParsePrimaryExpressionWithoutPostfix
+//     (Parser/LanguageParser.cs:12009-12012): `else if (IsCurrentTokenFieldInKeywordContext() &&
+//     PeekToken(1).Kind != SyntaxKind.ColonColonToken) return _syntaxFactory.FieldExpression(
+//     this.EatContextualToken(SyntaxKind.FieldKeyword));`
+//   * IsCurrentTokenFieldInKeywordContext (Parser/LanguageParser.cs:6097-6102):
+//     `CurrentToken.ContextualKind == SyntaxKind.FieldKeyword && IsInFieldKeywordContext &&
+//     IsFeatureEnabled(MessageID.IDS_FeatureFieldKeyword)`.
+//   * The field-keyword context (IsInFieldKeywordContext) is set in the property accessor body via
+//     ParserSyntaxContextResetter (Parser/LanguageParser.cs:4286, 4639).
+//   * Version gate — `field` is a C# 13.0 feature (MessageID.IDS_FeatureFieldKeyword,
+//     MessageID.cs:290; binder check Binder_Expressions.cs:1572). The PARSER accepts the form wherever
+//     the rule exists; version purity comes from the rules being Cs13-only.
+//
+// APPROACH (three parts):
+//   1. FieldExpression primary — re-declares Primary (append, T0.3 merge) to add `field` as a primary
+//      expression (the backing-field reference). Roslyn FieldExpression (LanguageParser.cs:12009-12012).
+//   2. `field` reservation — re-declares ReservedKeyword (append) to reserve `field` at v13, so a bare
+//      `field` in expression position is NOT a plain IdentifierName; the FieldExpr primary is the SOLE
+//      match (no equal-length tie).
+//   3. Expression-bodied accessors — re-declares Property (append) with an alternative that uses
+//      ExpressionBodiedAccessorList (`get => Expr ;` / `set => Expr ;`). The `=>` accessor form is the
+//      REQUIRED-new-construct, mutually exclusive with the Cs1 (block, AccessorDeclaration+) and Cs3
+//      (auto, AutoPropertyAccessorList) Property alternatives — the token after the accessor name
+//      disambiguates (`{` vs `;` vs `=>`) — no equal-length tie.
+//
+// CS13 only: at v<=12 the FieldExpr primary, the `field` reservation, and the `=>` accessor alternative
+// are ABSENT, so `get => field;` / `set => field = value;` match no Property alternative and REJECT.
+//
+// Boundary / deviation: reserving `field` at v13 (not at v<=12) means a bare identifier use
+// (`int field;`) is accepted at v<=12 but rejected at v13 — a documented deviation from Roslyn (where
+// `field` is a contextual keyword valid as an identifier at every version). The task's version-purity
+// requirement (the `field` KEYWORD in an accessor body) is satisfied: `get => field;` is rejected at v12
+// (no `=>` accessor) and accepted at v13.
+
+// === FieldExpression (C# 13.0, T3.13.1). ===
+// The `field` keyword as a primary expression — the backing-field reference in a property accessor
+// body. Roslyn ParsePrimaryExpressionWithoutPostfix (LanguageParser.cs:12009-12012) +
+// IsCurrentTokenFieldInKeywordContext (6097-6102). Re-declares Primary (append, T0.3 merge).
+// `field` is reserved (below), so IdentifierName (`!ReservedKeyword Identifier`) does NOT match it;
+// FieldExpr is the SOLE Primary match for `field` -> no equal-length tie.
+Primary =
+    | FieldExpr = "field";
+
+// === `field` reservation (version-purity, Cs13-only). ===
+// Re-declares ReservedKeyword (append) to reserve `field` at v13. This makes `field` NOT a valid
+// IdentifierName at v13, so the FieldExpr primary (above) is the sole match for `field` in expression
+// position. At v<=12 `field` is not reserved (a valid identifier), but the `=>` accessor form is absent,
+// so `get => field;` REJECTS anyway.
+ReservedKeyword =
+    | "field";
+
+// === Expression-bodied accessors (C# 13.0, T3.13.1). ===
+// Re-declares Property (append, T0.3 merge) with an alternative that REQUIRES expression-bodied (`=>`)
+// accessors via ExpressionBodiedAccessorList. Mutually exclusive with the Cs1 (block, AccessorDeclaration+)
+// and Cs3 (auto, AutoPropertyAccessorList) Property alternatives — the token after the accessor name
+// disambiguates (`{` vs `;` vs `=>`) — no equal-length tie. The body is a full TDOPP expression, so
+// `field = value` parses as an assignment.
+Property = Attributes? PropertyModifier* Type TypeName "{" ExpressionBodiedAccessorList "}" ";"?;
+
+// Expression-bodied accessor list: `get => Expr ;` and/or `set => Expr ;`. Named union (the
+// meta-grammar forbids `|` inside a group). The two shapes are disambiguated by longest-match (a longer
+// shape wins); none has an equal-length tie with another (each differs in a leading token).
+ExpressionBodiedAccessorList =
+    | ExprGetterOnly = "get" "=>" Expression ";"
+    | ExprGetSet = "get" "=>" Expression ";" "set" "=>" Expression ";";

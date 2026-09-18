@@ -22,6 +22,7 @@ public static class EmbeddedGrammar
         new(10, "Cs10.grammar", "Cs10.grammar"),
         new(11, "Cs11.grammar", "Cs11.grammar"),
         new(12, "Cs12.grammar", "Cs12.grammar"),
+        new(13, "Cs13.grammar", "Cs13.grammar"),
     ];
 
     public static string LoadCs1Grammar() => Load("Cs1.grammar");
