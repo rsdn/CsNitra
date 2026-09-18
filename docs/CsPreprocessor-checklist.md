@@ -15,7 +15,7 @@
 - [✅] T3.1 Тесты сохранности позиций (отдельные)
 - [✅] T3.2 Интеграционный тест: препроцессор → CSharpParser, позиции совпадают
 - [✅] T4.1 Вложенные/несоответствующие `#if`/`#endif`/`#else`
-- [ ] T4.2 Неактивные `#define`/`#undef`/`#error`/`#warning` без эффекта
+- [✅] T4.2 Неактивные `#define`/`#undef`/`#error`/`#warning` без эффекта
 - [ ] T4.3 `#line` (запоминание в `LineDirectives`)
 - [ ] T4.4 Multi-line string/comment с line-start `#`
 - [ ] T4.5 Shebang / CRLF / ws перед `#` / bad placement
