@@ -9,19 +9,29 @@ public static class PreprocessorTerminals
 
     public static Terminal CodeLine() => _codeLine;
 
-    public static Terminal DirectiveLine() => _directiveLine;
+    public static Terminal Ws() => _ws;
+
+    public static Terminal Symbol() => _symbol;
+
+    public static Terminal LineEnd() => _lineEnd;
 
     public static IReadOnlyList<Terminal> GetAll() => [
         NoOpTrivia(),
         CodeLine(),
-        DirectiveLine()
+        Ws(),
+        Symbol(),
+        LineEnd()
     ];
 
     private static readonly Terminal _noOpTrivia = new NoOpTriviaTerminal();
 
     private static readonly Terminal _codeLine = new CodeLineTerminal();
 
-    private static readonly Terminal _directiveLine = new DirectiveLineTerminal();
+    private static readonly Terminal _ws = new WsTerminal();
+
+    private static readonly Terminal _symbol = new SymbolTerminal();
+
+    private static readonly Terminal _lineEnd = new LineEndTerminal();
 
     private sealed record NoOpTriviaTerminal : Terminal
     {
@@ -50,18 +60,59 @@ public static class PreprocessorTerminals
         public override string ToString() => "CodeLine";
     }
 
-    private sealed record DirectiveLineTerminal : Terminal
+    private sealed record WsTerminal : Terminal
     {
-        public DirectiveLineTerminal() : base("DirectiveLine")
+        public WsTerminal() : base("Ws")
         {
         }
 
         public override int TryMatch(string input, int startPos) =>
-            LineSupport.IsDirectiveStart(input, startPos) ? LineSupport.LineLength(input, startPos) : -1;
+            startPos < input.Length && input[startPos] is ' ' or '\t' ? 1 : -1;
 
         public override bool Injectable => false;
 
-        public override string ToString() => "DirectiveLine";
+        public override string ToString() => "Ws";
+    }
+
+    private sealed record SymbolTerminal : Terminal
+    {
+        public SymbolTerminal() : base("Symbol")
+        {
+        }
+
+        public override int TryMatch(string input, int startPos)
+        {
+            if (startPos >= input.Length)
+                return -1;
+
+            var first = input[startPos];
+            if (first != '_' && !char.IsLetter(first))
+                return -1;
+
+            var pos = startPos + 1;
+            while (pos < input.Length && (input[pos] == '_' || char.IsLetterOrDigit(input[pos])))
+                pos++;
+
+            return pos - startPos;
+        }
+
+        public override bool Injectable => false;
+
+        public override string ToString() => "Symbol";
+    }
+
+    private sealed record LineEndTerminal : Terminal
+    {
+        public LineEndTerminal() : base("LineEnd")
+        {
+        }
+
+        public override int TryMatch(string input, int startPos) =>
+            LineSupport.LineLength(input, startPos);
+
+        public override bool Injectable => false;
+
+        public override string ToString() => "LineEnd";
     }
 
     private static class LineSupport

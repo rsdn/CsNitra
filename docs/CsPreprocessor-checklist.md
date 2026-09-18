@@ -6,7 +6,8 @@
 - [✅] T0.1 Проект CsPreprocessor + типы + `Run` (заглушка)
 - [✅] T0.2 Тестовый проект CsPreprocessorTests (smoke)
 - [✅] T1.1 Грамматика: `PreprocessorFile`/`Line`/`CodeLine` (плитка всего текста)
-- [ ] T1.2 Грамматика: все виды директив → узлы
+- [✅] T1.2.1 Грамматика: декларативный `DirectiveLine` (`Ws* '#' Directive LineEnd`) + `Ws`/`LineEnd`/`Symbol` + простые директивы (Else/EndIf/Define/Undef) + `BadDirective` (catch-all). Плитка сохраняется
+- [ ] T1.2.2 Грамматика: остальные директивы (If/Elif/Error/Warning/Line/Region/EndRegion/Pragma/Nullable/Shebang) + `Condition`-плейсхолдер для If/Elif
 - [ ] T1.3 Грамматика: условие `#if`/`#elif` (TDOPP)
 - [ ] T2.1 Интерпретатор (visitor): каркас stack + active/inactive + сборка `Text`
 - [ ] T2.2 Семантика символов (define/undef/IsDefined/BranchTaken/CompleteIf)
@@ -24,4 +25,6 @@
 
 ## Deviations
 
-(пока пусто)
+- T1.2 (план) расщеплён на T1.2.1 + T1.2.2: одна сессия субагента на 15+ директив +
+  терминалы ушла бы в предел контекста. T1.2.1 — декларативная структура + простые
+  директивы + catch-all; T1.2.2 — остальные директивы + плейсхолдер условия.

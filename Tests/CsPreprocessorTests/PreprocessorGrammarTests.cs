@@ -57,6 +57,13 @@ public class PreprocessorGrammarTests
         Assert.AreEqual(0, result.LineDirectives.Count);
     }
 
+    private static string EffectiveKind(ISyntaxNode line) => line switch
+    {
+        TerminalNode { Kind: "CodeLine" } => "CodeLine",
+        SeqNode { Kind: "DirectiveLine" } => "DirectiveLine",
+        _ => throw new InvalidOperationException($"Unexpected line node {line.GetType().Name} (Kind={line.Kind})")
+    };
+
     private static List<(string Kind, int Start, int End)> ParseAndTile(string source)
     {
         var parser = Preprocessor.BuildParser();
@@ -74,8 +81,7 @@ public class PreprocessorGrammarTests
         var lines = new List<(string Kind, int Start, int End)>();
         foreach (var line in topSeq.Elements)
         {
-            Assert.IsTrue(line is TerminalNode, $"Expected a line TerminalNode, got {line.GetType().Name} (Kind={line.Kind})");
-            lines.Add((line.Kind, line.StartPos, line.EndPos));
+            lines.Add((EffectiveKind(line), line.StartPos, line.EndPos));
         }
 
         AssertTiling(lines, source.Length);

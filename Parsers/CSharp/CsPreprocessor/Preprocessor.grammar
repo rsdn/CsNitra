@@ -3,3 +3,28 @@ PreprocessorFile = Line*;
 Line =
     | DirectiveLine
     | CodeLine;
+
+DirectiveLine = Ws* "#" Directive;
+
+Directive =
+    | Else
+    | EndIf
+    | Define
+    | Undef
+    | BadDirective;
+
+Else = "else" LineEnd;
+
+EndIf = "endif" LineEnd;
+
+Define = "define" Ws+ Symbol LineEnd;
+
+Undef = "undef" Ws+ Symbol LineEnd;
+
+BadDirective = !KnownKeyword Symbol LineEnd;
+
+KnownKeyword =
+    | "else"
+    | "endif"
+    | "define"
+    | "undef";
