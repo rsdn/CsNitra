@@ -78,7 +78,7 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
   - [✅] T3.5.1 Дизайн: правила интерполяции (3 уровня $) для семейств regular/verbatim/raw → `docs/InterpolatedStringGrammar.md` (семантика из Roslyn Lexer + образец `C:\RSDN\nitra\...\CS6Literals.nitra`)
   - [✅] T3.5.2 Реализация: грамматические правила интерполяции + временное правило Expression + удаление сканер-терминалов (`InterpolatedStringLiteral`, `RawInterpolatedStringLiteral`, hole-скан) и их тестов
   - [✅] T3.5.3 CS6: `?.`, expression-bodied члены, `nameof`, binary literals (итерация CS6)
-- [ ] T3.6 CS7: кортежи, pattern matching, локальные функции, `out var`, `ref`-возврат/локальные, разделители цифр, `throw`-выражение, `ref readonly`
+- [✅] T3.6 CS7: кортежи, pattern matching, локальные функции, `out var`, `ref`-возврат/локальные, разделители цифр, `throw`-выражение, `ref readonly`
   - [✅] T3.6.1 Кортежи: tuple-типы (`(int, string)`), tuple-литералы (`(1, "a")`), deconstruction (`var (x, y) = t`), `Item1`-доступ → `Cs7.grammar` + тесты (D1: unnamed tuple literal version-purity blocked — Cs1 Parens+Comma)
   - [✅] T3.6.2 Pattern matching: declaration patterns (`is int x`), type/constant patterns, discard `_`, guard `when`, `switch` с паттернами (`case int y:`, `case var y:`, `case 5:`) → `Cs7.grammar` + тесты (D: `case int when y > 0:` rejects — `when` treated as a designation, unlike Roslyn)
   - [✅] T3.6.3 Локальные функции: `void M() { void N() { } N(); }` (в т.ч. `async`/`static`/generics) → `Cs7.grammar` + тесты (D1: `void N();` ";"-body → LocalVariableDeclaration tie, unlike Roslyn; D4: generic invocation `N<int>()` pre-existing gap — declaration-only form tested)
@@ -89,7 +89,7 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
   - [✅] T3.7.2 `in` parameter (`void M(in int x)`) → `Cs7.grammar` + тесты (D1: `in` IS reserved (Cs1:571) — task's "not reserved" false premise, beneficial for mutual exclusivity; D2: `foreach (var x in y)` parses only at v1 (var reserved at v2+), no-regression test uses concrete `int`; D3: `IEnumerable<int>` not a Type (no generic type-arg list), test uses `int[]`; D4: `in` argument (call site `M(in x)`) out of scope)
   - [✅] T3.7.3 `ref struct` (`ref struct S { }`) + `readonly struct` → `Cs7.grammar` + тесты (D1: both `ref struct`/`readonly struct` are C# 7.2 in Roslyn (MessageID.cs:657-658, both semantic check); D2: `ref`/`readonly` added to StructModifier ONLY (NOT class/interface/enum/delegate — Roslyn ERR_BadMemberFlag); D3: `ref`/`readonly` ARE reserved (Cs1:591/590) — task's premise correct, beneficial for mutual exclusivity; D4: `readonly ref struct`/`readonly public struct` (combined/reordered modifiers) parse at v7 (correct superset, Roslyn any-order ParseModifiers))
   - [✅] T3.7.4 type/constant patterns (verify already done in T3.6.2; generic type patterns `is List<int>` ALREADY parse — no grammar change) → `Cs7.grammar` + тесты (D1: generic TYPE pattern `x is List<int>` parses at v2+/v6 (Cs1 TypeIs C#1.0 + Cs2 generic type) — task's "reject at v6" false premise, written as no-regression positive; D2: "generic type patterns (C# 7.2)" is a mischaracterization — it's C# 1.0 `is` + C# 2.0 generic type (Roslyn BindIsOperator binds as type first; IDS_FeaturePatternMatching C#7.0 gates only the fallback constant/declaration); D3: no grammar change needed — pure verification + tests)
-- [ ] T3.8 CS8: switch expressions, using declarations, `..`/`^`, `??=`, NRT-аннотации, default interface members → `Cs8.grammar` (v8) + тесты
+- [✅] T3.8 CS8: switch expressions, using declarations, `..`/`^`, `??=`, NRT-аннотации, default interface members → `Cs8.grammar` (v8) + тесты
   - [✅] T3.8.1 switch expressions (+ setup `Cs8.grammar` + version table + csproj) → `Cs8.grammar` + тесты (D: bug fix in Cs7 Pattern — ConstantPattern excludes lambda forms via two negative lookaheads, was greedily matching the whole arm as a lambda; version-count test updated for Cs8)
   - [✅] T3.8.2 using declarations (`using FileStream f = new(...);`) → `Cs8.grammar` + тесты (D1: the task's no-regression form `using (var f = new X()) { }` parses ONLY at v1 (var reserved at v2+, no `var` alt in ResourceAcquisition) — PRE-EXISTING limitation, not a regression; no-regression test uses concrete type `using (int x = Foo()) { }` at v1+v7; D2: single declarator + REQUIRED initializer (`using T f;` rejected); D3: `await using` out of scope; D4: modifiers out of scope)
   - [✅] T3.8.3a index-from-end `^` (`x[^1]`, `x[^2..^1]`-готовность) → `Cs8.grammar` + тесты (D: `^` — symbol, не word-keyword; TDOPP prefix `: Unary`; префикс/бинарный `^` различаются фазой TDOPP)
@@ -122,9 +122,9 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
   - [✅] T3.13.1 `field` keyword (accessor body) + setup `Cs13.grammar` + version table + csproj → `Cs13.grammar` + тесты (FieldExpr = field, ReservedKeyword += field, expression-bodied accessors; setup: csproj + v13)
   - [✅] T3.13.2 `event field` → `Cs13.grammar` + тесты (EventTail += EventFieldInit = = Expression ;; три EventTail взаимно исключают друг друга по leading token)
   - [→] T3.13.3 extension members → перенесено в T3.14.1 (это `extension` container, фича C# 14 по MessageID.cs:515)
-- [~] T3.14 CS14: `ref`-поля, extension members (`extension` container) + остаток фич по данным T1.1
+- [✅] T3.14 CS14: `ref`-поля, extension members (`extension` container) + остаток фич по данным T1.1
   - [✅] T3.14.1 extension members (`extension` container) + setup `Cs14.grammar` + version table + csproj → `Cs14.grammar` + тесты (ExtensionDeclaration = extension TypeParameterList? (params) ConstraintClause* (ClassBody | ;); setup: csproj + v14)
-  - [~] T3.14.2 `ref`-поля → `Cs14.grammar` + тесты
+  - [✅] T3.14.2 `ref`-поля → `Cs14.grammar` + тесты (FieldModifier += ref, append-merge; disambiguated от ref-return method)
 
 ## Этап 4 — Закаливание
 
