@@ -196,6 +196,7 @@ public class InterpolatedStringTests
             [
                 (Text: EmbeddedGrammar.LoadCs1Grammar(), Path: "Cs1.grammar"),
                 (Text: EmbeddedGrammar.LoadCs6Grammar(), Path: "Cs6.grammar"),
+                (Text: EmbeddedGrammar.LoadCs11Grammar(), Path: "Cs11.grammar"),
             ],
             CSharpTerminals.Trivia(),
             CSharpTerminals.GetAll());

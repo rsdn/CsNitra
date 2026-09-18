@@ -18,6 +18,28 @@
 
 RawStringLiteral = RawString;
 
+// === Interpolated raw string: $"""...""" (T3.11.1, C# 11.0) ===
+// Raw-интерполяция — фича C# 11 (не C# 6): вынесено из Cs6.grammar (T3.5.2), где жила
+// вместе с regular/verbatim-интерполяцией. Правило и хелперы перенесены без изменений;
+// подключение — к Primary (как у не-интерполированной RawStringLiteral), а не к Expression.
+// D = число $, передаётся через контекстный слот: context("$"+, тело).
+// Дыра = "{"-ран D..2D-1 (первые K-D скобки — литер. текст, последние D открывают):
+// первая "{" — обычный литерал, остаток рана (D-1..2D-2) — RawHoleOpenBraces; закрывается
+// ровно D "}" (остаток ранa возвращается в контент). Литеральные скобочные раны = 1..D-1.
+// Ран >= 2D открывающих / >= D закрывающих в контенте не матчится (CS9006/CS9007).
+RawInterpolatedStringLiteral = context("$"+, "\"\"\"" RawPart* "\"\"\"");
+
+RawPart =
+    | Hole = "{" RawHoleOpenBraces Expression RawFormat? "}"{n}
+    | OpenBrace = RawOpenBraceLiteral
+    | CloseBrace = RawCloseBraceLiteral
+    | Quote1 = "\"" !"\""
+    | Quote2 = "\"" "\"" !"\""
+    | Text = InterpolatedRawText;
+
+RawFormat = ":" RawFormatText;
+
 // === Подключение к Primary (T0.3: повторное имя = добавление альтернатив) ===
 Primary =
-    | RawStringLiteral;
+    | RawStringLiteral
+    | RawInterpolatedStringLiteral;
