@@ -156,10 +156,9 @@ CodeLine         = <hand-written Terminal: строка, не начинающа
 
 | # | Задача | Результат |
 |---|--------|-----------|
-| T2.1 | `PreprocessorInterpreter` (visitor): обход в порядке исходника; каркас `DirectiveStack` + active/inactive; сборка `Text` (same-length blanking). | Visitor ходит по дереву, собирает `Text` |
-| T2.2 | Семантика символов: `#define`/`#undef` (только активные), `IsDefined` (stack + cmdline), `BranchTaken` (первая истинная ветка), `CompleteIf` на `#endif`. Как в D4. | Символы/ветки считаются верно |
-| T2.3 | Active/inactive + blanking: вычищать директивные строки (активные и неактивные) и неактивный код; активный код — как есть. `Text.Length == source.Length`, `\n`/`\r` сохраняются. | Чистый текст той же длины |
-| T2.4 | Диагностика: `#error`/`#warning` (только активные), структурные ошибки (несовпадение `#if`/`#endif`/`#else`, bad placement). В координатах исходника. | Диагностика в исходных координатах |
+| T2.1 | `DirectiveStack` (чистая логика, без дерева): состояние символов (`#define`/`#undef`, только активные), `IsDefined` (stack + cmdline), `BranchTaken` (первая истинная ветка), `CompleteIf` на `#endif`. Как в D4. | Символы/ветки считаются верно (тесты в изоляции) |
+| T2.2 | `PreprocessorInterpreter` (visitor): обход дерева в порядке исходника; active/inactive; сборка `Text` (same-length blanking: вычищать директивные строки + неактивный код, активный код как есть). `Text.Length == source.Length`, `\n`/`\r` сохраняются. | Чистый текст той же длины |
+| T2.3 | Диагностика: `#error`/`#warning` (только активные), структурные ошибки (несовпадение `#if`/`#endif`/`#else`, bad placement). В координатах исходника. | Диагностика в исходных координатах |
 
 ### Этап 3 — Сохранение позиций (ОТДЕЛЬНЫЕ тесты)
 

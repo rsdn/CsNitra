@@ -9,10 +9,9 @@
 - [✅] T1.2.1 Грамматика: декларативный `DirectiveLine` (`Ws* '#' Directive LineEnd`) + `Ws`/`LineEnd`/`Symbol` + простые директивы (Else/EndIf/Define/Undef) + `BadDirective` (catch-all). Плитка сохраняется
 - [✅] T1.2.2 Грамматика: остальные директивы (If/Elif/Error/Warning/Line/Region/EndRegion/Pragma/Nullable/Shebang) + `Condition`-плейсхолдер для If/Elif
 - [✅] T1.3 Грамматика: условие `#if`/`#elif` (TDOPP)
-- [ ] T2.1 Интерпретатор (visitor): каркас stack + active/inactive + сборка `Text`
-- [ ] T2.2 Семантика символов (define/undef/IsDefined/BranchTaken/CompleteIf)
-- [ ] T2.3 Active/inactive + same-length blanking
-- [ ] T2.4 Диагностика (`#error`/`#warning` + структурные)
+- [✅] T2.1 `DirectiveStack` (чистая логика): define/undef (активные), IsDefined (stack+cmdline), BranchTaken (первая истинная ветка), CompleteIf
+- [ ] T2.2 `PreprocessorInterpreter` (visitor): обход в порядке исходника, active/inactive, сборка `Text` (same-length blanking)
+- [ ] T2.3 Диагностика (`#error`/`#warning` активные + структурные) в координатах исходника
 - [ ] T3.1 Тесты сохранности позиций (отдельные)
 - [ ] T3.2 Интеграционный тест: препроцессор → CSharpParser, позиции совпадают
 - [ ] T4.1 Вложенные/несоответствующие `#if`/`#endif`/`#else`
@@ -28,3 +27,7 @@
 - T1.2 (план) расщеплён на T1.2.1 + T1.2.2: одна сессия субагента на 15+ директив +
   терминалы ушла бы в предел контекста. T1.2.1 — декларативная структура + простые
   директивы + catch-all; T1.2.2 — остальные директивы + плейсхолдер условия.
+- Этап 2 пересобран: старое T2.1–T2.4 (visitor/semantics/blanking/diagnostics) имело
+  пересечения. Новое: T2.1 = `DirectiveStack` (чистая логика, тестируется в изоляции),
+  T2.2 = visitor (обход + active/inactive + blanking → Text), T2.3 = диагностика.
+  Порядок: сначала логика символов, потом visitor, потом диагностика.
