@@ -10,7 +10,7 @@
 - [✅] T1.2.2 Грамматика: остальные директивы (If/Elif/Error/Warning/Line/Region/EndRegion/Pragma/Nullable/Shebang) + `Condition`-плейсхолдер для If/Elif
 - [✅] T1.3 Грамматика: условие `#if`/`#elif` (TDOPP)
 - [✅] T2.1 `DirectiveStack` (чистая логика): define/undef (активные), IsDefined (stack+cmdline), BranchTaken (первая истинная ветка), CompleteIf
-- [ ] T2.2 `PreprocessorInterpreter` (visitor): обход в порядке исходника, active/inactive, сборка `Text` (same-length blanking)
+- [✅] T2.2 `PreprocessorInterpreter` (visitor): обход в порядке исходника, active/inactive, сборка `Text` (same-length blanking)
 - [ ] T2.3 Диагностика (`#error`/`#warning` активные + структурные) в координатах исходника
 - [ ] T3.1 Тесты сохранности позиций (отдельные)
 - [ ] T3.2 Интеграционный тест: препроцессор → CSharpParser, позиции совпадают

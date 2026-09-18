@@ -18,7 +18,14 @@ public sealed class Preprocessor
 
     public static PreprocessResult Run(string source, IEnumerable<string> commandLineSymbols)
     {
-        BuildParser().Parse(source, StartRule, out _);
+        var parser = BuildParser();
+        if (parser.Parse(source, StartRule, out _).TryGetSuccess(out var topNode, out _) && topNode is SeqNode)
+        {
+            var interpreter = new PreprocessorInterpreter(source, commandLineSymbols);
+            topNode.Accept(interpreter);
+            return interpreter.Result!;
+        }
+
         return new(source, Array.Empty<Diagnostic>(), Array.Empty<LineDirective>());
     }
 
