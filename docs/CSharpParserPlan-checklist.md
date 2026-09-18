@@ -114,8 +114,8 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
   - [✅] T3.11.3 `required` → `Cs11.grammar` + тесты (FieldModifier += required, PropertyModifier += required, T0.3 append-merge; contextual keyword)
   - [✅] T3.11.4 `params Span<T>` → `Cs11.grammar` + тесты (ParamsParameter += Span<T>/ReadOnlySpan<T>; Cs1 params вынесен в dedicated form, ParamsType excludes Span</ReadOnlySpan<)
 - [~] T3.12 CS12: primary constructors (классы), collection expressions, list patterns, `not`/`and`/`or`
-  - [~] T3.12.1 primary constructors (классы) + setup `Cs12.grammar` + version table + csproj → `Cs12.grammar` + тесты
-  - [ ] T3.12.2 collection expressions `[]` → `Cs12.grammar` + тесты
+  - [✅] T3.12.1 primary constructors (классы) + setup `Cs12.grammar` + version table + csproj → `Cs12.grammar` + тесты (ClassDeclaration re-declared с REQUIRED ClassPrimaryConstructorParameterList; setup: csproj + v12)
+  - [~] T3.12.2 collection expressions `[]` → `Cs12.grammar` + тесты
   - [ ] T3.12.3 list patterns → `Cs12.grammar` + тесты
   - [ ] T3.12.4 `not`/`and`/`or` (pattern composition) → `Cs12.grammar` + тесты
 - [ ] T3.13 CS13: extension members, `field`, `event field`

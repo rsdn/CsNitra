@@ -52,3 +52,42 @@ ClassDeclaration = Attributes? ClassModifier* "class" TypeName ClassPrimaryConst
 // Roslyn ParseParenthesizedParameterList (LanguageParser.cs:4750), requireOneElement:false. Reuses
 // Cs1 Parameter (Cs1.grammar:472).
 ClassPrimaryConstructorParameterList = "(" (Parameter; ",")* ")";
+
+// === Collection expression (C# 12.0, T3.12.2). ===
+// A collection expression creates a collection from its elements:
+//   var list = [1, 2, 3];
+//   var empty = [];
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp/Portable):
+//   * ParseCollectionExpression (Parser/LanguageParser.cs:13264-13291): `openBracket =
+//     EatToken(OpenBracketToken)`, then ParseCommaSeparatedSyntaxList(IsPossibleCollectionElement,
+//     ParseCollectionElement, allowTrailingSeparator:true, requireOneElement:false), then
+//     `closeBracket = EatToken(CloseBracketToken)`. Returns CollectionExpression(openBracket, list,
+//     closeBracket).
+//   * IsPossibleCollectionElement (13293-13296) = IsPossibleExpression() — each element is an expression.
+//     ParseCollectionElement (13298+) parses an expression / spread / with-element; the minimal task
+//     models expressions only.
+//   * Dispatch: ParsePrimaryExpressionWithoutPostfix `case SyntaxKind.OpenBracketToken`
+//     (12023-12026) — a "[" in primary (expression) position is a collection expression (unless it is a
+//     lambda). So a collection expression is a PRIMARY expression.
+//   * CollectionExpressionSyntax (Generated/CSharpSyntaxGenerator/.../Syntax.xml.Main.Generated.cs:4193-4237):
+//     OpenBracketToken + SeparatedSyntaxList<CollectionElementSyntax> Elements + CloseBracketToken.
+//   * Version gate — collection expressions are a C# 12.0 feature (binder/semantic); the PARSER accepts
+//     the form wherever the rule exists. Version purity comes from the rule being Cs12-only.
+//
+// T0.3 merge: re-declaring Primary APPENDS CollectionExpr to the Cs1 Primary (Cs1.grammar:719) — the same
+// pattern as Cs11 RawStringLiteral (Cs11.grammar:43-45). A collection expression STARTS with "[", which no
+// existing Primary alternative starts with (they start with a keyword / identifier / quote / digit / "("),
+// so CollectionExpr is the SOLE match for a "[" in primary position -> no equal-length tie. The "[" of the
+// PostfixOp Indexer (Cs1.grammar:776) is a POSTFIX op (requires a preceding primary), so it never competes
+// with a primary-position "[".
+//
+// CS12 only: at v<=11 the CollectionExpr alternative is ABSENT, so `[1, 2, 3]` matches no Primary
+// alternative and REJECTS.
+//
+// Boundary: the element list uses the default (Forbidden) trailing-separator behavior (like Cs1
+// ArrayInitializer, Cs1.grammar:802), so `[1, 2, 3,]` (Roslyn allowTrailingSeparator:true) is rejected — a
+// minor deviation, acceptable for the minimal task. Spread (`...x`) and with-element (`with(...)`)
+// collection elements are out of scope (expressions only).
+Primary =
+    | CollectionExpr = "[" (Expression; ",")* "]";
