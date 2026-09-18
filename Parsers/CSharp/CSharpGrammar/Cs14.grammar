@@ -1,0 +1,60 @@
+// Cs14.grammar — C# 14.0: extension container (T3.14.1).
+//
+// The `extension` container is a TYPE-LEVEL declaration that holds extension properties /
+// indexers / events / operators / fields. It has NO name (an identifier after `extension` is
+// ERR_ExtensionDisallowsName), an OPTIONAL type-parameter list, a REQUIRED parameter list (at
+// least one — Roslyn requireOneElement:true), optional `where` constraints, and a body:
+//   extension (this int x)
+//   {
+//       public static string ToHex() { return x.ToString("X"); }
+//   }
+//   (or: extension (this int x) ; )
+//
+// Roslyn refs (C:\RSDN\roslyn, main, src/Compilers/CSharp/Portable/Parser/LanguageParser.cs):
+//   * ParseMainTypeDeclaration (1789-1928): the common parser for class/struct/interface/record/
+//     extension. For `extension`: name = null (1811-1818); typeParameters = ParseTypeParameterList()
+//     (1824, optional); paramList = ParseParenthesizedParameterList(forExtensionOrUnion: true)
+//     (1827-1828, requireOneElement:true at 4851) — REQUIRED; baseList = null (1830);
+//     where-clauses (1839-1843); body `{ members* }` or `;` (1847-1914).
+//   * IsExtensionContainerStart (3396-3401): ExtensionKeyword + (feature enabled or `<` follows).
+//   * Dispatch: ParseMemberDeclaration -> IsExtensionContainerStart -> ParseMainTypeDeclaration
+//     (3261-3263); IsTypeDeclarationStart -> IsExtensionContainerStart (2501-2503);
+//     ParseTypeDeclaration -> IdentifierToken(ExtensionKeyword) -> ParseMainTypeDeclaration (1780-1782).
+//   * Version gate — the `extension` container is a C# 14.0 feature (MessageID.IDS_FeatureExtensions,
+//     MessageID.cs, C# 14 block). The PARSER accepts the form wherever the rule exists; version
+//     purity comes from the rule being Cs14-only (absent at v<=13).
+//
+// T0.3 merge: re-declaring TypeDeclaration APPENDS ExtensionDeclaration to the Cs1 union
+// (Cs1.grammar:27-32) — the same pattern as the Cs9 record (Cs9.grammar:59-60). `extension` is NOT
+// a reserved keyword, so the only rule that can match a declaration LEADING with `extension` followed
+// by `(` is ExtensionDeclaration: the Cs1 ClassDeclaration/StructDeclaration/... alternatives all
+// require a declaration keyword (class/struct/...) after optional attributes/modifiers, so they FAIL
+// on `extension` (no equal-length tie). At v<=13 the ExtensionDeclaration alternative is ABSENT, so
+// `extension ( ... )` matches no TypeDeclaration alternative and REJECTS (version purity).
+//
+// The parameter list reuses Cs1 Parameter (Cs1.grammar:472); the `this` parameter modifier is the
+// Cs3 feature (Cs3.grammar:245-251), present at v14. The body reuses Cs1 ClassBody
+// (Cs1.grammar:102). TypeParameterList (Cs2.grammar:51) and ConstraintClause (Cs2.grammar:107) are
+// reused for the optional type-parameter list and the optional `where` constraints.
+//
+// Meta-grammar note: `|` is not allowed inside a group (CsNitraParser.cs:103), so the
+// `( ClassBody | ";" )` body is the named union ExtensionBody (same workaround as Cs1 MethodBody).
+
+// === Type declaration union: APPEND ExtensionDeclaration (T0.3 merge, like the Cs9 record). ===
+TypeDeclaration =
+    | ExtensionDeclaration;
+
+// Extension container (C# 14.0). `extension` + optional type-parameter list + REQUIRED
+// parameter list (at least one) + optional `where` constraints + body (block or `;`).
+ExtensionDeclaration = "extension" TypeParameterList? ExtensionParameterList ConstraintClause* ExtensionBody;
+
+// The extension parameter list: "(" (Parameter,)+ ")" — comma-separated, at least one (Roslyn
+// requireOneElement:true). Mirrors Cs1 ParameterList (Cs1.grammar:465) = (Parameter; ",")+ wrapped in
+// parens. Reuses Cs1 Parameter (Cs1.grammar:472) (the `this` modifier is the Cs3 feature, Cs3.grammar:251).
+ExtensionParameterList = "(" (Parameter; ",")+ ")";
+
+// The extension body: a block (`{ members* }`, reusing Cs1 ClassBody) or `;`. Named union (the
+// meta-grammar forbids `|` inside a group, CsNitraParser.cs:103) — same workaround as Cs1 MethodBody.
+ExtensionBody =
+    | ClassBody
+    | ";";

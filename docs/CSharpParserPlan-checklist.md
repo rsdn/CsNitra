@@ -118,11 +118,13 @@ Plan: `docs/CSharpParserPlan.md`. One subagent per sub-point. Progress files: `d
   - [✅] T3.12.2 collection expressions `[]` → `Cs12.grammar` + тесты (Primary += CollectionExpr = [ (Expression,)* ]; sole match for [ in primary position)
   - [✅] T3.12.3 list patterns → `Cs12.grammar` + тесты (Pattern += ListPattern = [ (Pattern,)* ] и SlicePattern = .. Pattern?; list pattern — PATTERN, не Primary)
   - [✅] T3.12.4 `not`/`and`/`or` (pattern composition) → `Cs12.grammar` + тесты (RelationalPattern + DisjunctivePattern; ConjunctivePattern/NegatedPattern/PrimaryPattern/RelationalOperator; not highest, and middle, or lowest)
-- [~] T3.13 CS13: extension members, `field`, `event field`
+- [✅] T3.13 CS13: `field`, `event field` (extension members перенесены в T3.14 — это фича C# 14, не C# 13)
   - [✅] T3.13.1 `field` keyword (accessor body) + setup `Cs13.grammar` + version table + csproj → `Cs13.grammar` + тесты (FieldExpr = field, ReservedKeyword += field, expression-bodied accessors; setup: csproj + v13)
-  - [~] T3.13.2 `event field` → `Cs13.grammar` + тесты
-  - [ ] T3.13.3 extension members (`T.X`) → `Cs13.grammar` + тесты
-- [ ] T3.14 CS14: `ref`-поля + остаток фич по данным T1.1
+  - [✅] T3.13.2 `event field` → `Cs13.grammar` + тесты (EventTail += EventFieldInit = = Expression ;; три EventTail взаимно исключают друг друга по leading token)
+  - [→] T3.13.3 extension members → перенесено в T3.14.1 (это `extension` container, фича C# 14 по MessageID.cs:515)
+- [~] T3.14 CS14: `ref`-поля, extension members (`extension` container) + остаток фич по данным T1.1
+  - [~] T3.14.1 extension members (`extension` container) + setup `Cs14.grammar` + version table + csproj → `Cs14.grammar` + тесты
+  - [ ] T3.14.2 `ref`-поля → `Cs14.grammar` + тесты
 
 ## Этап 4 — Закаливание
 

@@ -29,6 +29,7 @@
         <EmbeddedResource Include="Cs11.grammar" />
         <EmbeddedResource Include="Cs12.grammar" />
         <EmbeddedResource Include="Cs13.grammar" />
+        <EmbeddedResource Include="Cs14.grammar" />
     </ItemGroup>
 
     <Import Project="..\..\..\Shared\Shared.projitems" Label="Shared" />
