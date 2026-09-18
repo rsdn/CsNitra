@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
-VisualStudioVersion = 18.9.12128.139 oobstable
+VisualStudioVersion = 18.9.12128.139
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ExtensibleParser", "ExtensibleParser\ExtensibleParser.csproj", "{DA07822B-4292-43D0-BF14-DBA54FFC042C}"
 EndProject
@@ -274,6 +274,7 @@ Global
 		Regex\Regex\Regex.Shared.projitems*{688dd31c-5c27-4fb9-851c-21de6a83e624}*SharedItemsImports = 5
 		Shared\Shared.projitems*{688dd31c-5c27-4fb9-851c-21de6a83e624}*SharedItemsImports = 5
 		Shared\Shared.projitems*{6d15c9fa-85b9-454c-bdd3-1023839374d4}*SharedItemsImports = 5
+		Shared\Shared.projitems*{888545a6-44f6-4b20-8a19-bacd8dace9c5}*SharedItemsImports = 5
 		Parsers\Dot\DotParser\DotParser.Shared.projitems*{909ea726-fd66-4857-94b9-587d2665b14d}*SharedItemsImports = 13
 		ExtensibleParser\ExtensibleParser.Shared.projitems*{b372bcfb-b1df-4fbf-8c65-2942920b5c57}*SharedItemsImports = 5
 		Parsers\Dot\DotParser\DotParser.Shared.projitems*{b372bcfb-b1df-4fbf-8c65-2942920b5c57}*SharedItemsImports = 5
