@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using ExtensibleParser;
 
@@ -165,6 +166,10 @@ public sealed class PreprocessorInterpreter(string source, IEnumerable<string> c
             case "Undef":
                 _stack.Undef(GetSymbolText(directive));
                 break;
+            case "LineDir":
+                if (_stack.IsActive)
+                    ProcessLineDirective(directive, directiveLine.StartPos);
+                break;
             default:
                 break;
         }
@@ -200,6 +205,102 @@ public sealed class PreprocessorInterpreter(string source, IEnumerable<string> c
         if (text.Length >= 2 && text[0] == '"' && text[^1] == '"')
             text = text[1..^1];
         return text.Length == 0 ? defaultMessage : text;
+    }
+
+    private void ProcessLineDirective(SeqNode directive, int directiveStartPos)
+    {
+        var lineEnd = directive.Elements.OfType<TerminalNode>().FirstOrDefault(t => t.Kind == "LineEnd");
+        var text = lineEnd?.ToString(source)?.Trim();
+        if (text is null)
+            return;
+
+        var originalLine = ComputeOriginalLine(source, directiveStartPos);
+        if (text == "default")
+        {
+            _lineDirectives.Add(new LineDirective(originalLine, null, null, LineDirectiveState.Default));
+            return;
+        }
+
+        if (text == "hidden")
+        {
+            _lineDirectives.Add(new LineDirective(originalLine, null, null, LineDirectiveState.Hidden));
+            return;
+        }
+
+        var tokens = TokenizeLineDirective(text);
+        if (tokens is null || tokens.Count == 0)
+            return;
+
+        if (!int.TryParse(tokens[0].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mappedLine))
+            return;
+
+        string? filePath = null;
+        var state = LineDirectiveState.Remapped;
+        for (var i = 1; i < tokens.Count; i++)
+        {
+            if (tokens[i].IsQuoted)
+            {
+                if (filePath is not null)
+                    return;
+                filePath = tokens[i].Value;
+            }
+            else if (tokens[i].Value == "hidden")
+            {
+                if (state == LineDirectiveState.Hidden)
+                    return;
+                state = LineDirectiveState.Hidden;
+            }
+            else
+                return;
+        }
+
+        _lineDirectives.Add(new LineDirective(originalLine, mappedLine, filePath, state));
+    }
+
+    // Splits #line arguments into tokens, keeping double-quoted strings whole (they may contain
+    // spaces). Returns null on an unterminated quote (malformed).
+    private static List<(string Value, bool IsQuoted)>? TokenizeLineDirective(string text)
+    {
+        var tokens = new List<(string Value, bool IsQuoted)>();
+        var i = 0;
+        while (i < text.Length)
+        {
+            var c = text[i];
+            if (char.IsWhiteSpace(c))
+            {
+                i++;
+                continue;
+            }
+
+            if (c == '"')
+            {
+                var j = i + 1;
+                while (j < text.Length && text[j] != '"')
+                    j++;
+                if (j >= text.Length)
+                    return null;
+                tokens.Add((text[(i + 1)..j], true));
+                i = j + 1;
+            }
+            else
+            {
+                var j = i;
+                while (j < text.Length && !char.IsWhiteSpace(text[j]) && text[j] != '"')
+                    j++;
+                tokens.Add((text[i..j], false));
+                i = j;
+            }
+        }
+        return tokens;
+    }
+
+    private static int ComputeOriginalLine(string source, int startPos)
+    {
+        var line = 1;
+        for (var i = 0; i < startPos; i++)
+            if (source[i] == '\n')
+                line++;
+        return line;
     }
 
     private bool EvaluateCondition(SeqNode directive)
