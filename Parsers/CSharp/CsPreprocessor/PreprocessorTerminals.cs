@@ -303,7 +303,7 @@ public static class PreprocessorTerminals
 
         private static int ParseExpressionLength(string input, int exprStart)
         {
-            var result = GetParser().Parser.Parse(input, ExpressionRule, out _, exprStart);
+            var result = GetParser().Parser.ParseSubRule(input, ExpressionRule, exprStart);
             return result.TryGetSuccess(out _, out var end) ? end - exprStart : -1;
         }
 

@@ -251,6 +251,24 @@ public partial class Parser(Terminal trivia, Log? log = null)
         return result;
     }
 
+    // Parses a single rule from startPos WITHOUT the recovery loop: resets the per-parse state
+    // (as Parse does) and returns the raw ParseRule result as-is. Use for sub-expression parsing where
+    // recovery to EOF is neither wanted nor correct (e.g. measuring a string literal's extent). Lives
+    // in the core (not the #if RECOVERY-gated Parser.Recovery.cs) so it works in both RECOVERY and
+    // no-recovery builds.
+    public Result ParseSubRule(string input, string rule, int startPos)
+    {
+        _debugInput = input;
+        ErrorInfo = null;
+        ErrorPos = startPos;
+        _memo.Clear();
+        _terminalCache.Clear();
+        _firstCache.Clear();
+        ClearInjections();
+        SetMaxParseDepth(input.Length);
+        return ParseRule(rule, minPrecedence: 0, startPos, input);
+    }
+
     private Result ParseRule(
         string ruleName,
         int minPrecedence,
