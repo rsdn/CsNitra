@@ -30,6 +30,7 @@ public static class RecoveryEngine
             if (snapshot is not null)
             {
                 GenerateS1(e, snapshot, input, parser, candidates);
+                GenerateS1b(e, snapshot, input, parser, candidates);
                 GenerateS2(e, snapshot, input, parser, candidates);
                 GenerateS3(e, snapshot, input, parser, candidates);
                 GenerateS4(e, snapshot, input, parser, candidates);
@@ -108,6 +109,45 @@ public static class RecoveryEngine
                 Apply: apply,
                 Rollback: rollback,
                 Diagnostics: [new RecoveryDiagnostic(e, e, RecoveryKind.Inserted, $"expected {t.Kind}, found {Preview(input, e)}", t, ruleName)]));
+        }
+    }
+
+    // S1b: single-token deletion — абсорбер [e..e+len) первого non-trivia терминала после e, совпадающего
+    // с ожидаемым (удалить лишний токен, а не вставлять ожидаемый). len = pos - e, pos = e + 1 + triviaLen
+    // (НЕ maximal non-trivia run). Ранг 1; при равных ключах сортировки S1 выигрывает тай-брейк по стабильности.
+    private static void GenerateS1b(int e, FailureSnapshot snapshot, string input, Parser parser, List<RecoveryCandidate> candidates)
+    {
+        var triviaLen = parser.Trivia.TryMatch(input, e + 1);
+        var pos = e + 1 + triviaLen;
+        if (pos >= input.Length)
+            return;
+
+        var len = pos - e;
+        var top = snapshot.Stack[^1];
+        var ruleName = top.RuleName;
+
+        foreach (var t in snapshot.Expected)
+        {
+            if (t is not EofTerminal and not EpsilonTerminal && t.TryMatch(input, pos) >= 0)
+            {
+                var key = (e, t);
+                var hadOld = parser.Injections.TryGetValue(key, out var old);
+                var injection = Injection.Absorb(t.Kind, len);
+                Action<Parser> apply = p => p.ApplyInjection(t, e, injection);
+                Action<Parser> rollback = p => p.RollbackInjection(t, e, hadOld ? old : null);
+
+                candidates.Add(new RecoveryCandidate(
+                    Id: $"S1b:{ruleName}:{t.Kind}",
+                    Rank: 1,
+                    Pos: e,
+                    Cost: CostCalculator.SkipCost(input, e, e + len),
+                    RuleName: ruleName,
+                    TerminalKind: t.Kind,
+                    Apply: apply,
+                    Rollback: rollback,
+                    Diagnostics: [new RecoveryDiagnostic(e, e + len, RecoveryKind.Extraneous, $"extraneous token, expected {t.Kind}", t, ruleName)]));
+                return;
+            }
         }
     }
 
