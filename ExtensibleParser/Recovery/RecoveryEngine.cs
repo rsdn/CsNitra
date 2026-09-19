@@ -152,17 +152,14 @@ public static class RecoveryEngine
             return;
 
         var scratch = CreateScratchParser(parser);
-        var specCache = new Dictionary<(string Rule, int Pos), (bool Ok, int EndPos)>();
 
         (bool Ok, int EndPos) Speculative(string ruleName, int pos)
-        {
-            var key = (ruleName, pos);
-            if (specCache.TryGetValue(key, out var cached))
-                return cached;
-            var specResult = scratch.ParseRuleOnce(ruleName, 0, pos, input);
-            var success = specResult.TryGetSuccess(out _, out var end);
-            return specCache[key] = (success, success ? end : -1);
-        }
+            => parser.SpecCache.Speculative(ruleName, pos, () =>
+            {
+                var specResult = scratch.ParseRuleOnce(ruleName, 0, pos, input);
+                var success = specResult.TryGetSuccess(out _, out var end);
+                return (success, success ? end : -1);
+            });
 
         bool FirstMatchesAt(Ref refRule, int pos)
         {

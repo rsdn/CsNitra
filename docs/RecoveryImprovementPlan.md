@@ -158,7 +158,7 @@ Stop-if: поле `_specCache` уже существует; правка тре�
 Цель: `GenerateS2` читает/пишет общий кэш `Parser`, а не локальный.
 ДО: `GenerateS2` создаёт локальный `specCache` (:155); `Speculative`-локалка (:157-165) читает/пишет его; локальный кэш умирает с вызовом.
 ПОСЛЕ: локальный `specCache` удалён; `Speculative`-локалка = `parser.SpecCache.Speculative(ruleName, pos, () => { var r = scratch.ParseRuleOnce(ruleName, 0, pos, input); var ok = r.TryGetSuccess(out _, out var end); return (ok, ok ? end : -1); });`. `scratch` остаётся локальным (как было).
-Тест: `SpecCacheSharedTests` — грамматика `TierBudgetTests` (`Module := '{' ZeroOrMany(Stmt) '}'`, `Stmt := Ident ':' Expr ';'`, `Expr` — TDOPP с шестью операторами), вход `"{ a: 1+ ### ; }"`; после `Parse` `parser.SpecCacheMisses > 0` (до правки локальный кэш не инкрементит обёртку → 0 → тест падает; после → проходит).
+Тест: `SpecCacheSharedTests` — грамматика `TierBudgetTests` (`Module := '{' ZeroOrMany(Stmt) '}'`, `Stmt := Ident ':' Expr ';'`, `Expr` — TDOPP с шестью операторами), вход `"{ a: 1+ ### b ; }"` (Ident `b` после мусора — иначе `First(Stmt)` не совпадает со сканом и `Speculative` не вызывается, выигрывает S3); после `Parse` `parser.SpecCacheMisses > 0` (до правки локальный кэш не инкрементит обёртку → 0 → тест падает; после → проходит).
 Stop-if: правка требует второго продакшн-файла; изменилась сигнатура `Generate`; новый failed-тест не по подзадаче (регресс S1–S6).
 НЕ делать: не менять `CreateScratchParser`, `ParseRuleOnce`, precedence зонда (=0), `HygieneCore`, `ApplyPatches`, `RollbackPatches`, `PatchMemo`, S1–S6 кроме точки чтения; не трогать `.csproj`; не коммитить.
 Зависит от: 5a.1.2.
