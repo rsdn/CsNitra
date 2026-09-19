@@ -40,6 +40,10 @@ public partial class Parser
     // Инкремент — в RecoveryEngine (5a.2.3); сброс — в начале Recover.
     public int S3ScanPositions { get; private set; }
 
+    // Note-методы (5a.2.1a): публичные точки инкремента для движка (у счётчиков private set).
+    public void NoteS2ScanPosition() => S2ScanPositions++;
+    public void NoteS3ScanPosition() => S3ScanPositions++;
+
     // B2: кэш спекулятивных парсов (обёртка SpeculativeCache) + D2-счётчики хитов/промахов (read-only,
     // читаются из обёртки). Время жизни кэша — один Recover; сброс (кэш + счётчики) — в начале Recover.
     public SpeculativeCache SpecCache => _specCache;
