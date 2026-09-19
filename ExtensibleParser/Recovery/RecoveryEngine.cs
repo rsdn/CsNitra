@@ -427,6 +427,8 @@ public static class RecoveryEngine
 
         for (var s = e + 1; s <= maxS; s++)
         {
+            parser.NoteS3ScanPosition();
+
             switch (input[s - 1])
             {
                 case '{': curly++; break;
@@ -435,6 +437,18 @@ public static class RecoveryEngine
                 case ')': if (paren > 0) paren--; break;
                 case '[': bracket++; break;
                 case ']': if (bracket > 0) bracket--; break;
+            }
+
+            var triviaLen = parser.Trivia.TryMatch(input, s);
+            if (triviaLen > 0)
+            {
+                // 5a.2.3 (решение (б)): trivia-бег [s..s+triviaLen) (включая // и /* */) не содержит
+                // терминаторов — пропуск. Прыжок ПОСЛЕ switch: input[s-1] (могла быть скобка) уже
+                // учтена в curly/paren/bracket. Скобки внутри бег'а (напр. в /* ... */) больше не
+                // учитываются — парсер сам их игнорирует. Инкремент цикла s++ после s += triviaLen - 1
+                // ставит скан ровно на s + triviaLen (первую non-trivia позицию).
+                s += triviaLen - 1;
+                continue;
             }
 
             foreach (var (t, _, _) in ordered)

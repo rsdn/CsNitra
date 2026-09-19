@@ -1,4 +1,4 @@
-#if RECOVERY
+﻿#if RECOVERY
 
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
