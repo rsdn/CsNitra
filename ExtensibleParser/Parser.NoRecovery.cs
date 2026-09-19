@@ -19,6 +19,8 @@ public partial class Parser
     private partial bool IsRecoveryPosition(int pos) => false;
     private partial bool SuppressSideEffects => false;
     private partial void ResetRecoveryPoint() { }
+    private partial bool InQuietZone(int pos) => false;
+    public IReadOnlyList<RecoveryDiagnostic> RecoveryDiagnostics => [];
     private partial Result Recover(string input, string startRule, int currentStartPos) => ParseRule(startRule, minPrecedence: 0, startPos: currentStartPos, input);
     private partial Result Speculative(Func<Result> parse)
     {
