@@ -326,9 +326,22 @@ public partial class Parser
                 var next = ParseRule(startRule, minPrecedence: 0, startPos: currentStartPos, input);
                 var e2 = RecoveryPointOf(next, input);
 
+                // 1.3.4: S6 (ранг 6) — дно, а не восстановление: ошибка в точке e не «починена», а лишь
+                // поглощена до EOF (абсорбер). Отчёт и продолжение (A4-2): отметка Unrecovered в точке
+                // восстановления e. Gate — candidate.Rank == 6 (S6 — принятый кандидат): цикл пробует
+                // кандидатов по порядку и выходит при первом дающем прогресс, поэтому если принят S6 —
+                // ни один ремонтный (S0–S5) прогресса не дал. НЕ бюджетная эвристика (attempts.Count).
+                void AddUnrecoveredIfS6()
+                {
+                    if (candidate.Rank != 6)
+                        return;
+                    _recoveryDiagnostics.Add(new RecoveryDiagnostic(e, e, RecoveryKind.Unrecovered, $"error at {e} not recovered (absorbed to EOF)", null, startRule));
+                }
+
                 if (next.TryGetSuccess(out _, out var end2) && end2 == input.Length)
                 {
                     _recoveryDiagnostics.AddRange(candidate.Diagnostics);
+                    AddUnrecoveredIfS6();
                     result = next;
                     recoveredThisIteration = true;
                     return true; // полностью восстановлено
@@ -336,6 +349,7 @@ public partial class Parser
                 if (e2 > e)
                 {
                     _recoveryDiagnostics.AddRange(candidate.Diagnostics);
+                    AddUnrecoveredIfS6();
                     result = next;
                     recoveredThisIteration = true;
                     return true; // I1: прогресс — к следующему итеративному проходу
