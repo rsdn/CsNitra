@@ -281,6 +281,17 @@ public static class RecoveryEngine
         var foundT1 = false;
         for (var s = e; s <= maxS && !foundT1; s++)
         {
+            parser.NoteS2ScanPosition();
+            var triviaLen = parser.Trivia.TryMatch(input, s);
+            if (triviaLen > 0)
+            {
+                // 5a.2.2: trivia-бег [s..s+triviaLen) не содержит First-совпадений — пропуск.
+                // Инкремент цикла s++ после s += triviaLen - 1 ставит скан ровно на s + triviaLen
+                // (первую non-trivia позицию).
+                s += triviaLen - 1;
+                continue;
+            }
+
             foreach (var anchor in anchors)
             {
                 if (!FirstMatchesAt(anchor, s))
