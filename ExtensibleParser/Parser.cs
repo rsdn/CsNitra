@@ -80,6 +80,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
     private partial bool IsRecoveryPosition(int pos);
     private partial bool SuppressSideEffects { get; }
     private partial void ResetRecoveryPoint();
+    private partial bool InQuietZone(int pos);
     private partial Terminal[] ExpectedFor(Rule element);
     private partial RecoveryOptions? OptionsFor(Rule rule);
     private partial RecoveryOptions? OftenMissedOptionsFor(Rule element);

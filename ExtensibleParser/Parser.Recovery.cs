@@ -13,6 +13,7 @@ using ExtensibleParser.Recovery;
 public partial class Parser
 {
     private int _recoveryPoint = -1;
+    private int _quietZoneEnd = -1;
     private FailureSnapshot? _lastSnapshot;
     private bool _suppressSideEffects;
     public FailureSnapshot? LastSnapshot => _lastSnapshot;
@@ -151,6 +152,7 @@ public partial class Parser
     private partial void OnInjectionApplied((int Pos, Terminal Terminal) key) => RecordInjection(key);
     private partial void OnPartialCaptured(Result partialResult) => _lastPartial = partialResult;
     private partial bool IsRecoveryPosition(int pos) => pos == _recoveryPoint;
+    private partial bool InQuietZone(int pos) => _quietZoneEnd >= 0 && pos <= _quietZoneEnd;
     private partial bool SuppressSideEffects => _suppressSideEffects;
     private partial void ResetRecoveryPoint() => _recoveryPoint = -1;
 
@@ -305,6 +307,7 @@ public partial class Parser
         S3ScanPositions = 0;
         _specCache.Reset();
         _recoveryPoint = -1;
+        _quietZoneEnd = -1;
         _lastSnapshot = null;
         _lastPartial = null;
         _suppressSideEffects = false;
@@ -401,6 +404,7 @@ public partial class Parser
                     _recoveryDiagnostics.AddRange(candidate.Diagnostics);
                     AddUnrecoveredIfS6();
                     result = next;
+                    _quietZoneEnd = e;
                     recoveredThisIteration = true;
                     return true; // полностью восстановлено
                 }
@@ -409,6 +413,7 @@ public partial class Parser
                     _recoveryDiagnostics.AddRange(candidate.Diagnostics);
                     AddUnrecoveredIfS6();
                     result = next;
+                    _quietZoneEnd = e;
                     recoveredThisIteration = true;
                     return true; // I1: прогресс — к следующему итеративному проходу
                 }
