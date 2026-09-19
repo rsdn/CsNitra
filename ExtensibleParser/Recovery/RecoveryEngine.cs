@@ -702,9 +702,13 @@ public static class RecoveryEngine
             && prefixResult.TryGetSuccess(out var pn, out _)
                 ? pn
                 : null;
-        var node = prefixNode is { } prefix
-            ? new SeqNode(startRule, [prefix, absorber], currentStartPos, s)
-            : new SeqNode(startRule, [absorber], parseEnd, s);
+        ISyntaxNode node = prefixNode switch
+        {
+            SeqNode seq => new SeqNode(seq.Kind, [.. seq.RawElements, absorber], currentStartPos, s),
+            ListNode list => new ListNode(list.Kind, [.. list.RawElements, absorber], list.Delimiters, currentStartPos, s, list.HasTrailingSeparator, list.IsRecovery),
+            TerminalNode terminal => new SomeNode(terminal.Kind, terminal, currentStartPos, s),
+            _ => absorber
+        };
         // MaxFailPos = 0: чтобы IsRecoveryPosition(MaxFailPos) == false при e == S (иначе memo отклоняется).
         var value = Result.Success(node, s, 0);
         var olds = CaptureMemo(parser, startRule, currentStartPos);
