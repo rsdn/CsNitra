@@ -15,24 +15,33 @@ public static class RecoveryEngine
     {
         var candidates = new List<RecoveryCandidate>();
 
-        // §3.9: failure inside a strict context (a frame with Recoverable=false) — no repair candidates at all
-        // (S1..S6): the region cannot be soundly fixed, so the parse fails hard (единственный выход FatalError, C1).
-        if (snapshot is not null && snapshot.Stack.Any(f => f.Options is { Recoverable: false }))
-            return candidates;
+        // §3.9: failure inside a strict context (a frame with Recoverable=false) — the repair candidates
+        // S1..S5 are suppressed (the region cannot be soundly fixed), but S6 (the guaranteed floor) is still
+        // emitted so the IDE profile always reaches EOF (C1: "strict ⇒ only S6").
+        var strict = snapshot is not null && snapshot.Stack.Any(f => f.Options is { Recoverable: false });
 
-        if (snapshot is not null)
+        if (strict)
         {
-            GenerateS1(e, snapshot, input, parser, candidates);
-            GenerateS2(e, snapshot, input, parser, candidates);
-            GenerateS3(e, snapshot, input, parser, candidates);
-            GenerateS4(e, snapshot, input, parser, candidates);
+            // S1..S5 intentionally suppressed: the strict region cannot be soundly repaired (C1).
+            // Only S6 (below) is emitted, so the parse still reaches EOF.
+        }
+        else
+        {
+            if (snapshot is not null)
+            {
+                GenerateS1(e, snapshot, input, parser, candidates);
+                GenerateS2(e, snapshot, input, parser, candidates);
+                GenerateS3(e, snapshot, input, parser, candidates);
+                GenerateS4(e, snapshot, input, parser, candidates);
+            }
+
+            if (resultKind == Result.Kind.Success && e < input.Length)
+                GenerateS5(e, snapshot, input, parser, candidates);
         }
 
-        if (resultKind == Result.Kind.Success && e < input.Length)
-            GenerateS5(e, snapshot, input, parser, candidates);
-
         // S6 — гарантированное дно (A1/A5-7): при parseEnd < EOF (фактический хвостовой мусор),
-        // включая snapshot == null. parseEnd (не e) — чтобы ErrorPos на EOF не блокировал генерацию.
+        // включая snapshot == null и strict-регион (C1). parseEnd (не e) — чтобы ErrorPos на EOF не
+        // блокировал генерацию.
         if (parseEnd < input.Length)
             GenerateS6(e, parseEnd, snapshot, input, parser, startRule, currentStartPos, candidates);
 
@@ -691,13 +700,16 @@ public static class RecoveryEngine
         }
 
         var cost = CostCalculator.SkipCost(input, e, s);
-        var diagnostic = new RecoveryDiagnostic(e, s, RecoveryKind.Skipped, $"bottom skip to {s}", foundT, startRule);
+        // Абсорбер покрывает текущий регион начиная с currentStartPos (не от нуля файла):
+        // start = Math.Max(parseEnd, currentStartPos). В Failure-случае (parseEnd = 0) — это currentStartPos.
+        var start = Math.Max(parseEnd, currentStartPos);
+        var diagnostic = new RecoveryDiagnostic(start, s, RecoveryKind.Skipped, $"bottom skip to {s}", foundT, startRule);
 
         // Гарантированное дно: memo-патч start-правила на currentStartPos — Success@S,
-        // обёртывающий реальный префикс + абсорбер [e..S). Ре-парс читает этот memo на первом
+        // обёртывающий реальный префикс + абсорбер [start..S). Ре-парс читает этот memo на первом
         // шаге → Success@S. SetMemo (явный прецедент 0) — устойчив к trivia-сдвигу и отсутствию
         // memo на currentStartPos; порядок Hygiene→Apply в ApplyPatches сохраняет патч (A1).
-        var absorber = new TerminalNode("Skipped", parseEnd, s, s - parseEnd, IsRecovery: true, IsAbsorber: true);
+        var absorber = new TerminalNode("Skipped", start, s, s - start, IsRecovery: true, IsAbsorber: true);
         var prefixNode = parser.Memo.TryGetValue((currentStartPos, startRule, 0), out var prefixResult)
             && prefixResult.TryGetSuccess(out var pn, out _)
                 ? pn

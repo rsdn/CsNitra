@@ -98,7 +98,7 @@ public sealed class S6BottomTests
     // ============ ������� ������ (Recoverable:false): S6 �� ������������ (C1) ============
     // ������ � ������ Recoverable=false > Generate ���������� ������ ������ (�� S1..S4, �� S5, �� S6).
     [TestMethod]
-    public void Test_S6_Not_Generated_In_Strict_Region()
+    public void Test_S6_Only_Generated_In_Strict_Region()
     {
         var parser = new Parser(S6Terminals.Trivia());
         var strictLiteral = new RecoveryRule(new Literal("42"), new RecoveryOptions { Recoverable = false });
@@ -113,10 +113,16 @@ public sealed class S6BottomTests
         var e = snapshot!.Pos;
         Assert.IsTrue(snapshot.Stack.Any(f => f.Options is { Recoverable: false }), "expected a strict frame in the snapshot");
 
+        // strict + parseEnd < EOF: S1..S5 suppressed, exactly one candidate — S6 (C1).
         var candidates = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Failure, "Module", 0, e);
+        Assert.IsTrue(
+            candidates.All(c => c.Rank == 6),
+            $"strict region must yield only S6, got ranks [{string.Join(",", candidates.Select(c => c.Rank))}]");
+        Assert.AreEqual(1, candidates.Count, "strict region with parseEnd < EOF must yield exactly one candidate (S6)");
 
-        Assert.AreEqual(0, candidates.Count, "strict region must yield no candidates (S6 included)");
-        Assert.IsFalse(candidates.Any(x => x.Rank == 6));
+        // strict + parseEnd == EOF: no trailing region to absorb, so no candidates at all.
+        var atEof = RecoveryEngine.Generate(e, snapshot, input, parser, Result.Kind.Failure, "Module", 0, input.Length);
+        Assert.AreEqual(0, atEof.Count, "strict region at EOF must yield no candidates");
     }
 
     // ============ A5-7: регион > 1000 символов -> дно работает (S6 без MaxSkip) ============

@@ -42,12 +42,13 @@ public class InterpolatedStringTests
     }
 
     [TestMethod]
-    public void Regular_InvalidFragments_Reject()
+    public void Regular_InvalidFragments_Recover()
     {
-        AssertFails("$\"}\"", Regular);
-        AssertFails("$\"{a\"", Regular);
-        AssertFails("$\"abc", Regular);
-        AssertFails("$\"{x:{}}\"", Regular);
+        // S6 bottom (Wave 1): these invalid fragments recover to Success@EOF with a recovery diagnostic.
+        AssertRecoversWithEnd("$\"}\"", Regular);
+        AssertRecoversWithEnd("$\"{a\"", Regular);
+        AssertRecoversWithEnd("$\"abc", Regular);
+        AssertRecoversWithEnd("$\"{x:{}}\"", Regular);
     }
 
     [TestMethod]
@@ -73,11 +74,12 @@ public class InterpolatedStringTests
     }
 
     [TestMethod]
-    public void Verbatim_InvalidFragments_Reject()
+    public void Verbatim_InvalidFragments_Recover()
     {
-        AssertFails("$@\"{x\"", Verbatim);
-        AssertFails("$@\"}\"", Verbatim);
-        AssertFails("$@\"a", Verbatim);
+        // S6 bottom (Wave 1): these invalid fragments recover to Success@EOF with a recovery diagnostic.
+        AssertRecoversWithEnd("$@\"{x\"", Verbatim);
+        AssertRecoversWithEnd("$@\"}\"", Verbatim);
+        AssertRecoversWithEnd("$@\"a", Verbatim);
     }
 
     [TestMethod]
@@ -93,13 +95,13 @@ public class InterpolatedStringTests
     }
 
     [TestMethod]
-    public void Raw1_InvalidFragments_Reject()
+    public void Raw1_InvalidFragments_Recover()
     {
-        // S6 bottom (Wave 1): a trailing quote after a closed hole is absorbed, so this fragment
-        // recovers to Success@EOF with a recovery diagnostic instead of being rejected.
+        // S6 bottom (Wave 1 / C1): in a strict raw-string region S6 (the guaranteed floor) still fires,
+        // so every invalid fragment recovers to Success@EOF with a recovery diagnostic.
         AssertRecoversWithEnd("$\"\"\"{x}\"\"\"\"", Raw);
-        AssertFails("$\"\"\"{{x}}\"\"\"\"", Raw);
-        AssertFails("$\"\"\"{x\"\"\"\"", Raw);
+        AssertRecoversWithEnd("$\"\"\"{{x}}\"\"\"\"", Raw);
+        AssertRecoversWithEnd("$\"\"\"{x\"\"\"\"", Raw);
     }
 
     [TestMethod]
@@ -112,11 +114,11 @@ public class InterpolatedStringTests
     }
 
     [TestMethod]
-    public void Raw2_InvalidFragments_Reject()
+    public void Raw2_InvalidFragments_Recover()
     {
-        AssertFails("$$\"\"\"{{{{x}}}}\"\"\"", Raw);
-        AssertFails("$$\"\"\"{{x}\"\"\"", Raw);
-        AssertFails("$$\"\"\"{x}}\"\"\"", Raw);
+        AssertRecoversWithEnd("$$\"\"\"{{{{x}}}}\"\"\"", Raw);
+        AssertRecoversWithEnd("$$\"\"\"{{x}\"\"\"", Raw);
+        AssertRecoversWithEnd("$$\"\"\"{x}}\"\"\"", Raw);
     }
 
     [TestMethod]
@@ -131,12 +133,12 @@ public class InterpolatedStringTests
     }
 
     [TestMethod]
-    public void Raw3_InvalidFragments_Reject()
+    public void Raw3_InvalidFragments_Recover()
     {
-        AssertFails("$$$\"\"\"{{{{{{x}}}}}}\"\"\"", Raw);
-        AssertFails("$$$\"\"\"{{{x}}\"\"\"", Raw);
+        AssertRecoversWithEnd("$$$\"\"\"{{{{{{x}}}}}}\"\"\"", Raw);
+        AssertRecoversWithEnd("$$$\"\"\"{{{x}}\"\"\"", Raw);
         // Закрывающий ран 6 = 2D → CS9007 (дыра закрывается ровно D, остаток ран ≥ D в контенте).
-        AssertFails("$$$\"\"\"..{{{{{43}}}}}}..\"\"\"", Raw);
+        AssertRecoversWithEnd("$$$\"\"\"..{{{{{43}}}}}}..\"\"\"", Raw);
     }
 
     // D>=4: was impossible before parameterization (only D=1,2,3 existed as separate rules).
@@ -155,14 +157,14 @@ public class InterpolatedStringTests
     }
 
     [TestMethod]
-    public void Raw4Plus_InvalidFragments_Reject()
+    public void Raw4Plus_InvalidFragments_Recover()
     {
         // D=4: K=8 >= 2D (CS9006)
-        AssertFails("$$$$\"\"\"{{{{{{{{x}}}}}}}}\"\"\"", Raw);
+        AssertRecoversWithEnd("$$$$\"\"\"{{{{{{{{x}}}}}}}}\"\"\"", Raw);
         // D=4: закрывающий M=8 = 2D → дыра (4) + ран 4 = D в контенте (CS9007)
-        AssertFails("$$$$\"\"\"{{{{x}}}}}}}}\"\"\"", Raw);
+        AssertRecoversWithEnd("$$$$\"\"\"{{{{x}}}}}}}}\"\"\"", Raw);
         // D=5: K=5 = D => дыра, но закрывающий M=2 < D (CS9005)
-        AssertFails("$$$$$\"\"\"{{{{{x}}}\"\"\"", Raw);
+        AssertRecoversWithEnd("$$$$$\"\"\"{{{{{x}}}\"\"\"", Raw);
     }
 
     // Nested context scopes: a raw string with its own dollar depth inside a hole.
@@ -213,17 +215,6 @@ public class InterpolatedStringTests
         Assert.IsTrue(
             success,
             $"Expected {startRule} to fully parse «{Escape(input)}» (end={end}/{input.Length}, errorPos={parser.Parser.ErrorPos})");
-    }
-
-    private static void AssertFails(string input, string startRule)
-    {
-        var parser = CreateParser();
-        var result = parser.Parse(input, startRule, out _);
-        var success = result.TryGetSuccess(out _, out var end) && end == input.Length && parser.Parser.ErrorInfo is null;
-
-        Assert.IsFalse(
-            success,
-            $"Expected {startRule} to reject «{Escape(input)}» (end={end}/{input.Length})");
     }
 
     private static void AssertRecoversWithEnd(string input, string startRule)

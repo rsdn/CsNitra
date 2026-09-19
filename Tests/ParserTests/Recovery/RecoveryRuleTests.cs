@@ -282,7 +282,8 @@ public sealed class RecoveryRuleTests
         return parser;
     }
 
-    // (а) ε-принятие выключено: вход, восстанавливавшийся через RecoveryRule-ε, больше не восстанавливается.
+    // (а) ε-принятие выключено: Recoverable=false не принимает ε-совпадение (операнд НЕ восстанавливается
+    // через ε-вставку), но EOF всё равно достигается гарантированным дном S6 (абсорбер Kind "Skipped").
     [TestMethod]
     public void Test_Recoverable_False_Disables_Epsilon_Acceptance()
     {
@@ -291,11 +292,39 @@ public sealed class RecoveryRuleTests
         var ok = NewOperandGrammar(recoverable: true).Parse(input, "Module", out _);
         Assert.IsTrue(ok.TryGetSuccess(out _, out var endOk) && endOk == input.Length,
             "Recoverable=true should recover the missing operand via the ε-match");
+        var okNode = NodeOf(ok);
+        Assert.IsTrue(okNode is not null && HasEpsilonOperand(okNode),
+            "Recoverable=true: the tree must contain the ε-insertion operand (recovered via the ε-match, not S6)");
 
         var strict = NewOperandGrammar(recoverable: false).Parse(input, "Module", out _);
-        Assert.IsFalse(strict.TryGetSuccess(out _, out var endStrict) && endStrict == input.Length,
-            "Recoverable=false must not accept the ε-match (the missing operand is not recovered)");
+        var strictNode = NodeOf(strict);
+        Assert.IsTrue(strict.TryGetSuccess(out _, out var endStrict) && endStrict == input.Length,
+            "Recoverable=false: the parse must still reach EOF via the S6 guaranteed bottom");
+        Assert.IsFalse(strictNode is not null && HasEpsilonOperand(strictNode),
+            "Recoverable=false must not accept the ε-match (no ε-insertion operand node in the tree)");
+        Assert.IsTrue(strictNode is not null && HasAbsorber(strictNode),
+            "Recoverable=false: the EOF is reached via the S6 absorber (Kind \"Skipped\"), not the ε-match");
     }
+
+    // ε-операнд (вставка): нулевой IsRecovery-терминал, не абсорбер — результат ε-принятия Error-правила.
+    private static bool HasEpsilonOperand(ISyntaxNode node) => node switch
+    {
+        TerminalNode t => t.IsRecovery && !t.IsAbsorber && t.ContentLength == 0,
+        SeqNode s => s.RawElements.Any(HasEpsilonOperand),
+        ListNode l => l.RawElements.Any(HasEpsilonOperand) || l.Delimiters.Any(HasEpsilonOperand),
+        SomeNode o => HasEpsilonOperand(o.Value),
+        _ => false
+    };
+
+    // S6-абсорбер: IsAbsorber-терминал (Kind "Skipped"), покрывающий пропущенный текст — гарантированное дно.
+    private static bool HasAbsorber(ISyntaxNode node) => node switch
+    {
+        TerminalNode t => t.IsAbsorber,
+        SeqNode s => s.RawElements.Any(HasAbsorber),
+        ListNode l => l.RawElements.Any(HasAbsorber) || l.Delimiters.Any(HasAbsorber),
+        SomeNode o => HasAbsorber(o.Value),
+        _ => false
+    };
 
     // (б) опции кадра с Recoverable=false игнорируются engine'ом: TryInsert не генерирует кандидата.
     [TestMethod]
