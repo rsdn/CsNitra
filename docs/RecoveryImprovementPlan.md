@@ -251,7 +251,17 @@ Stop-if: правка требует второго продакшн-файла;
 Не делать: не трогать S1/S3/S4/S5/S6, `SpeculativeCache`, `CreateScratchParser`/`ParseRuleOnce`, `HygieneCore`/`ApplyPatches`/`RollbackPatches`/`PatchMemo`, сигнатуру `Generate`, `.csproj`; не коммитить.
 Зависит от: 5a.2.2.
 
-**Порядок:** счётчики (инфраструктура) → Note-методы (5a.2.1a) → S2-счётчик+trivia → S3-счётчик+trivia → S2-IndexOf (опирается на trivia-базу из 5a.2.2). S2-trivia и S3-trivia независимы (разные сканы). Планка: 351/0/2 + ровно новые тесты подзадачи. Прогресс — `docs/RecoveryImprovementPlan-progress5a.2.md`.
+### 5a.2.4a: IndexOf jump — только при чисто multi-char Literal First
+Файлы: `ExtensibleParser/Recovery/RecoveryEngine.cs`; `Tests/ParserTests/Recovery/S2IndexOfTests.cs`
+Цель: `break` в min-IndexOf (5a.2.4) теряет regex/single-char совпадения для mixed-First якорей. Включать jump только если **все** anchors/canStart имеют **чисто** multi-char `Literal` First-множество (без regex и single-char `Literal`).
+ДО: `jumpLiterals` собирается из всех multi-char `Literal` в First-множествах; если хоть один якорь имеет mixed-First (regex или single-char `Literal`), jump всё равно активен — `break` и прыжок теряют regex/single-char совпадения.
+ПОСЛЕ: при сборке `jumpLiterals` — если встретился терминал, который **не** multi-char `Literal` (regex, single-char `Literal`, `Ref` и т.д.) — `jumpSafe = false`. Если `!jumpSafe` — `jumpLiterals.Clear()` (jump отключён, поведение как до 5a.2.4). Логика jump в цикле не меняется (пустое множество → jump не выполняется).
+Тест: `S2IndexOfTests` — добавить третий тест: mixed-First якорь (напр. `Stmt := Alt(Literal("let"), Ident) ':' Expr ';'` — First(Stmt) = {Literal("let"), Ident(regex)}). Ассерт: resync-позиция та же, что без jump (mixed-First → jump отключён → пошаговый проход). До правки (5a.2.4 без 5a.2.4a): jump активен на `Literal("let")`, `break` теряет `Ident`-совпадения → resync-позиция меняется. После правки (5a.2.4a): jump отключён → resync-позиция та же.
+Стоп-если: правка требует второго продакшн-файла; resync-позиция изменилась; новый failed-тест не по подзадаче.
+Не делать: не трогать S1/S3/S4/S5/S6, `SpeculativeCache`, `CreateScratchParser`/`ParseRuleOnce`, `HygieneCore`/`ApplyPatches`/`RollbackPatches`/`PatchMemo`, сигнатуру `Generate`, `.csproj`; не коммитить.
+Зависит от: 5a.2.4.
+
+**Порядок:** счётчики (инфраструктура) → Note-методы (5a.2.1a) → S2-счётчик+trivia → S3-счётчик+trivia → S2-IndexOf (опирается на trivia-базу из 5a.2.2) → S2-IndexOf safety (5a.2.4a: чисто multi-char Literal First). S2-trivia и S3-trivia независимы (разные сканы). Планка: 351/0/2 + ровно новые тесты подзадачи. Прогресс — `docs/RecoveryImprovementPlan-progress5a.2.md`.
 
 **Критерий волны:** на D1-корпусе: меньше итераций и попыток на точку (D2), «expecting»
 сообщения точнее (ручная проверка по сценариям), TDOPP-регрессии отсутствуют.
