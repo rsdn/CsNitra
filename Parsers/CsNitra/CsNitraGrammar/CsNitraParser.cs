@@ -144,7 +144,7 @@ public partial class CsNitraParser
         if (_parser.ErrorInfo is { } errorInfo)
             return new Failed(errorInfo);
 
-        if (!result.TryGetSuccess(out var node, out _))
+        if (!result.TryGetSuccess(out var node, out _) && !result.TryGetPartial(out node, out _))
             throw new InvalidOperationException("Failed to parse");
 
         var visitor = new CsNitraVisitor(input);
