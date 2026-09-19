@@ -37,7 +37,7 @@ Status: `[ ]` not started · `[~]` in progress (exactly one) · `[✅]` done · 
 
 ## Wave 5 — cheap candidates, boundaries, exact FOLLOW
 ### 5a (cheap)
-- [ ] 5a.1 B2: spec-parse cache for whole `Recover` — lift `specCache (rule,pos)→(Ok,EndPos)` from local `GenerateS2` to a field for the duration of `Recover`. Store for A5-1 probe. Hits/misses in D2.
+- [✅] 5a.1 B2: spec-parse cache for whole `Recover` — `SpeculativeCache` wrapper (5a.1.1, 104b38a) + `_specCache` field/accessor/counters/`Reset` in `Recover` (5a.1.2, 9198973) + `GenerateS2` switched to `parser.SpecCache` (5a.1.3, 3b54000). Test input needs an `Ident` after the garbage to drive `Speculative` (else S3 wins). ParserTests 351/0/2.
 - [ ] 5a.2 B3: cheap S2/S3 scans — token jumps (trivia via one `Trivia.TryMatch`); for `Literal` terminators `input.IndexOf` instead of per-position `TryMatch` (DFA only for regex).
 - [ ] 5a.3 A4-1: "quiet zone" — after accepting a candidate at E, mismatches at position ≤ E do not update `ErrorPos`/`_expected` and do not clear snapshot; new `FailureSnapshot` only strictly beyond E.
 - [ ] 5a.4 A4-3: single-token deletion as rank-1 candidate — if terminal after E (post trivia) ∈ expected at E → absorber exactly [E..E+1) without speculative parse. `aab` duplicate-token cases → one `extraneous` diagnostic, rank 1, no S2.
