@@ -207,7 +207,7 @@ changes. Not committed.
 Sub-point 5a.1.3: switch `GenerateS2` to read/write the shared `Parser.SpecCache` (from 5a.1.2) instead of a
 local `Dictionary`.
 
-Status: **BLOCKED — STOP-IF triggered on the test input** (production change done; test input pending decision, §Stop-if)
+Status: **DONE** (1 documented deviation — the spec input did not drive `Speculative`; replaced with an `Ident`-after-garbage input, §Input correction)
 
 ### What was changed
 
@@ -254,29 +254,30 @@ grammar (`Module := '{' ZeroOrMany(Stmt) '}'`, `Stmt := Ident ':' Expr ';'`, `Ex
 `BuildTdoppRules()`); the terminal class is named `SpecCacheSharedTerminals` (not `TierBudgetTerminals`) to avoid a
 CS0101 duplicate definition (both files are in `namespace Recovery`).
 
-`[TestMethod] Test_GenerateS2_Writes_To_Shared_SpecCache`: input `"{ a: 1+ ### ; }"`; after
-`parser.Parse(input, "Module", out _)` asserts `parser.SpecCacheMisses > 0`.
+`[TestMethod] Test_GenerateS2_Writes_To_Shared_SpecCache`: input `"{ a: 1+ ### b ; }"` (see §Input
+correction); after `parser.Parse(input, "Module", out _)` asserts `parser.SpecCacheMisses > 0`.
 
 ### Verification (one-shot)
 
 | Command | Result |
 |---|---|
-| `dotnet build Tests/ParserTests/ParserTests.csproj` | **0 errors / 0 warnings** |
-| `dotnet test Tests/ParserTests/ParserTests.csproj` | **Total: 353 · Passed: 350 · Failed: 1 · Skipped: 2** |
-| `SpecCacheSharedTests` in isolation | **1 total · 0 passed · 1 failed** |
+| `dotnet build Tests/ParserTests/ParserTests.csproj` | **0 errors** |
+| `dotnet test Tests/ParserTests/ParserTests.csproj` | **Total: 353 · Passed: 351 · Failed: 0 · Skipped: 2** |
+| `SpecCacheSharedTests` in isolation | **1 total · 1 passed · 0 failed** |
 
 - The 2 skipped are the same pre-existing `[Ignore("WIP")]` in `GrammarValidationTests.cs` — unrelated.
-- The 1 failed is the new `SpecCacheSharedTests` test — see §Stop-if. The existing 350 tests all still pass (no
-  regression from the production change).
+- Baseline after 5a.1.2 was **350 passed / 0 failed / 2 skipped**; after = **351 passed / 0 / 2** — the +1 passed /
+  +1 total is exactly the one new `SpecCacheSharedTests` test. The existing 350 tests all still pass (no regression
+  from the production change).
 
-### Stop-if (CRITICAL verification) — STOP, input pending decision
+### Input correction (stop-if resolved)
 
-The spec's input `"{ a: 1+ ### ; }"` does **NOT** drive `GenerateS2`'s `Speculative`: after `Parse`,
+The original spec input `"{ a: 1+ ### ; }"` did **NOT** drive `GenerateS2`'s `Speculative`: after `Parse`,
 `SpecCacheMisses == 0` (NOT `> 0`). The reason matches the `TierBudgetTests` design note: the `{`…`}` block makes
 S2's resync anchor `First(Stmt) = {Ident}` never match in the garbage region `### ;`, so the scan loop's
-`FirstMatchesAt(anchor, s)` is false everywhere and `Speculative` is never invoked. S3 (panic) is the accepted repair.
+`FirstMatchesAt(anchor, s)` is false everywhere and `Speculative` is never invoked; S3 (panic) is the accepted repair.
 
-Exact observed values (from the failing assertion):
+Exact observed values (from the failing run, before the fix):
 - `SpecCacheMisses` = **0**
 - `RecoveryDiagnostics` = **`[Skipped [8..12) skip to terminator ;]`**
 - `RecoveryPasses` = **1**
@@ -284,20 +285,21 @@ Exact observed values (from the failing assertion):
 - Accepted strategy = **S3** (panic mode; `RecoveryKind.Skipped`, message `skip to terminator ;`, span `[8..12)` =
   the `### ` garbage, resync to the `;` at pos 12).
 
-Per the task's CRITICAL-verification stop-if, I did **NOT** improvise a new input. The test file is written exactly
-per spec (input `"{ a: 1+ ### ; }"`, asserts `SpecCacheMisses > 0`) and is currently failing; it will pass once the
-input is replaced by one that actually triggers `GenerateS2`'s `Speculative` (an input where the resync anchor's
-`First` matches at a scan position so a T1/T2 resync is attempted).
+Per the task's CRITICAL-verification stop-if, the subagent did **NOT** improvise a new input and reported back.
+The input was then corrected (main session) to `"{ a: 1+ ### b ; }"` — an `Ident` (`b`) after the garbage makes
+`FirstMatchesAt(Ref(Stmt), s)` hit on `b`, so `Speculative` is driven and `SpecCacheMisses > 0`. The plan
+(`RecoveryImprovementPlan.md` §5a.1.3) was updated to match.
 
 ### Files changed
 
 - `ExtensibleParser/Recovery/RecoveryEngine.cs` — **modified**: `GenerateS2` now reads/writes `parser.SpecCache`
   (removed the local `specCache` dict; the `Speculative` local function delegates to the shared cache).
-- `Tests/ParserTests/Recovery/SpecCacheSharedTests.cs` — **new**: the shared-cache test (input pending decision).
+- `Tests/ParserTests/Recovery/SpecCacheSharedTests.cs` — **new**: the shared-cache test (input `"{ a: 1+ ### b ; }"`,
+  see §Input correction).
 - `Tests/ParserTests/ParserTests.csproj` — **reverted to HEAD** (see Deviations): removed two pre-existing
-  `<Compile Include>` lines that broke the build with `NETSDK1022`.
+   `<Compile Include>` lines that broke the build with `NETSDK1022`.
 
-Not committed.
+Committed: `3b54000` (5a.1.3) — the production change + the corrected test + the plan/progress update.
 
 ### Deviations
 
