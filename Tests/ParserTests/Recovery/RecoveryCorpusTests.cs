@@ -227,10 +227,10 @@ public sealed class RecoveryCorpusTests
         var m = Measure("D1.1", NewMiniCParser, GenManyErrors(n));
         Trace.WriteLine(ReportLine(m));
 
-        // D1.1 — приёмка волны 1 (100+ ошибок до EOF в IDE-профиле). Дефолт MaxRecoveryIterations=64 < 120,
-        // поэтому Success@EOF сейчас может не держаться — это ожидаемо (волна 1 ещё не сделана).
-        // Ассертим детерминированную границу проходов (каждая итерация чинит >=1 ошибку), не падаем из-за волны 1.
-        Assert.IsTrue(m.SuccessAtEof || m.Passes <= 2 * n, $"D1.1 passes={m.Passes} success@EOF={m.SuccessAtEof}");
+        // D1.1 — приёмка 1.3.2: 120 мелких ошибок → Success@EOF. MaxRecoveryIterations=1000 >= 120,
+        // S6 (ранг 6) исключён из бюджета на точку (гарантированное дно) → каждый проход чинит >=1 ошибку
+        // и итерации доходят до EOF.
+        Assert.IsTrue(m.SuccessAtEof, $"D1.1 not recovered to EOF\n{ReportLine(m)}");
     }
 
     [TestMethod]

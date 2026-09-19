@@ -29,7 +29,7 @@ public partial class Parser
     public int RecoveryPasses { get; private set; }
 
     // Лимиты цикла восстановления: предельное число итераций и число попыток кандидатов на одной точке восстановления.
-    public int MaxRecoveryIterations { get; set; } = 64;
+    public int MaxRecoveryIterations { get; set; } = 1000;
 
     // Дефолт 3 — «предохранитель» по плану (§3.1, I3): ограничивает число попыток кандидатов на одной
     // точке восстановления. Глубокие сценарии (E2E: resync/panic/trailing, ранги S2/S3/S5 = 11-я+ попытка)
@@ -314,8 +314,10 @@ public partial class Parser
                 if (attempts.Contains(candidate.Id))
                     return false; // уже пробовали на этой точке — следующий кандидат
                 attempts.Add(candidate.Id);
-                if (attempts.Count > MaxRecoveryAttemptsPerPosition)
-                    return true; // лимит попыток на точке исчерпан — стоп (не акцепт: recoveredThisIteration не тронут)
+                // 1.3.2: S6 (ранг 6) — гарантированное дно, всегда пробуем даже при исчерпанном бюджите;
+                // остальные кандидаты пропускаются (следующий кандидат), а не стопят цикл.
+                if (attempts.Count > MaxRecoveryAttemptsPerPosition && candidate.Rank != 6)
+                    return false;
 
                 var log = ApplyPatches(candidate, e, snapshot, startRule, currentStartPos); // патчи + Hygiene атомарно, всё в лог
                 var savedErrorPos = ErrorPos;
