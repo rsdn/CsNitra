@@ -90,6 +90,21 @@ memo-hit'ами; время на D1-корпусе не хуже до-волны
 
 ### Волна 4 — профили и предсказуемость (база A3, B4 + A4-5)
 
+### M (архитектура): ParseSubRule — парс правила без top-level recovery
+
+**Проблема.** `Parser.Parse` всегда оборачивает `ParseRule` в `Recover` — цикл «довести до EOF». Для подчинённых парсов (распознавание конкретной формы внутри большого файла) это катастрофа: `MultiLineStrings.ComputeSpans` (препроцессор) на файле 428KB даёт **504 итерации recovery**, 125k hygiene-removals, продвижение на 215KB — на **каждый** вложенный парс. Preprocessor.Run на 1000 блоков = 28.7s, на 5000 = 188s.
+
+**Что делать.** Публичный `ParseSubRule(string input, string rule, int startPos) → Result`:
+- сброс per-parse состояния (`_memo`, `_terminalCache`, `_firstCache`, `ClearInjections`), как в `Parse`;
+- `ParseRule(rule, minPrecedence: 0, startPos, input)`;
+- возврат результата как есть.
+
+`Recover` **не** запускается. `S6`, `HygieneCore`, `EngineGenerateCalls` — не участвуют. Работает в обоих режимах (`#if RECOVERY` / no-recovery).
+
+**Приёмка.** `MultiLineStrings.ParseExpressionLength` переключается на `ParseSubRule`; время `Preprocessor.Run` на 1000 блоков <1s, на 5000 <5s; `ParserTests` = 359/0/2; `CsPreprocessorTests` все зелёные.
+
+**Порядок.** M — первым (Wave 4.0), фиксит падающий тест 2, разблокирует препроцессор. P — после M+Q. M и P не сливать. (Цифра «nestedParses=1» из диагностики этапа 1 — **требует перепроверки**: по коду `ComputeSpans` зовёт `ParseExpressionLength` в цикле на каждой кавычке, на 1000 блоках ожидается ~5000 парсов. Пересчитать при реализации M.)
+
 ### P (архитектура): Parse phase model (Normal vs Recovery)
 
 **Проблема.** Текущий `Recover` смешивает чистый парс и восстановление в одном цикле: iteration 0 — это и есть «нормальный» парс, snapshot снимается внутри него. Любая оптимизация hot path, меняющая side effects (`ReportMismatch`/`CaptureSnapshot`/`PushRuleFrame`), ломает recovery — snapshot зависит от того, что **все** альтернативы были попробованы и оставили следы в `_expected`/`_stackFrames`. Это подтверждено на 5a.5.2 (First-префильтр → 21 recovery-тест).
@@ -113,6 +128,16 @@ memo-hit'ами; время на D1-корпусе не хуже до-волны
 - Регресс-тесты 5b.2 (A5-1), 5b.3 (R2) — проще, потому что recovery-фаза изолирована.
 
 **Обоснование.** В Nitra фазовая модель была — `Normal` (парс до падения) → `Recovery` (поиск путей восстановления) → `Normal` (продолжение через memo-патчи). Roslyn — `Parser::ParseCompilationUnit` + отдельная recovery-логика внутри. Текущая модель «всё в одном цикле» — tech debt, накопившийся по ходу; он блокирует оптимизации hot path и делает recovery хрупким к любым изменениям side effects.
+
+### Q (препроцессор, корректность): `#` внутри raw string трактуется как директива
+
+**Проблема.** `Preprocessor.grammar` правило `Line = DirectiveLine | CodeLine` пробует `DirectiveLine` **первым**. `DirectiveLine = "#" Directive` матчит любую строку, где первый non-whitespace — `#`, **не советуясь с `IsInsideSpan`**. Guard `IsInsideSpan` (защита T4.4.3) достигается только через `CodeLineTerminal → IsDirectiveStart`. На equal-length tie парсер берёт **первую** альтернативу (`Parser.cs:330-346`) → `DirectiveLine` всегда выигрывает → `#` внутри `"""` **блэнкается** как `BadDirective`.
+
+**Фикс.** Поменять порядок в грамматике: `Line = CodeLine | DirectiveLine`. На реальных директивах `CodeLineTerminal` возвращает -1 (`IsDirectiveStart == true`), так что tie-сценарий только для `#` внутри span. На `#` внутри raw string `CodeLine` матчится и выигрывает tie → сохраняется дословно.
+
+**Приёмка.** Новый тест: `#` внутри raw string сохраняется дословно. Существующие `CommentDirectiveTests` и `PreprocessorIntegrationTests` — зелёные.
+
+**Порядок.** После M, отдельным субагентом.
 
 | # | Что | Где | Приёмка |
 |---|---|---|---|
@@ -485,6 +510,7 @@ NEEDS-SPEC подтверждён: `_expected` очищается при `pos > 
 | **A4-7** | **Точный expected в финальном сообщении**: `FatalError`/`Unrecovered` — expected = `Expected` верхнего кадра ∪ `GetTerminators(стек)` (per-site после A5-6) ∪ First суффиксных обязательств (механика S2/S4, `RecoveryEngine.cs:215-239` — вынести в общую функцию) | `Parser.Recovery.cs` (`FinalizeResult` 255-257) | «expecting {...}» отражает весь контекст, а не один упавший терминал |
 | **A5-8** (опционально) | **K-кандидатов в S3**: не `break` на первом стоп-пункте (`RecoveryEngine.cs:444-445`), а K ближайших (3–5) как отдельные кандидаты. После A5-6 стоп-набор точен и один кандидат звучен — это защита в глубину; можно не делать | `Recovery/RecoveryEngine.cs` | (если делать) ложная первая остановка не убивает итерацию |
 | E (база) | **Структурно под кодогенерацию**: держать `RecoveryEngine.Generate` чистым; `Injection` + `MemoPatch` — единственные единицы патча (не усложнять); задокументировать свойство «re-проход префикса дёшевый» (memo-проверка до `PushRuleFrame`, `Parser.cs:220-230`) — сохранять при рефакторинге; не вводить глобальный чарт | — | Рефакторинг не ломает инварианты (тесты + ревью) |
+| S | **Span input API** — вход в парсер как span/диапазон (а не весь файл); отдельно от M и P, не срочно | `Parser` | Sub-parse без копирования/реcovery-to-EOF; Wave 7+ |
 
 ---
 
@@ -495,7 +521,9 @@ NEEDS-SPEC подтверждён: `_expected` очищается при `pos > 
 | A5-7 | S6 = паник-дно (уточнение A1) | ANTLR4 `recover`/`consumeUntil` | 1 | высокий |
 | A4-2 | «отчёт и продолжить»: список ошибок, `Unrecovered` | ANTLR4 catch-продолжение | 1 | высокий |
 | A5-4 | дно-контракт результата (`Success<T>` в IDE) | Roslyn `CreateForGlobalFailure` | 1 | высокий |
-| P | Parse phase model (Normal vs Recovery) | tech debt | 4.0 | высокий |
+| M | ParseSubRule — парс правила без top-level recovery | T5.2 perf (test 2) | 4.0 | высокий (первым) |
+| Q | raw-string guard — `#` внутри `"""` как директива | T5.2 correctness | 4 (после M) | средний |
+| P | Parse phase model (Normal vs Recovery) | tech debt | 4 (после M+Q) | высокий |
 | A4-5 | runtime-стратегия (bail) вместо `#if RECOVERY` | ANTLR4 `BailErrorStrategy` | 4 | высокий |
 | A5-6 | per-call-site FOLLOW (граница TDOPP/ContextScope) | ANTLR4 `getErrorRecoverySet` | 5 | средний |
 | A5-1 | спекулятивный зонд + T1-якоря для любого Ref-кадра | Roslyn reset point; ANTLR4 sync-точки | 5 | средний |
@@ -509,6 +537,7 @@ NEEDS-SPEC подтверждён: `_expected` очищается при `pos > 
 | A5-5 | SoftSeparator | Roslyn `allowSemicolonAsSeparator` | 7 | низкий |
 | A4-7 | точный expected в финальном сообщении | ANTLR4 `ATN.getExpectedTokens` | 7 | низкий |
 | A5-8 | K-кандидатов в S3 | — (защита в глубину) | 7 / опционально | низкий |
+| S | Span input API | — (sub-parse без копии) | 7+ | низкий (не срочно) |
 
 Пункты базы (A1–A3, B1–B5, C1–C2, D1–D2, E, R1–R6) распределены по волнам выше по их
 соответствующим волнам; рекомендуемый порядок базы из `RecoveryImprovementProposal.md`
