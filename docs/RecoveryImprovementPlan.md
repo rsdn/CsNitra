@@ -90,6 +90,30 @@ memo-hit'ами; время на D1-корпусе не хуже до-волны
 
 ### Волна 4 — профили и предсказуемость (база A3, B4 + A4-5)
 
+### P (архитектура): Parse phase model (Normal vs Recovery)
+
+**Проблема.** Текущий `Recover` смешивает чистый парс и восстановление в одном цикле: iteration 0 — это и есть «нормальный» парс, snapshot снимается внутри него. Любая оптимизация hot path, меняющая side effects (`ReportMismatch`/`CaptureSnapshot`/`PushRuleFrame`), ломает recovery — snapshot зависит от того, что **все** альтернативы были попробованы и оставили следы в `_expected`/`_stackFrames`. Это подтверждено на 5a.5.2 (First-префильтр → 21 recovery-тест).
+
+**Что делать.** Разделить `Recover` на явные фазы:
+
+1. **Normal.** Парс чистого префикса. Фильтр (A4-4 п.1) может быть активен. `ReportMismatch` только устанавливает `ErrorPos`, snapshot НЕ снимается (или снимается «предварительный», не используемый recovery).
+2. **Recovery.** Точка входа — первый mismatch. Фильтр выключен. `ReportMismatch`/`CaptureSnapshot` работают полностью. Re-parse от `currentStartPos` доходит до `ErrorPos` **моментально** через `_memo` (memo-hits на чистом префиксе). `TryCandidate`, патчи, `ContinueFromPartialPostfix`.
+3. **Normal again.** После принятия кандидата: `_recoveryPoint = -1`, фильтр включён. Продолжение парса с следующей ошибки или до EOF.
+
+**Флаг.** `private bool _inRecoveryMode` (или `enum ParseMode { Normal, Recovery }`), переключаемый в `Recover`:
+- `Normal` — на входе в iteration 0 и после принятия кандидата;
+- `Recovery` — после первого `ErrorPos != -1` и до принятия кандидата.
+
+`ReportMismatch`/`CaptureSnapshot` смотрят на флаг: в `Normal` — только `ErrorPos`; в `Recovery` — полный путь (snapshot, `_expected`, side effects).
+
+**Приёмка.** После P:
+- A4-4 п.1 (First-префильтр) безопасно включается в фазе `Normal` — 21 recovery-тест остаётся зелёным, snapshot не искажается.
+- Перф-выигрыш от фильтра появляется (D1.2 и подобные — длинные чистые префиксы).
+- A5-8 (K-кандидатов в S3), A4-1 (quiet zone), любые будущие оптимизации hot path — безопасны по построению.
+- Регресс-тесты 5b.2 (A5-1), 5b.3 (R2) — проще, потому что recovery-фаза изолирована.
+
+**Обоснование.** В Nitra фазовая модель была — `Normal` (парс до падения) → `Recovery` (поиск путей восстановления) → `Normal` (продолжение через memo-патчи). Roslyn — `Parser::ParseCompilationUnit` + отдельная recovery-логика внутри. Текущая модель «всё в одном цикле» — tech debt, накопившийся по ходу; он блокирует оптимизации hot path и делает recovery хрупким к любым изменениям side effects.
+
 | # | Что | Где | Приёмка |
 |---|---|---|---|
 | A3 (база) | **`RecoveryProfile`**: `Mode (Ide\|Compiler\|Test)`, `TimeBudget`, `MaxIterations`, `AttemptsPerTier`, `MaxSkip`, `StrategyMask (S0..S6)` — стратегия, бюджеты и жёсткость результата настраиваются на парсер, а не на сборку | новый тип + `Parser` (конструктор) | IDE: большой бюджет, S6 обязателен, деградация вместо `FatalError`; Compiler: маленький бюджет, быстрый fail |
@@ -450,6 +474,7 @@ NEEDS-SPEC подтверждён: `_expected` очищается при `pos > 
 | A5-7 | S6 = паник-дно (уточнение A1) | ANTLR4 `recover`/`consumeUntil` | 1 | высокий |
 | A4-2 | «отчёт и продолжить»: список ошибок, `Unrecovered` | ANTLR4 catch-продолжение | 1 | высокий |
 | A5-4 | дно-контракт результата (`Success<T>` в IDE) | Roslyn `CreateForGlobalFailure` | 1 | высокий |
+| P | Parse phase model (Normal vs Recovery) | tech debt | 4.0 | высокий |
 | A4-5 | runtime-стратегия (bail) вместо `#if RECOVERY` | ANTLR4 `BailErrorStrategy` | 4 | высокий |
 | A5-6 | per-call-site FOLLOW (граница TDOPP/ContextScope) | ANTLR4 `getErrorRecoverySet` | 5 | средний |
 | A5-1 | спекулятивный зонд + T1-якоря для любого Ref-кадра | Roslyn reset point; ANTLR4 sync-точки | 5 | средний |
@@ -492,4 +517,6 @@ NEEDS-SPEC подтверждён: `_expected` очищается при `pos > 
 | A4-5: runtime-bail повторит дефект no-recovery (пропавший depth-guard) | guard в общем коде, активен во всех режимах; тест R3-репро в bail-режиме |
 | B4: деградация time-budget может «потерять» дерево | лестница деградации всегда заканчивается дном S6 (полное дерево + диагностика) |
 | A5-1: щедрый T2 (множество предикатов / чистый `Identifier`) сжигает тир-бюджет, S3/S6 не пробуются (ранг 2 < 3, бюджет 3/точку, `Parser.Recovery.cs:39`) | собственный под-бюджет S2 (A2) + кап коллекции T2 + исключение чистых regex-First; регресс-тест «мусор с identifier-токенами» → S3 не заглушен; D1.7 |
+
+> **Оптимизации, меняющие набор пробуемых альтернатив или side effects горячего пути** (A4-4 First-префильтр, A5-8 K-кандидатов, A4-1 quiet zone, ранний `break` в сканах), **ломают recovery** — snapshot зависит от того, что все альтернативы были попробованы. Перед коммитом таких подзадач обязательно прогонять **все** `Recovery*Tests.cs`, `S6BottomTests`, `T1AnchorReproTests`, `A42AcceptanceTests`. Если хотя бы один падает — это не оптимизация, а изменение семантики: стоп и доклад. Полноценный фикс — пункт **P** (Parse phase model).
 | Объём волн 1–2 | волна 0 (корпус) ставится первой — откат/замедление видно по замерам сразу |
