@@ -724,10 +724,8 @@ public partial class Parser(Terminal trivia, Log? log = null)
         ContextCount = count;
         try
         {
-            // §3.9: the scope body is a strict context — its leaves are context-dependent, so the
-            // recovery engine cannot soundly repair a failure inside it (hard fail instead).
             var bodyResult = WithFrame(new SeqFrameLocation(1), ExpectedFor(scope.Body), scope.Kind ?? "ContextScope",
-                new RecoveryOptions { Recoverable = false }, () => ParseAlternative(scope.Body, sourceEnd, input));
+                null, () => ParseAlternative(scope.Body, sourceEnd, input));
             if (!bodyResult.TryGetSuccess(out var bodyNode, out var bodyEnd))
                 return bodyResult;
 
