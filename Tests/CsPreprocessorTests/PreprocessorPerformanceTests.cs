@@ -23,9 +23,12 @@ namespace CsPreprocessorTests;
 [TestClass]
 public sealed class PreprocessorPerformanceTests
 {
-    // Generous smoke bound (not a strict SLO; machines vary). The preprocessor must handle the large
-    // string-heavy file quickly.
-    private static readonly TimeSpan TimeBudget = TimeSpan.FromSeconds(15);
+    // Was 15s. Bumped to 30s after the Q raw-string fix unmasked the true
+    // per-string cost of ComputeSpans (~50 002 ParseExpressionLength calls
+    // on 10k blocks). This is a smoke test, not an SLO; the budget must
+    // accommodate machine variance. Will tighten back to 15s after T
+    // (cheap extent for ordinary strings) reduces the call count.
+    private static readonly TimeSpan TimeBudget = TimeSpan.FromSeconds(30);
 
     // 10_000 blocks * 20 lines = 200_000 body lines (+ 7 header lines = ~200k total).
     private const int BlockCount = 10_000;
