@@ -32,6 +32,12 @@ public partial class Parser
     // Сбрасывается в начале Parse; ограниченно (не пропорционально размеру файла) при точной гигиене.
     public int HygieneRemovals { get; private set; }
 
+    // B2: кэш спекулятивных парсов (обёртка SpeculativeCache) + D2-счётчики хитов/промахов (read-only,
+    // читаются из обёртки). Время жизни кэша — один Recover; сброс (кэш + счётчики) — в начале Recover.
+    public SpeculativeCache SpecCache => _specCache;
+    public int SpecCacheHits => _specCache.Hits;
+    public int SpecCacheMisses => _specCache.Misses;
+
     // Лимиты цикла восстановления: предельное число итераций.
     public int MaxRecoveryIterations { get; set; } = 1000;
 
@@ -47,6 +53,9 @@ public partial class Parser
     // но более не ограничивает выбор кандидатов — вместо него под-бюджеты тиров (A2).
     public int MaxRecoveryAttemptsPerPosition { get; set; } = 3;
     private readonly Dictionary<int, TierBudget> _attempts = new();
+
+    // B2: кэш спекулятивных парсов на scratch-копии, время жизни = один Recover (сброс в начале Recover).
+    private readonly SpeculativeCache _specCache = new();
 
     // Состояние, перенесённое из ядра: используется только recovery-подсистемой
     // (ядро обращается к нему исключительно через partial-хуки в Parser.cs).
@@ -280,6 +289,7 @@ public partial class Parser
         EngineGenerateCalls = 0;
         RecoveryPasses = 0;
         HygieneRemovals = 0;
+        _specCache.Reset();
         _recoveryPoint = -1;
         _lastSnapshot = null;
         _lastPartial = null;
