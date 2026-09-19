@@ -103,7 +103,9 @@ memo-hit'ами; время на D1-корпусе не хуже до-волны
 
 **Приёмка.** `MultiLineStrings.ParseExpressionLength` переключается на `ParseSubRule`; время `Preprocessor.Run` на 1000 блоков <1s, на 5000 <5s; `ParserTests` = 359/0/2; `CsPreprocessorTests` все зелёные.
 
-**Порядок.** M — первым (Wave 4.0), фиксит падающий тест 2, разблокирует препроцессор. P — после M+Q. M и P не сливать. (Цифра «nestedParses=1» из диагностики этапа 1 — **требует перепроверки**: по коду `ComputeSpans` зовёт `ParseExpressionLength` в цикле на каждой кавычке, на 1000 блоках ожидается ~5000 парсов. Пересчитать при реализации M.)
+**Порядок.** M — первым (Wave 4.0), фиксит падающий тест 2, разблокирует препроцессор. P — после M+Q. M и P не сливать.
+
+**Статус.** ✅ Сделан (коммит `27b4964`). Тест 2: 10k блоков 240s → 4.121s. `ParseExpressionLength` на 1000 блоках = 7 (константа, жадный raw-string — баг Q, не ошибка замера; «nestedParses=1» до M было верно, т.к. recovery гнал до EOF).
 
 ### H (архитектура): HygieneCore — O(региона), а не O(memo)
 
@@ -143,15 +145,23 @@ memo-hit'ами; время на D1-корпусе не хуже до-волны
 
 **Обоснование.** В Nitra фазовая модель была — `Normal` (парс до падения) → `Recovery` (поиск путей восстановления) → `Normal` (продолжение через memo-патчи). Roslyn — `Parser::ParseCompilationUnit` + отдельная recovery-логика внутри. Текущая модель «всё в одном цикле» — tech debt, накопившийся по ходу; он блокирует оптимизации hot path и делает recovery хрупким к любым изменениям side effects.
 
-### Q (препроцессор, корректность): `#` внутри raw string трактуется как директива
+### Q (корректность, немедленно): RawString content поглощает 3+ кавычек
 
-**Проблема.** `Preprocessor.grammar` правило `Line = DirectiveLine | CodeLine` пробует `DirectiveLine` **первым**. `DirectiveLine = "#" Directive` матчит любую строку, где первый non-whitespace — `#`, **не советуясь с `IsInsideSpan`**. Guard `IsInsideSpan` (защита T4.4.3) достигается только через `CodeLineTerminal → IsDirectiveStart`. На equal-length tie парсер берёт **первую** альтернативу (`Parser.cs:330-346`) → `DirectiveLine` всегда выигрывает → `#` внутри `"""` **блэнкается** как `BadDirective`.
+**Проблема.** Regex-терминал `RawString` (CSharpTerminals.cs) реализован как `"""+("|""[^"]|[^"])+"""+`. Content-альтернатива `"` матчит **одиночную** кавычку без ограничений на соседей, поэтому ран из 3+ кавычек в content свободно поглощается. На `"""abc""" """def"""` regex матчит **один** литерал длиной 18 символов вместо двух длиной 9. Комментарий в коде обещает «content where every quote is part of a 1..2 run», но реализация это не обеспечивает.
 
-**Фикс.** Поменять порядок в грамматике: `Line = CodeLine | DirectiveLine`. На реальных директивах `CodeLineTerminal` возвращает -1 (`IsDirectiveStart == true`), так что tie-сценарий только для `#` внутри span. На `#` внутри raw string `CodeLine` матчится и выигрывает tie → сохраняется дословно.
+**Следствия.** (1) Две подряд идущие raw-строки сливаются в одну. (2) `MultiLineStrings.ComputeSpans` (препроцессор) матчит первую raw-строку почти до EOF файла, поэтому `ParseExpressionLength` вызывается ~7 раз на 1000 блоков вместо ~5000. До M это было скрыто recovery-до-EOF. Тест 2 проходит случайно — на 7 парсах. Q объединяет прежний «raw-string guard» и «greedy raw-string audit» — это один баг в regex-терминале `RawString`, а не два.
 
-**Приёмка.** Новый тест: `#` внутри raw string сохраняется дословно. Существующие `CommentDirectiveTests` и `PreprocessorIntegrationTests` — зелёные.
+**Что делать.** Заменить regex на ручной терминал `RawStringTerminal`: (1) считает длину открывающего рана N (>= 3, иначе `-1`); (2) идёт вперёд до **первого** рана кавычек длины >= N; (3) возвращает `end_of_that_run - startPos`. Альтернатива — negative lookahead в regex-движке, если DFA его поддерживает; иначе ручной скан (O(content) на строку) лучше любого костыля.
 
-**Порядок.** После M, отдельным субагентом.
+**Приёмка.** Новый тест: `"""abc""" """def"""` → **два** `RawStringLiteral`; регрессия `"""a""b"""` (2 кавычки внутри — легально) остаётся одним литералом. Тест 2 перемер: ожидаемое 3–10s на 10k блоков (вместо 4.121s до Q). `ParserTests` = 359/0/2; `CSharpGrammarTests` и `CsPreprocessorTests` — зелёные.
+
+**Порядок.** Wave 4.0-q — первым после M (M уже сделан), перед H и P.
+
+### noRec (сборка): no-recovery build fix
+
+`-p:EnableRecovery=false` не компилируется: `Parser.cs:112` объявляет `private partial bool InQuietZone(int pos);`, но реализации в `Parser.NoRecovery.cs` нет. Обнаружено в M, pre-existing. Фикс — одна строка `private partial bool InQuietZone(int pos) => false;` + ревизия: нет ли других partials, пропущенных в `Parser.NoRecovery.cs` (grep по `private partial` в `Parser.cs`, сверить оба файла). **CI:** добавить шаг `dotnet build -p:EnableRecovery=false` в pipeline.
+
+**Место.** Wave 4.0-noRec (перед P).
 
 | # | Что | Где | Приёмка |
 |---|---|---|---|
@@ -514,8 +524,9 @@ NEEDS-SPEC подтверждён: `_expected` очищается при `pos > 
 | A5-7 | S6 = паник-дно (уточнение A1) | ANTLR4 `recover`/`consumeUntil` | 1 | высокий |
 | A4-2 | «отчёт и продолжить»: список ошибок, `Unrecovered` | ANTLR4 catch-продолжение | 1 | высокий |
 | A5-4 | дно-контракт результата (`Success<T>` в IDE) | Roslyn `CreateForGlobalFailure` | 1 | высокий |
-| M | ParseSubRule — парс правила без top-level recovery | T5.2 perf (test 2) | 4.0 | высокий (первым) |
-| Q | raw-string guard — `#` внутри `"""` как директива | T5.2 correctness | 4 (после M) | средний |
+| M | ParseSubRule — парс правила без top-level recovery | T5.2 perf (test 2) | 4.0 | ✅ сделан (27b4964) |
+| Q | RawString regex поглощает 3+ кавычек (две raw-строки сливаются) | T5.2 correctness | 4.0-q | высокий (немедленно) |
+| noRec | no-recovery build fix (`InQuietZone` partial) | M-обнаружено | 4.0-noRec | средний |
 | P | Parse phase model (Normal vs Recovery) | tech debt | 4 (после M+Q) | высокий |
 | A4-5 | runtime-стратегия (bail) вместо `#if RECOVERY` | ANTLR4 `BailErrorStrategy` | 4 | высокий |
 | A5-6 | per-call-site FOLLOW (граница TDOPP/ContextScope) | ANTLR4 `getErrorRecoverySet` | 5 | средний |
@@ -568,3 +579,5 @@ NEEDS-SPEC подтверждён: `_expected` очищается при `pos > 
 > **B1: hygiene может быть неминимальной или дорогой на больших файлах.** `HygieneCore` делает полный обход memo на каждом кандидате; при 1000 итераций × N кандидатов × M ключей в memo — потенциальная квадратичность. Митигация: пункт H (Wave 4.0a) — индекс по позиции, O(региона) вместо O(memo).
 >
 > **Hygiene O(memo) на каждой итерации recovery даёт квадрат по K × M.** Суммарная стоимость = K (итераций) × M (размер memo). Мало ошибок/большой файл → O(N); много ошибок → O(N²/E); экстремум — тест 2 (500 итераций × memo 1000). Митигация: пункт H (Wave 4.0a) — индекс по позиции, O(региона) вместо O(memo). Измерено на тесте 2; подтвердить синтетическим тестом N ошибок перед реализацией.
+
+> **RawString regex поглощает 3+ кавычек в content'е** — две подряд идущие raw-строки сливаются в одну; `ComputeSpans` матчит первую raw-строку до EOF. Митигация: пункт Q (Wave 4.0-q) — ручной `RawStringTerminal`. До фикса тайминги теста 2 занижены (7 парсов вместо ~5000); после фикса перемерить.
