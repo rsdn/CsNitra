@@ -278,6 +278,19 @@ public static class RecoveryEngine
                 Diagnostics: [.. diagnostics]));
         }
 
+        // 5a.2.4: прыжок к ближайшему multi-char Literal (IndexOf): множество multi-char Literal-строк из
+        // First-множеств всех якорей и canStart (однократно, до цикла). Пустое множество — прыжок не
+        // выполняется (поведение не меняется): single-char Literal и regex остаются на пошаговом пути.
+        var jumpLiterals = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var refRule in anchors)
+            foreach (var t in FirstSets.Get(refRule, calculator))
+                if (t is Literal { Value.Length: > 1 } l)
+                    jumpLiterals.Add(l.Value);
+        foreach (var refRule in canStart)
+            foreach (var t in FirstSets.Get(refRule, calculator))
+                if (t is Literal { Value.Length: > 1 } l)
+                    jumpLiterals.Add(l.Value);
+
         var foundT1 = false;
         for (var s = e; s <= maxS && !foundT1; s++)
         {
@@ -290,6 +303,29 @@ public static class RecoveryEngine
                 // (первую non-trivia позицию).
                 s += triviaLen - 1;
                 continue;
+            }
+
+            // 5a.2.4: прыжок к ближайшему вхождению multi-char Literal из [s..]: позиции без вхождения
+            // пропускаются (single-char Literal и regex могут совпасть на них — принятая эвристика В2:
+            // First-множества S2 содержат multi-char Literal (ключевые слова)). Вхождений нет — break
+            // (дальше в окне multi-char Literal-совпадений нет). s = next - 1: инкремент цикла s++ ставит
+            // скан ровно на next; next == s — провал в FirstMatchesAt (Literal совпадает в s).
+            if (jumpLiterals.Count > 0)
+            {
+                var next = -1;
+                foreach (var lit in jumpLiterals)
+                {
+                    var idx = input.IndexOf(lit, s, StringComparison.Ordinal);
+                    if (idx >= 0 && (next < 0 || idx < next))
+                        next = idx;
+                }
+                if (next < 0)
+                    break;
+                if (next > s)
+                {
+                    s = next - 1;
+                    continue;
+                }
             }
 
             foreach (var anchor in anchors)

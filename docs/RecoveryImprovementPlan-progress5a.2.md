@@ -277,3 +277,116 @@ wider Trivia terminal `\s + // + /* */` to make decision (б) testable):
 
 None. (The initial subagent run had the same pre-`e` padding error as 5a.2.2; test inputs were corrected
 to be strictly after `e` per the new rule before commit.)
+
+---
+
+## 5a.2.4 — S2: прыжок к ближайшему multi-char Literal (IndexOf)
+
+Sub-point 5a.2.4: in the S2 scan jump to the nearest multi-char `Literal` occurrence (via
+`input.IndexOf`) instead of step-by-step `FirstMatchesAt` at every position. Precomputed set of
+multi-char `Literal` values from the First-sets of all `anchors` and `canStart` rules; empty set →
+jump skipped entirely (no behavior change). `Speculative`/`AddResyncCandidate`/`FirstMatchesAt`/the
+trivia jump/counter increment/`foreach` blocks are unchanged.
+
+Status: **DONE** (one deviation — see below: the task-specified test input cannot fail before the
+change because the anchor's First-set in the `TierBudgetTests` grammar contains no multi-char
+`Literal`; a second test with a minimal grammar deviation carries the before/after regression)
+
+### What was changed
+
+`ExtensibleParser/Recovery/RecoveryEngine.cs` — **modified**, inside `GenerateS2`:
+
+- **Before the loop** (`RecoveryEngine.cs:281-292`): precompute `jumpLiterals` — a
+  `HashSet<string>(StringComparer.Ordinal)` of multi-char `Literal` values (`Literal { Value.Length: > 1 }`)
+  from `FirstSets.Get(refRule, calculator)` of all `anchors` and all `canStart` rules.
+- **In the loop**, after the trivia jump and before `foreach (var anchor in anchors)`
+  (`RecoveryEngine.cs:308-329`): if the set is non-empty, compute
+  `next = min(input.IndexOf(lit, s, StringComparison.Ordinal) for lit where >= 0)`; if no `lit` found
+  (`next < 0`) → `break` (no more multi-char `Literal` occurrences in the scan window); if `next > s`
+  → `s = next - 1; continue;` (the loop's `s++` lands the scan exactly on `next`); if `next == s`
+  → fall through to the existing `FirstMatchesAt` check (the multi-char `Literal` matches at `s`).
+
+No changes to S1/S3/S4/S5/S6, `SpeculativeCache`, `CreateScratchParser`/`ParseRuleOnce`,
+`HygieneCore`/`ApplyPatches`/`RollbackPatches`/`PatchMemo`, the signature of `RecoveryEngine.Generate`,
+or any `.csproj`.
+
+### The test
+
+`Tests/ParserTests/Recovery/S2IndexOfTests.cs` — **new** (grammar copied from `TierBudgetTests`; S2
+anchor `Ref("Stmt")` derived from the `Stmts` loop; the mismatch in Expr puts `e` on the first `#`;
+a full `Stmt` follows the garbage, so `Speculative("Stmt")` succeeds there and T1 is found):
+
+1. `S2IndexOf_SpecifiedInput_SameResync` — the task-specified test: inputs `"{ a: 1+ ### x: 2 ; }"`
+   (no padding) and `"{ a: 1+ ###    x: 2 ; }"` (3-space padding between `###` and `x` — strictly
+   after `e`). Asserts: (a) `S2ScanPositions > 0` for both (the S2 scan is triggered and reaches
+   `Speculative` at `x`); (b) the recovery outcome is the same — identical normalized diagnostics
+   (Kind, length with the skip-diagnostics delta subtracted, message without absolute positions) and
+   the S2 T1 resync positions (`skip to resync point`) shifted by exactly the padding delta (3).
+   **Note:** in this grammar `First(Stmt) = {Ident}` (a regex terminal) — no multi-char `Literal` in
+   the anchor's First-set, so the precomputed set is empty and the jump is inert: the counter is
+   identical for both inputs and identical before/after the change (5/5). This test documents the
+   specified scenario and verifies the jump does not change the outcome when inactive.
+2. `S2IndexOf_MultiCharKeyword_JumpSkipsPositions` — **added (deviation)**: the same grammar but
+   `Stmt := 'let' Ident ':' Expr ';'` (a multi-char keyword at the start, so
+   `First(Stmt) = {Literal("let")}` — the jump set is non-empty and the jump is active). Inputs
+   `"{ let a: 1+ ### let x: 2 ; }"` (no padding) and `"{ let a: 1+ ###    let x: 2 ; }"` (3-space
+   padding between `###` and `let` — strictly after `e`). Asserts: (a) `S2ScanPositions > 0`;
+   (c) `S2ScanPositions < (t1 - e + 1)` — the scan window size — i.e. the jump skipped positions
+   (with the jump the counter is 2: `e` and the `let` occurrence; without the jump it is 5: every
+   window position → **fails before the change**); (b) the recovery outcome is the same — identical
+   normalized diagnostics and the S2 T1 resync positions shifted by exactly the padding delta (3).
+
+### Verification (one-shot)
+
+| Command | Result |
+|---|---|
+| `dotnet build Tests/ParserTests/ParserTests.csproj` | **0 errors** (0 warnings) |
+| `dotnet test Tests/ParserTests/ParserTests.csproj` | **Total: 359 · Passed: 357 · Failed: 0 · Skipped: 2** |
+
+- Baseline is **355 passed / 0 failed / 2 skipped** (after 5a.2.3); after = **357 passed / 0 / 2** —
+  exactly baseline + the 2 new tests, no regression. The 2 skipped are the same pre-existing
+  `[Ignore("WIP")]` in `GrammarValidationTests.cs` — unrelated.
+- Counter values (measured, `S2ScanPositions`, no-padding / padded):
+  - task-specified inputs (original grammar, jump set empty): **without the jump: 5 / 5**;
+    **with the jump: 5 / 5** (the jump is inert — no behavior change).
+  - keyword-grammar inputs (jump set = `{"let"}`): **without the jump: 5 / 5** (the scan walks every
+    window position `[e..t1]`); **with the jump: 2 / 2** (the scan checks only `e` and the `let`
+    occurrence — it jumps over the 3 intermediate positions).
+- Pre-change confirmation: the jump was temporarily reverted (`jumpLiterals.Count > 0 && false`),
+  the test run showed `S2IndexOf_MultiCharKeyword_JumpSkipsPositions` **failing** with
+  `S2ScanPositions=5, window [e..t1] size=5 (e=12, t1=16) — scan did not skip positions` while
+  `S2IndexOf_SpecifiedInput_SameResync` still passed (5/5, inert jump); the jump was then re-applied
+  and both tests pass.
+
+### Files changed
+
+- `ExtensibleParser/Recovery/RecoveryEngine.cs` — **modified**: precomputed `jumpLiterals` set
+  (before the S2 loop) + the min-`IndexOf` jump (after the trivia jump, before the anchor `foreach`)
+  in `GenerateS2`.
+- `Tests/ParserTests/Recovery/S2IndexOfTests.cs` — **new**: the task-specified test (task inputs,
+  asserts (a)/(b)) + the keyword-grammar regression test method that fails without the jump.
+- `docs/RecoveryImprovementPlan-progress5a.2.md` — **modified**: this 5a.2.4 section appended.
+
+No S1/S3/S4/S5/S6 / `SpeculativeCache` / `CreateScratchParser`/`ParseRuleOnce` /
+`HygieneCore`/`ApplyPatches`/`RollbackPatches`/`PatchMemo` / `Generate`-signature / `.csproj`
+changes. Not committed.
+
+### Deviations
+
+1. **The task-specified test cannot fail before the change.** The S2 anchor is `Ref("Stmt")` (derived
+   from the `Stmts` loop frame); in the `TierBudgetTests` grammar `First(Stmt) = {Ident}` — a regex
+   terminal, so the precomputed multi-char `Literal` set is **empty** and the jump is never executed
+   for the specified inputs (verified: counter 5/5 both before and after the change). The specified
+   test therefore passes in both states and cannot serve as the before/after regression. To satisfy
+   "the test MUST fail before the change", a second test method
+   (`S2IndexOf_MultiCharKeyword_JumpSkipsPositions`) was added with a minimal grammar deviation —
+   `Stmt := 'let' Ident ':' Expr ';'` (a multi-char keyword at the start, so
+   `First(Stmt) = {Literal("let")}` and the jump set is non-empty): it fails before the change
+   (counter 5 = window size) and passes after (counter 2 < window size 5). The task-specified test
+   itself is kept as-is (asserts (a)/(b) with the exact specified inputs).
+2. **Assert (b) compares normalized diagnostics** (Kind, region length, message with absolute
+   positions stripped) plus an explicit check that the S2 T1 resync positions are shifted by exactly
+   the padding delta — the raw diagnostics contain absolute positions ("skip to resync point N"), so
+   literal equality between the two inputs is impossible by construction. The length of skip
+   diagnostics (`[e..resyncPos)`) differs by the padding delta between the two inputs, so the
+   normalization subtracts the delta from the length of every `Skipped` diagnostic.
