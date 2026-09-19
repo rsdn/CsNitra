@@ -209,6 +209,71 @@ No S1/S3/S4/S5/S6 / `GenerateS2`-signature / `SpeculativeCache` / `CreateScratch
    (4 spaces between `###` and `b`): it fails before the change (diff 3) and passes after (diff 0). The
    task-specified test itself is kept as-is (asserts (a)/(b)/(c) with the exact specified inputs).
 3. **Assert (b) compares normalized diagnostics** (Kind, region length, message with absolute positions
-   stripped) plus an explicit check that the S3 resync positions are shifted by exactly the padding
-   delta — the raw diagnostics contain absolute positions (S6 "bottom skip to N", "error at N …"), so
-   literal equality between the two inputs is impossible by construction.
+    stripped) plus an explicit check that the S3 resync positions are shifted by exactly the padding
+    delta — the raw diagnostics contain absolute positions (S6 "bottom skip to N", "error at N …"), so
+    literal equality between the two inputs is impossible by construction.
+
+---
+
+## 5a.2.3 — S3: счётчик + trivia jump (решение (б): по всему trivia)
+
+Sub-point 5a.2.3: in the S3 scan loop increment `parser.S3ScanPositions` at every iteration and skip a
+trivia run (including `//` and `/* */` comments) with one `Trivia.TryMatch` jump. The `Match`/depth logic
+is unchanged. Decision (б): jump over ALL trivia — brackets inside `/* ... */` no longer affect
+`curly/paren/bracket` (fix).
+
+Status: **DONE** (no deviations; test inputs corrected to be strictly after `e` per the new rule)
+
+### What was changed
+
+`ExtensibleParser/Recovery/RecoveryEngine.cs` — **modified**, inside `GenerateS3`, in the S3 scan loop
+(`for (var s = e + 1; s <= maxS; s++)`, `RecoveryEngine.cs:428`):
+
+- `parser.NoteS3ScanPosition();` — at the start of the loop body (before the `switch`).
+- Trivia jump — **after** the `switch (input[s-1])` block (so `input[s-1]` is still counted in
+  `curly/paren/bracket`) and **before** the `foreach` terminator check:
+  `var triviaLen = parser.Trivia.TryMatch(input, s); if (triviaLen > 0) { s += triviaLen - 1; continue; }`.
+  Jump offset: `k - 1` (the loop's `s++` lands the scan exactly on `s + k`, the first non-trivia position).
+
+No changes to S1/S2/S4/S5/S6, `SpeculativeCache`, `CreateScratchParser`/`ParseRuleOnce`,
+`HygieneCore`/`ApplyPatches`/`RollbackPatches`/`PatchMemo`, the signature of `RecoveryEngine.Generate`,
+or any `.csproj`.
+
+### The test
+
+`Tests/ParserTests/Recovery/S3TriviaJumpTests.cs` — **new** (grammar: same as `TierBudgetTests` but with a
+wider Trivia terminal `\s + // + /* */` to make decision (б) testable):
+
+1. `S3TriviaJump_SameResync_FewerScannedPositions` — inputs `"{ a: 1+ ### ; }"` (no padding) and
+   `"{ a: 1+ ###    ; }"` (3-space padding between `###` and `;` — strictly after `e`). Asserts:
+   (a) `S3ScanPositions > 0`; (b) S3 `skip to terminator` diagnostics are the same (normalized);
+   (c) `S3ScanPositions(padded) - S3ScanPositions(no-padding) < 3`.
+2. `S3TriviaJump_ClosingBraceInsideBlockComment_NotCounted` — inputs `"{ a: 1+ ### ; }"` (no comment)
+   and `"{ a: 1+ ### /* } */ ; }"` (comment between `###` and `;` — strictly after `e`). Asserts that S3
+   did NOT stop on the `}` inside the comment: resync positions match the no-comment variant shifted by
+   the comment length (delta 7).
+
+### Verification (one-shot)
+
+| Command | Result |
+|---|---|
+| `dotnet build Tests/ParserTests/ParserTests.csproj` | **0 errors** |
+| `dotnet test Tests/ParserTests/ParserTests.csproj` | **Total: 357 · Passed: 355 · Failed: 0 · Skipped: 2** |
+
+- Baseline is **353 passed / 0 failed / 2 skipped** (after 5a.2.2); after = **355 passed / 0 / 2** —
+  exactly baseline + the 2 new tests, no regression.
+
+### Files changed
+
+- `ExtensibleParser/Recovery/RecoveryEngine.cs` — **modified**: `NoteS3ScanPosition()` increment +
+  trivia jump (after `switch`, before terminator check) in `GenerateS3`.
+- `Tests/ParserTests/Recovery/S3TriviaJumpTests.cs` — **new**: 2 tests with padding/comment strictly
+  after `e`.
+- `docs/RecoveryImprovementPlan.md` — **modified**: added "Rules for test inputs for scans" section;
+  fixed 5a.2.2/5a.2.3/5a.2.4 templates.
+- `docs/RecoveryImprovementPlan-progress5a.2.md` — **modified**: this 5a.2.3 section appended.
+
+### Deviations
+
+None. (The initial subagent run had the same pre-`e` padding error as 5a.2.2; test inputs were corrected
+to be strictly after `e` per the new rule before commit.)
