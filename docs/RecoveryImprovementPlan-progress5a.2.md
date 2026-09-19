@@ -384,9 +384,98 @@ changes. Not committed.
    `First(Stmt) = {Literal("let")}` and the jump set is non-empty): it fails before the change
    (counter 5 = window size) and passes after (counter 2 < window size 5). The task-specified test
    itself is kept as-is (asserts (a)/(b) with the exact specified inputs).
-2. **Assert (b) compares normalized diagnostics** (Kind, region length, message with absolute
-   positions stripped) plus an explicit check that the S2 T1 resync positions are shifted by exactly
-   the padding delta — the raw diagnostics contain absolute positions ("skip to resync point N"), so
-   literal equality between the two inputs is impossible by construction. The length of skip
-   diagnostics (`[e..resyncPos)`) differs by the padding delta between the two inputs, so the
-   normalization subtracts the delta from the length of every `Skipped` diagnostic.
+ 2. **Assert (b) compares normalized diagnostics** (Kind, region length, message with absolute
+    positions stripped) plus an explicit check that the S2 T1 resync positions are shifted by exactly
+    the padding delta — the raw diagnostics contain absolute positions ("skip to resync point N"), so
+    literal equality between the two inputs is impossible by construction. The length of skip
+    diagnostics (`[e..resyncPos)`) differs by the padding delta between the two inputs, so the
+    normalization subtracts the delta from the length of every `Skipped` diagnostic.
+
+---
+
+## 5a.2.4a — IndexOf jump: только при чисто multi-char Literal First
+
+Sub-point 5a.2.4a: the min-`IndexOf` jump in `GenerateS2` (5a.2.4) has a `break` (no multi-char `Literal`
+found) and a jump (one found). For **mixed-First** anchors — a First-set containing BOTH multi-char
+`Literal`s AND regex/single-char terminals — both are unsafe: they skip positions where the regex /
+single-char terminal would match. The jump is now enabled **only** when every anchor/canStart First-set is
+**purely** multi-char `Literal`; otherwise it is disabled entirely (behavior reverts to pre-5a.2.4).
+
+Status: **DONE** (one deviation — see below: the plan's `Alt(...)` has no dedicated rule type in this
+parser; the mixed-First is expressed as two alternatives, yielding the identical First-set)
+
+### What was changed
+
+`ExtensibleParser/Recovery/RecoveryEngine.cs` — **modified**, inside `GenerateS2`, at the
+`jumpLiterals` precomputation (before the S2 scan loop):
+
+- Added a `jumpSafe` flag (`RecoveryEngine.cs:290`). While collecting `jumpLiterals` from the First-sets of
+  all `anchors` and `canStart` rules, any terminal that is **not** a multi-char `Literal`
+  (`t is not Literal { Value.Length: > 1 }` — i.e. a regex, a single-char `Literal`, or anything else)
+  sets `jumpSafe = false` (`RecoveryEngine.cs:297`, `RecoveryEngine.cs:305`).
+- After the loops, `if (!jumpSafe) jumpLiterals.Clear();` (`RecoveryEngine.cs:307-308`) — the jump set is
+  emptied so the existing in-loop jump logic (`if (jumpLiterals.Count > 0)`) is skipped entirely, exactly
+  as when the set was empty before 5a.2.4. **The jump logic in the loop is unchanged.**
+
+Note: for a `Ref` anchor `FirstSets.Get` already filters `Epsilon` (`.Where(t => t.Kind != "ε")`) and a
+First-set never contains `Eof`, so the simple "any non-multi-char-`Literal` terminal ⇒ `jumpSafe = false`"
+check is exactly the intended safety condition (no extra `Eof`/`Epsilon` special-casing needed).
+
+No changes to S1/S3/S4/S5/S6, `SpeculativeCache`, `CreateScratchParser`/`ParseRuleOnce`,
+`HygieneCore`/`ApplyPatches`/`RollbackPatches`/`PatchMemo`, the signature of `RecoveryEngine.Generate`,
+or any `.csproj`.
+
+### The test
+
+`Tests/ParserTests/Recovery/S2IndexOfTests.cs` — **modified**. The `NewParser(bool)` / `Parse(bool, …)`
+helpers were generalized to a `StmtKind` enum (`Ident` / `Keyword` / `Mixed`); the two existing tests now
+call `Parse(StmtKind.Ident, …)` and `Parse(StmtKind.Keyword, …)` (behavior unchanged). Added a third test:
+
+1. `S2IndexOf_MixedFirst_DisablesJump_SameResync` — the task-specified mixed-First test:
+   `Stmt := 'let' Ident ':' Expr ';' | Ident ':' Expr ';'` → `First(Stmt) = {Literal("let"), Ident(regex)}`.
+   Inputs `"{ a: 1+ ### let x: 2 ; }"` (`let` after the garbage — T1 via the `Literal` path) and
+   `"{ a: 1+ ### foo: 2 ; }"` (`foo`, an `Ident`, after the garbage, no `let` — T1 via the regex path).
+   `e` = first `#` (position 8) for both; both T1 matches start at position 12. Asserts:
+   (a) `S2ScanPositions > 0` for both (the S2 scan is triggered);
+   (b) an S2 T1 `skip to resync point` diagnostic exists for **both** inputs;
+   (c) the resync positions (T1 candidate) are **identical** for both inputs (`[12]` == `[12]`).
+
+### Verification (one-shot)
+
+| Command | Result |
+|---|---|
+| `dotnet build Tests/ParserTests/ParserTests.csproj` | **0 errors** (0 warnings) |
+| `dotnet test Tests/ParserTests/ParserTests.csproj` | **Total: 360 · Passed: 358 · Failed: 0 · Skipped: 2** |
+
+- Baseline is **357 passed / 0 failed / 2 skipped** (after 5a.2.4); after = **358 passed / 0 / 2** —
+  exactly baseline + the 1 new test, no regression. The 2 skipped are the same pre-existing `[Ignore("WIP")]`
+  in `GrammarValidationTests.cs` — unrelated.
+- **Pre-change confirmation (guard disabled):** the `jumpLiterals.Clear()` was temporarily bypassed
+  (`jumpSafe = true;` forced before the `if`). The run showed `S2IndexOf_MixedFirst_DisablesJump_SameResync`
+  **failing** — the `foo` (Ident) input produced **no** S2 T1 resync (only S3 `skip to terminator` +
+  S6 `bottom skip` + `Unrecovered`), because the jump stayed active on `Literal("let")` and
+  `IndexOf("let", s)` found no occurrence → `break` → the `foo` regex match was lost. The `let` input still
+  resynced (T1 found). The guard was then re-applied and the full suite is green (358/0/2).
+
+### Files changed
+
+- `ExtensibleParser/Recovery/RecoveryEngine.cs` — **modified**: `jumpSafe` safety flag in the
+  `jumpLiterals` precomputation of `GenerateS2` + `jumpLiterals.Clear()` when `!jumpSafe` (disables the
+  jump for mixed-First anchors).
+- `Tests/ParserTests/Recovery/S2IndexOfTests.cs` — **modified**: `NewParser`/`Parse` generalized to a
+  `StmtKind` enum (existing tests updated, behavior unchanged) + the new `S2IndexOf_MixedFirst_DisablesJump_SameResync`
+  test (mixed-First anchor; asserts the T1 resync position is the same for the `let` and the `foo` inputs).
+- `docs/RecoveryImprovementPlan-progress5a.2.md` — **modified**: this 5a.2.4a section appended.
+
+No S1/S3/S4/S5/S6 / `SpeculativeCache` / `CreateScratchParser`/`ParseRuleOnce` /
+`HygieneCore` / `ApplyPatches` / `RollbackPatches` / `PatchMemo` / `Generate`-signature / `.csproj`
+changes. Not committed.
+
+### Deviations
+
+1. **`Alt(...)` has no dedicated rule type in this parser.** Alternatives are expressed as an array of
+   `Rule` in `parser.Rules[name]` (the same mechanism used by the `Expr` rules). The plan's
+   `Stmt := Alt(Literal("let"), Ident) ':' Expr ';'` is therefore written as two alternatives —
+   `Seq([Literal("let"), Ident, ":", Expr, ";"])` **or** `Seq([Ident, ":", Expr, ";"])`. `FollowSetCalculator`
+   unions the First-sets of all alternatives, so `First(Stmt) = {Literal("let"), Ident}` — exactly the
+   mixed-First the plan specifies, and the recovery behavior (T1 resync position) is identical.

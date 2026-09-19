@@ -281,15 +281,31 @@ public static class RecoveryEngine
         // 5a.2.4: прыжок к ближайшему multi-char Literal (IndexOf): множество multi-char Literal-строк из
         // First-множеств всех якорей и canStart (однократно, до цикла). Пустое множество — прыжок не
         // выполняется (поведение не меняется): single-char Literal и regex остаются на пошаговом пути.
+        // 5a.2.4a: jump безопасен ТОЛЬКО при чисто multi-char Literal First. Если в First-множестве
+        // встретился терминал, не являющийся multi-char Literal (regex, single-char Literal и т.д.),
+        // break+прыжок теряют его совпадения на пропущенных позициях → jumpSafe = false →
+        // jumpLiterals.Clear() (jump отключён, поведение как до 5a.2.4). Логика jump в цикле не меняется
+        // (пустое множество → jump не выполняется).
         var jumpLiterals = new HashSet<string>(StringComparer.Ordinal);
+        var jumpSafe = true;
         foreach (var refRule in anchors)
             foreach (var t in FirstSets.Get(refRule, calculator))
+            {
                 if (t is Literal { Value.Length: > 1 } l)
                     jumpLiterals.Add(l.Value);
+                else
+                    jumpSafe = false;
+            }
         foreach (var refRule in canStart)
             foreach (var t in FirstSets.Get(refRule, calculator))
+            {
                 if (t is Literal { Value.Length: > 1 } l)
                     jumpLiterals.Add(l.Value);
+                else
+                    jumpSafe = false;
+            }
+        if (!jumpSafe)
+            jumpLiterals.Clear();
 
         var foundT1 = false;
         for (var s = e; s <= maxS && !foundT1; s++)

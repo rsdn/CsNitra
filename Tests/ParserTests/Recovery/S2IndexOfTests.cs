@@ -31,9 +31,15 @@ public sealed partial class S2IndexOfTerminals
 [TestClass]
 public sealed class S2IndexOfTests
 {
-    // Грамматика TierBudgetTests; stmtWithKeyword — Stmt := 'let' Ident ':' Expr ';' (First(Stmt) =
-    // {Literal("let")} — multi-char Literal, прыжок IndexOf активен).
-    private static Parser NewParser(bool stmtWithKeyword)
+    // Варианты правила Stmt (First-множество якоря Ref("Stmt")):
+    //   Ident   — Stmt := Ident ':' Expr ';'                          → First(Stmt) = {Ident} (regex);
+    //   Keyword — Stmt := 'let' Ident ':' Expr ';'                    → First(Stmt) = {Literal("let")} (multi-char);
+    //   Mixed   — Stmt := 'let' Ident ':' Expr ';' | Ident ':' Expr ';' → First(Stmt) = {Literal("let"), Ident} (mixed).
+    // (Alt(...) из плана выражен двумя альтернативами — единый способ альтернатив в этом парсере;
+    //  First-множество совпадает с Alt(Literal("let"), Ident) ':' Expr ';'.)
+    private enum StmtKind { Ident, Keyword, Mixed }
+
+    private static Parser NewParser(StmtKind kind)
     {
         var parser = new Parser(S2IndexOfTerminals.Trivia());
         parser.Rules["Expr"] = new Rule[]
@@ -46,10 +52,15 @@ public sealed class S2IndexOfTests
             new Seq([new Ref("Expr"), new Literal("=="), new ReqRef("Expr", 50)], "Eq"),
             new Seq([new Ref("Expr"), new Literal("!="), new ReqRef("Expr", 50)], "Neq"),
         };
-        var stmt = stmtWithKeyword
-            ? new Seq([new Literal("let"), S2IndexOfTerminals.Ident(), new Literal(":"), new Ref("Expr"), new Literal(";")], "Stmt")
-            : new Seq([S2IndexOfTerminals.Ident(), new Literal(":"), new Ref("Expr"), new Literal(";")], "Stmt");
-        parser.Rules["Stmt"] = [stmt];
+        var ident = S2IndexOfTerminals.Ident();
+        var plainStmt = new Seq([ident, new Literal(":"), new Ref("Expr"), new Literal(";")], "Stmt");
+        var keywordStmt = new Seq([new Literal("let"), ident, new Literal(":"), new Ref("Expr"), new Literal(";")], "Stmt");
+        parser.Rules["Stmt"] = kind switch
+        {
+            StmtKind.Keyword => [keywordStmt],
+            StmtKind.Mixed => [keywordStmt, plainStmt],
+            _ => [plainStmt],
+        };
         parser.Rules["Module"] = [new Seq([new Literal("{"), new ZeroOrMany(new Ref("Stmt"), "Stmts"), new Literal("}")], "Module")];
         parser.BuildTdoppRules();
         return parser;
@@ -58,9 +69,9 @@ public sealed class S2IndexOfTests
     private static string Describe(IReadOnlyList<RecoveryDiagnostic> diags)
         => string.Join("; ", diags.Select(d => $"{d.Kind} [{d.StartPos}..{d.EndPos}) {d.Message}"));
 
-    private static (Parser Parser, string Diags) Parse(bool stmtWithKeyword, string input)
+    private static (Parser Parser, string Diags) Parse(StmtKind kind, string input)
     {
-        var parser = NewParser(stmtWithKeyword);
+        var parser = NewParser(kind);
         parser.Parse(input, "Module", out _);
         return (parser, Describe(parser.RecoveryDiagnostics));
     }
@@ -89,8 +100,8 @@ public sealed class S2IndexOfTests
         const string padded = "{ a: 1+ ###    x: 2 ; }"; // 3 пробела паддинга между ### и x (строго после e)
         const int delta = 3;
 
-        var (p1, d1) = Parse(false, noPadding);
-        var (p2, d2) = Parse(false, padded);
+        var (p1, d1) = Parse(StmtKind.Ident, noPadding);
+        var (p2, d2) = Parse(StmtKind.Ident, padded);
 
         Assert.IsTrue(p1.S2ScanPositions > 0,
             $"no-padding: S2ScanPositions={p1.S2ScanPositions} (S2 scan not triggered), diags: {d1}");
@@ -123,8 +134,8 @@ public sealed class S2IndexOfTests
         const string padded = "{ let a: 1+ ###    let x: 2 ; }"; // 3 пробела паддинга между ### и let (строго после e)
         const int delta = 3;
 
-        var (p1, d1) = Parse(true, noPadding);
-        var (p2, d2) = Parse(true, padded);
+        var (p1, d1) = Parse(StmtKind.Keyword, noPadding);
+        var (p2, d2) = Parse(StmtKind.Keyword, padded);
 
         Assert.IsTrue(p1.S2ScanPositions > 0,
             $"no-padding: S2ScanPositions={p1.S2ScanPositions} (S2 scan not triggered), diags: {d1}");
@@ -154,6 +165,38 @@ public sealed class S2IndexOfTests
         Assert.IsTrue(resync1.Length > 0, $"no S2 T1 resync diagnostics:\nno-padding: {d1}\npadded:     {d2}");
         CollectionAssert.AreEqual(resync1.Select(x => x + delta).ToArray(), resync2,
             $"resync positions not shifted by delta:\nno-padding: {d1}\npadded:     {d2}");
+    }
+
+    // 5a.2.4a: mixed-First якорь — Stmt := 'let' Ident ':' Expr ';' | Ident ':' Expr ';' →
+    // First(Stmt) = {Literal("let"), Ident(regex)}. БЕЗ safety-guard jump активен на Literal("let"):
+    // вход с `let` после мусора даёт T1, но вход с `foo` (Ident, без `let`) — IndexOf("let", s) не
+    // находит вхождения → break → regex-совпадение `foo` потеряно → resync-позиция отсутствует/отличается.
+    // С safety-guard: Ident — не multi-char Literal → jumpSafe = false → jumpLiterals.Clear() → jump
+    // отключён → пошаговый проход → T1 найден в обоих случаях на одной позиции (resync одинаков, = 12).
+    [TestMethod]
+    public void S2IndexOf_MixedFirst_DisablesJump_SameResync()
+    {
+        const string letInput = "{ a: 1+ ### let x: 2 ; }";   // `let` после мусора (T1 через Literal-путь, позиция 12)
+        const string identInput = "{ a: 1+ ### foo: 2 ; }";   // `foo` (Ident) после мусора, без `let` (T1 через regex-путь, позиция 12)
+
+        var (p1, d1) = Parse(StmtKind.Mixed, letInput);
+        var (p2, d2) = Parse(StmtKind.Mixed, identInput);
+
+        Assert.IsTrue(p1.S2ScanPositions > 0,
+            $"let input: S2ScanPositions={p1.S2ScanPositions} (S2 scan not triggered), diags: {d1}");
+        Assert.IsTrue(p2.S2ScanPositions > 0,
+            $"ident input: S2ScanPositions={p2.S2ScanPositions} (S2 scan not triggered), diags: {d2}");
+
+        // mixed-First → jump отключён → T1 найден в обоих случаях (пошаговый проход).
+        var resync1 = p1.RecoveryDiagnostics.Where(d => d.Message.StartsWith("skip to resync point")).Select(d => d.EndPos).ToArray();
+        var resync2 = p2.RecoveryDiagnostics.Where(d => d.Message.StartsWith("skip to resync point")).Select(d => d.EndPos).ToArray();
+        Assert.IsTrue(resync1.Length > 0, $"no S2 T1 resync for `let` input, diags: {d1}");
+        Assert.IsTrue(resync2.Length > 0,
+            $"no S2 T1 resync for `foo` (Ident) input — jump active and lost the regex match, diags: {d2}");
+
+        // resync-позиция (T1-кандидат) ОДИНАКОВА для обоих входов (оба совпадения на позиции 12).
+        CollectionAssert.AreEqual(resync1, resync2,
+            $"resync positions differ:\nlet:   {d1}\nident: {d2}");
     }
 }
 #endif
