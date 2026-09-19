@@ -42,6 +42,35 @@ public partial class Parser(Terminal trivia, Log? log = null)
     // Чистый кэш результата TryMatch (length >= 0 или -1); mismatch кэшируется и никогда не чистится в ходе прохода.
     private readonly Dictionary<(int Pos, Terminal Terminal), int> _terminalCache = new(TerminalComparer.KeyComparer);
 
+    // Кэш First-наборов правил: ключ — ссылка на Rule (Rule — record, value-equality некорректна и дорога).
+    private readonly Dictionary<Rule, Terminal[]> _firstCache = new(ReferenceComparer.Instance);
+
+    private sealed class ReferenceComparer : IEqualityComparer<Rule>
+    {
+        public static readonly ReferenceComparer Instance = new();
+
+        public bool Equals(Rule? x, Rule? y) => ReferenceEquals(x, y);
+
+        // Rule — record: obj.GetHashCode() даёт value-хэш (дорого на TDOPP-правилах с большим Seq).
+        // Нужен identity-хэш (BCL RuntimeHelpers.GetHashCode), но локальный
+        // System.Runtime.CompilerServices.RuntimeHelpers (Shared/NetStandard2_0Support.cs)
+        // перекрывает BCL-тип по имени, поэтому метод вызывается через делегат (рефлексия один раз).
+        public int GetHashCode(Rule obj) => _IdentityHash(obj);
+
+        private static readonly Func<object, int> _IdentityHash = CreateIdentityHash();
+
+        private static Func<object, int> CreateIdentityHash()
+        {
+            var method = typeof(object)
+                .Assembly
+                .GetType("System.Runtime.CompilerServices.RuntimeHelpers")
+                ?.GetMethod("GetHashCode", [typeof(object)]);
+            return method is null
+                ? static o => o.GetHashCode()
+                : (Func<object, int>)Delegate.CreateDelegate(typeof(Func<object, int>), method)!;
+        }
+    }
+
     // Контекстный аргумент для контекстно-зависимого парсинга (Repeat с Count = null).
     // Устанавливается/восстанавливается ContextScope (stack-семантика, вложенные скоупы).
     // Является функцией позиции, поэтому ключи мемо/терминального кэша не расширяются.
@@ -201,6 +230,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
         var currentStartPos = startPos;
         _memo.Clear();
         _terminalCache.Clear();
+        _firstCache.Clear();
         ClearInjections();
         SetMaxParseDepth(input.Length);
 
