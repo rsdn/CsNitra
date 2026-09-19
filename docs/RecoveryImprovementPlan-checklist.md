@@ -25,7 +25,7 @@ Status: `[ ]` not started · `[~]` in progress (exactly one) · `[✅]` done · 
 
 ## Wave 2 — re-parse speed (B1, A2)
 - [✅] 2.1 B1: exact hygiene — `HygieneCore` removes only the start-rule record at `currentStartPos` + `Failure` with `currentStartPos <= pos <= e`; `Success`/`Partial` never removed (I2). `HygieneRemovals` test hook + `HygieneTests` (long file, removals bounded). ParserTests 347/0/2. Commit f65ff66.
-- [~] 2.2 A2: budgets by tiers, not candidates — S1 sub-budget (e.g. 4 insertions); S2 own sub-budget (separate from S3/S6); S3/S6 separate sub-budget; "attempt" = tier. Param in `RecoveryProfile`. Regression: "garbage with identifier tokens" → S3 still tried.
+- [✅] 2.2 A2: budgets by tiers — per-TIER sub-budgets (S1=4/S2=2/S3-S6=2); "attempt" = tier; S0/S6 exempt (S6 guaranteed fallback). `MaxRecoveryAttemptsPerPosition` kept as legacy no-op. Regression: large FollowSet → S3 still tried. Param in `RecoveryProfile` deferred to 4.1. ParserTests 348/0/2. Commit 01e4356.
 
 ## Wave 3 — "nothing matched" class (R1)
 - [ ] 3.1 R1: garbage terminal (Roslyn `BadToken` analogue) — built-in `Garbage`, `TryMatch(p)` = "no terminal of the set matched at p", consumes to first position where someone matches or limit (64 chars / 16 tokens). Local absorber, not explosive S2/S3/S6.
