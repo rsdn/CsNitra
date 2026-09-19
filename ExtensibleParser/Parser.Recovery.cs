@@ -28,6 +28,10 @@ public partial class Parser
     // Сбрасывается в начале Parse, инкрементируется на каждой итерации цикла восстановления.
     public int RecoveryPasses { get; private set; }
 
+    // Хук для тестов (2.1/B1, точная гигиена): число удалений memo, выполненных HygieneCore за последний Parse.
+    // Сбрасывается в начале Parse; ограниченно (не пропорционально размеру файла) при точной гигиене.
+    public int HygieneRemovals { get; private set; }
+
     // Лимиты цикла восстановления: предельное число итераций и число попыток кандидатов на одной точке восстановления.
     public int MaxRecoveryIterations { get; set; } = 1000;
 
@@ -270,6 +274,7 @@ public partial class Parser
         _attempts.Clear();
         EngineGenerateCalls = 0;
         RecoveryPasses = 0;
+        HygieneRemovals = 0;
         _recoveryPoint = -1;
         _lastSnapshot = null;
         _lastPartial = null;
@@ -458,20 +463,26 @@ public partial class Parser
         return EndPatchLog();
     }
 
-    // Гигиена memo. Узкий вариант спеки §3.5 (только Failure на e для правил снимка + Failure start-правила
-    // на currentStartPos) не проходит recovery-тесты (см. чек-лист 1.3): Error-правила/OftenMissed переиспытывают
-    // правила, упавшие в первом проходе на РАЗНЫХ позициях, а не только на e. Минимальное обоснованное расширение:
-    //  (c) ВСЕ stale Failure (любая позиция) — только Failure, не Success/Partial (I2: Success/Partial — валидные
-    //      факты префикса; применённые патчи — Success, заканчивающиеся в e — не трогаем).
+    // Гигиена memo — ТОЧНАЯ (2.1/B1). Удаляются только записи, реально невалидные в точке восстановления E:
+    //  (f) Failure с pos < E && MaxFailPos >= E: падение, начавшееся ДО E и дошедшее до E (или дальше) — его
+    //      вычисление опиралось на вход в окрестности E, а re-парсинг меняет его инъекцией/абсорбером → невалидно.
+    //      Failure с MaxFailPos < E (целиком в доверенном префиксе) и Failure с pos >= E — не трогаем.
     //  (b) start-правило на currentStartPos ЛЮБОГО типа (Partial/Success < EOF): устаревший верхнеуровневый результат
     //      первого прохода — иначе re-парсинг читает его и не переиспытывает start-правило (тесты SeparatedList/ErrorEmpty).
-    // (a) Failure на e для правил снимка — подмножество (c).
-    // I2 нарушается только для Failure в префиксе [currentStartPos, e) и для записи start-правила — не удаётся избежать. Требует активный лог патчей.
+    // Success/Partial никогда не удаляются (I2: валидные факты префикса). Требует активный лог патчей.
     private void HygieneCore(int e, FailureSnapshot? snapshot, string startRule, int currentStartPos)
     {
         foreach (var key in _memo.Keys.ToList())
-            if (key.pos == currentStartPos && key.rule == startRule || _memo[key].ResultKind == Result.Kind.Failure)
+        {
+            var isStartRuleAtCurrentStart = key.pos == currentStartPos && key.rule == startRule;
+            var value = _memo[key];
+            var isInvalidFailure = value.ResultKind == Result.Kind.Failure && key.pos >= currentStartPos && key.pos <= e;
+            if (isStartRuleAtCurrentStart || isInvalidFailure)
+            {
                 RemoveMemo(key.rule, key.pos, key.precedence);
+                HygieneRemovals++;
+            }
+        }
     }
 
     // Откат логов (обратный порядок): возвращает OldValue (или удаляет ключ, если OldValue == null).

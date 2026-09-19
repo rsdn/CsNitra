@@ -24,7 +24,7 @@ Status: `[ ]` not started · `[~]` in progress (exactly one) · `[✅]` done · 
 - [✅] 1.6 C2: Partial-after-recovery semantics — verified S6 gives `Success@EOF` (not `Partial`); `Partial@EOF` is a distinct, intentional final state (postfix path reached EOF with holes, no recovery applied, `ErrorInfo==null`, empty diagnostics). No code change needed. `PartialAfterRecoveryTests.cs` (2). ParserTests 346/0/2.
 
 ## Wave 2 — re-parse speed (B1, A2)
-- [ ] 2.1 B1: exact hygiene — `HygieneCore` removes only `Failure` with `pos < E && MaxFailPos >= E` + start-rule record at `currentStartPos`. Test "one error at end of large file": memo removals before/after (D2); re-parse time drops.
+- [~] 2.1 B1: exact hygiene — `HygieneCore` removes only `Failure` with `pos < E && MaxFailPos >= E` + start-rule record at `currentStartPos`. Test "one error at end of large file": memo removals before/after (D2); re-parse time drops.
 - [ ] 2.2 A2: budgets by tiers, not candidates — S1 sub-budget (e.g. 4 insertions); S2 own sub-budget (separate from S3/S6); S3/S6 separate sub-budget; "attempt" = tier. Param in `RecoveryProfile`. Regression: "garbage with identifier tokens" → S3 still tried.
 
 ## Wave 3 — "nothing matched" class (R1)
