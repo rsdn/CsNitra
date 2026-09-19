@@ -266,6 +266,46 @@ Stop-if: правка требует второго продакшн-файла;
 **Критерий волны:** на D1-корпусе: меньше итераций и попыток на точку (D2), «expecting»
 сообщения точнее (ручная проверка по сценариям), TDOPP-регрессии отсутствуют.
 
+#### 5a.3 (A4-1) — «тихая зона»: декомпозиция на подзадачи
+
+**Решения по вопросам (закрыты до нарезки):**
+
+1. **Где начинается.** После принятия кандидата в `TryCandidate` (ветка `e2 > e` или Success@EOF, `recoveredThisIteration = true`) — `_quietZoneEnd = e`. Активна для всех последующих парсов до первого mismatch'а `pos > E`.
+2. **Где заканчивается.** При первом mismatch'е `pos > E` — `_quietZoneEnd = -1`.
+3. **Граница.** `pos <= E` (инклюзивно). Согласовано с `HygieneCore` (`key.pos <= e`) и A4-3 (абсорбер `[E..E+1)`).
+4. **Save/restore в `TryCandidate`.** Остаётся (для re-parse). Тихая зона подавляет обновления *внутри* re-parse на `pos <= E`. `_lastSnapshot` сейчас не сохраняется/восстанавливается в `TryCandidate` — A4-1 чинит: тихая зона подавляет `CaptureSnapshot` на `pos <= E`.
+5. **S6-абсорбер.** S6 покрывает `[start..s)`, `s > E` — после S6 parser с `s > E`, следующий mismatch на `pos > E` → тихая зона НЕ активируется.
+6. **`ResetRecoveryPoint`.** Отдельный lifecycle. Тихая зона сбрасывается при mismatch'е `pos > E`; `ResetRecoveryPoint` — при TDOPP-постфиксе на точке восстановления. Не сбрасывать вместе.
+
+**Non-goals (все подзадачи):** не менять S1–S6, `SpeculativeCache`, `HygieneCore`/`ApplyPatches`/`RollbackPatches`/`PatchMemo`, `Speculative`, `TryCandidate`-save/restore, сигнатуру `RecoveryEngine.Generate`, `.csproj`; не коммитить.
+
+**Общий Stop-if:** новый failed-тест не по подзадаче — стоп; правка требует третьего файла — стоп, разбить; нужно решение уровня A2/A3 — стоп и доклад.
+
+### 5a.3.1: состояние тихой зоны (инфраструктура)
+Файлы: `ExtensibleParser/Parser.Recovery.cs` (+ декларация partial-хука в `Parser.cs`)
+Цель: поле `_quietZoneEnd` + reset в `Recover` + partial-хук `InQuietZone` + активация в `TryCandidate`.
+ДО: тихой зоны нет.
+ПОСЛЕ: `private int _quietZoneEnd = -1;`; в блоке сброса `Recover` (рядом с `_recoveryPoint = -1;`) — `_quietZoneEnd = -1;`; partial-хук `private partial bool InQuietZone(int pos) => _quietZoneEnd >= 0 && pos <= _quietZoneEnd;` (декларация в `Parser.cs`, реализация в `Parser.Recovery.cs`); в `TryCandidate` после `recoveredThisIteration = true` (обе ветки: Success@EOF и `e2 > e`) — `_quietZoneEnd = e;`. Подавление — НЕ здесь (в 5a.3.2).
+Тест: нет отдельного (инфраструктура); проверяется в 5a.3.2.
+Стоп-если: свойство уже существует; правка требует третьего файла.
+Не делать: не трогать S1–S6, `SpeculativeCache`, `HygieneCore`/`ApplyPatches`/`RollbackPatches`/`PatchMemo`, `ReportMismatch`, `CaptureSnapshot`, `Speculative`, сигнатуру `Generate`, `.csproj`; не коммитить.
+Зависит от: нет.
+
+### 5a.3.2: подавление в `ReportMismatch` + `CaptureSnapshot` (одна подзадача, два файла)
+Файлы: `ExtensibleParser/Parser.cs` (`ReportMismatch`); `ExtensibleParser/Parser.Recovery.cs` (`CaptureSnapshot`)
+Цель: в тихой зоне (`InQuietZone(pos)`) mismatch'ы на `pos <= _quietZoneEnd` не обновляют `ErrorPos`/`_expected` и не снимают snapshot.
+ДО: `ReportMismatch` (Parser.cs:792-806) обновляет `ErrorPos`/`_expected` при `pos >= ErrorPos` без исключения; `CaptureSnapshot` (Parser.Recovery.cs:575-588) снимает snapshot при каждом `OnMismatch`.
+ПОСЛЕ: в `ReportMismatch` — если `InQuietZone(pos)`, `return` (не обновлять `ErrorPos`/`_expected`, не звать `OnMismatch`); в `CaptureSnapshot` — если `InQuietZone(pos)`, `return` (не снимать snapshot). При mismatch'е `pos > _quietZoneEnd` — `_quietZoneEnd = -1` (завершение тихой зоны) и обычный путь.
+Почему одна подзадача: `ReportMismatch` (Parser.cs) и `CaptureSnapshot` (Parser.Recovery.cs) подавляют одновременно — иначе промежуточное состояние (snapshot затёрт, `ErrorPos` не перетёрт или наоборот) некорректно. Правило «один файл» снято осознанно.
+Тест: `QuietZoneTests` — вход, доводящий до принятого патча в точке `E`, после которого parser натыкается на mismatch в позиции `<= E` **с другим ожидаемым терминалом**. **Главный ассерт (падает без правки):** `ErrorInfo.Expecteds` (или `LastSnapshot.Expected`) содержит **только** терминалы из первого mismatch'а в `E`, не загрязнён последующими mismatch'ами на `pos <= E` (без правки `_expected.Add(terminal)` при `pos == ErrorPos` копится мусор). Сопутствующие ассерты: `ErrorPos == E`, `LastSnapshot.Pos == E` — **проходят и без правки** (пометка: главный ассерт — Expecteds).
+Стоп-если: вход не доводит до принятого патча + артефактного mismatch'а на `pos <= E` с другим терминалом; `Expecteds` не загрязнён без правки (вход неверный — менять вход, не тест); новый failed-тест не по подзадаче; правка требует третьего файла.
+Не делать: не трогать S1–S6, `SpeculativeCache`, `HygieneCore`/`ApplyPatches`/`RollbackPatches`/`PatchMemo`, `Speculative`, `TryCandidate`-save/restore, сигнатуру `Generate`, `.csproj`; не коммитить.
+Зависит от: 5a.3.1.
+
+**Тестовый вход (направление, точный вход — до запуска 5a.3.2):** признак артефакта — после принятия кандидата (S1-вставка или S3-абсорбер) при последующем парсе mismatch в позиции `E` с **другим** ожидаемым терминалом → `_expected` получает лишний элемент. Где смотреть: `IterativeRecoveryTests.cs`, `T1AnchorReproTests.cs`, `A42AcceptanceTests.cs` (D1.2). Если вход не найден за 2-3 попытки — NEEDS-SPEC и стоп (возможно, артефакт ненаблюдаем в текущем движке; A4-1 → Wave 6 как метрика).
+
+**Порядок:** состояние (5a.3.1, инфраструктура) → подавление (5a.3.2, два файла). Планка: 358/0/2 + ровно новые тесты подзадачи. Прогресс — `docs/RecoveryImprovementPlan-progress5a.3.md`.
+
 ---
 
 ### Волна 6 — диагностика и метрики
