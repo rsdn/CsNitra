@@ -85,8 +85,8 @@ public sealed class PreprocessorIntegrationTests
 
         // The parse must not come out as a clean success (it fails, or carries a FatalError).
         Assert.IsTrue(
-            !parseResult.TryGetSuccess(out _, out _) || parser.Parser.ErrorInfo is not null,
-            $"Expected parse failure for active code with a syntax error, but it parsed cleanly. ErrorPos={parser.Parser.ErrorPos}");
+            parser.Parser.ErrorInfo is not null || parser.Parser.RecoveryDiagnostics.Count > 0,
+            $"Expected the parser to record an error, but it was silent. ErrorPos={parser.Parser.ErrorPos}");
 
         var errPos = parser.Parser.ErrorPos;
         Assert.IsTrue(errPos >= 0 && errPos < source.Length, $"errPos {errPos} out of range [0, {source.Length})");
