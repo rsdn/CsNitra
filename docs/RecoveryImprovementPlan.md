@@ -165,6 +165,65 @@ Stop-if: правка требует второго продакшн-файла;
 
 **Порядок:** обёртка (тип) → поле/сброс/счётчики (инфраструктура на `Parser`) → переключение (тест опирается на счётчики из 5a.1.2). Планка: 348/0/2 + ровно новые тесты подзадачи. Прогресс — `docs/RecoveryImprovementPlan-progress5a.1.md`.
 
+#### 5a.2 (B3) — декомпозиция на подзадачи
+
+**Решения по вопросам (закрыты до нарезки):**
+
+1. **IndexOf в S3 vs счётчик вложенности** — (в): IndexOf в S3 не делаем, только trivia jump. Терминаторы S3 однобуквенные (`TryMatch` уже ~`input[s]==c`); счётчик `{ } ( ) [ ]` требует попозиционного обхода — IndexOf его сломает.
+2. **Где IndexOf помогает** — только в S2. First-множества S2 содержат multi-char `Literal` (ключевые слова) — `TryMatch` делает полное сравнение, `input.IndexOf` — быстрый скан. В S3 однобуквенные — выигрыша нет.
+3. **Trivia jump — как именно** — прыжок одним `Trivia.TryMatch` в начале каждой итерации цикла (в обоих сканах). Trivia-бег не содержит терминаторов/First-совпадений → пропуск безопасен.
+4. **S3 и комментарии (решение (б))** — прыгать по всему trivia (включая `//` и `/* */`). Скобки внутри `/* ... */` сейчас ложно учитываются в `curly/paren/bracket` — это баг (парсер сам их игнорирует); jump = исправление. Обязательный тест: `}` внутри `/* ... */` → S3 не останавливается на нём.
+5. **Ассерт счётчика (без хардкода N)** — два входа: с trivia-паддингом и без; ассерт `counter(с паддингом) - counter(без) < длина_паддинга`. Не требует внутренних `e`/`maxS`.
+
+**Non-goals (все подзадачи):** не менять `GenerateS6`/`GenerateS1`/`GenerateS4`/`GenerateS5`; не менять семантику `SpeculativeCache`; не менять `HygieneCore`/`ApplyPatches`/`RollbackPatches`/`PatchMemo`; не менять сигнатуру `RecoveryEngine.Generate`; не трогать `.csproj`; не коммитить.
+
+**Общий Stop-if:** новый failed-тест не по подзадаче — стоп; правка требует второго продакшн-файла — стоп, разбить; нужно решение уровня A2/A3 — стоп и доклад; тестовый вход не попадает в целевой скан — стоп и доклад.
+
+### 5a.2.1: счётчики сканированных позиций (инфраструктура)
+Файлы: `ExtensibleParser/Parser.Recovery.cs`
+Цель: добавить `S2ScanPositions`/`S3ScanPositions` на `Parser` (сброс в `Recover`), по образцу `HygieneRemovals`.
+ДО: счётчиков нет.
+ПОСЛЕ: `public int S2ScanPositions { get; private set; }` + `public int S3ScanPositions { get; private set; }`; в блоке сброса `Recover` (рядом с `HygieneRemovals = 0;`) — `S2ScanPositions = 0; S3ScanPositions = 0;`. Инкремент — НЕ здесь (в 5a.2.2/5a.2.3).
+Тест: нет отдельного (инфраструктура); счётчики проверяются в 5a.2.2/5a.2.3, где есть инкремент.
+Стоп-если: свойство уже существует; правка требует второго продакшн-файла.
+Не делать: не трогать `RecoveryEngine`, S1–S6, `SpeculativeCache`, `HygieneCore`/`ApplyPatches`/`RollbackPatches`/`PatchMemo`, сигнатуру `Generate`, `.csproj`; не коммитить.
+Зависит от: нет.
+
+### 5a.2.2: S2 — счётчик + trivia jump
+Файлы: `ExtensibleParser/Recovery/RecoveryEngine.cs`; `Tests/ParserTests/Recovery/S2TriviaJumpTests.cs`
+Цель: в S2-скане инкрементить `parser.S2ScanPositions` на каждой реально проверенной позиции и пропускать trivia-бег одним `Trivia.TryMatch`.
+ДО: цикл `for (var s = e; s <= maxS && !foundT1; s++)` (:281) идёт по каждой позиции; счётчика нет.
+ПОСЛЕ: в начале тела цикла `parser.S2ScanPositions++`; после инкремента — если `parser.Trivia.TryMatch(input, s)` даёт длину `k>0`, то `s += k` (прыжок на конец бегa) и `continue`. Логика `FirstMatchesAt`/`Speculative`/`AddResyncCandidate` не меняется.
+Почему одна подзадача: счётчик и trivia-jump неразрывны — без счётчика jump не принять (тест «тот же результат» проходит и до, и после); счётчик измеряет именно то, что jump уменьшает.
+Тест: `S2TriviaJumpTests` — грамматика `TierBudgetTests`; два входа: `"{ a: 1+ ### b ; }"` (без паддинга) и `"{ a: 1+   ### b ; }"` (с trivia-паддингом 3 пробела). Ассерт: (а) `S2ScanPositions > 0` (скан доходит до `Speculative` на `b`); (б) resync-позиция/диагностика те же, что до правки; (в) `S2ScanPositions(с паддингом) - S2ScanPositions(без) < 3` (бег пропущен). Падает без правки: паддинг не пропускается → разница == 3 (не < 3).
+Стоп-если: вход не доходит до S2-скана (`S2ScanPositions==0` после правки); resync-позиция изменилась; новый failed-тест не по подзадаче; правка требует второго файла.
+Не делать: не трогать S1/S3/S4/S5/S6, `GenerateS2`-подпись, `SpeculativeCache`, `CreateScratchParser`/`ParseRuleOnce`, `HygieneCore`/`ApplyPatches`/`RollbackPatches`/`PatchMemo`, сигнатуру `Generate`, `.csproj`; не коммитить.
+Зависит от: 5a.2.1.
+
+### 5a.2.3: S3 — счётчик + trivia jump (решение (б): по всему trivia)
+Файлы: `ExtensibleParser/Recovery/RecoveryEngine.cs`; `Tests/ParserTests/Recovery/S3TriviaJumpTests.cs`
+Цель: в S3-скане инкрементить `parser.S3ScanPositions` на каждой реально проверенной позиции и пропускать trivia-бег (включая комментарии) одним `Trivia.TryMatch`.
+ДО: цикл `for (var s = e + 1; s <= maxS; s++)` (:417) идёт по каждой позиции, обновляя `curly/paren/bracket` по `input[s-1]`; счётчика нет.
+ПОСЛЕ: в начале тела цикла `parser.S3ScanPositions++`; если `parser.Trivia.TryMatch(input, s)` даёт `k>0` — `s += k` и `continue`. Решено (б): прыжок по всему trivia (включая `//` и `/* */`) — скобки внутри `/* ... */` больше не учитываются в `curly/paren/bracket` (исправление: парсер сам их игнорирует). Логика `Match`/глубины не меняется.
+Почему одна подзадача: как в 5a.2.2 — счётчик и jump неразрывны.
+Тест: `S3TriviaJumpTests` — грамматика `TierBudgetTests`; два входа: `"{ a: 1+ ### ; }"` (без паддинга) и `"{ a: 1+   ### ; }"` (с паддингом 3 пробела). Ассерт: (а) `S3ScanPositions > 0`; (б) S3-диагностика `skip to terminator` та же, что до правки; (в) `S3ScanPositions(с паддингом) - S3ScanPositions(без) < 3`. **Обязательный (решение (б)):** вход с `}` внутри `/* ... */` (напр. `"{ a: 1+ /* } */ ### ; }"`) — ассерт, что S3 НЕ остановился на `}` внутри комментария (resync-позиция совпадает с вариантом без комментария). Падает без правки: `S3ScanPositions==0`; тест (б) падает без правки, т.к. сейчас `}` в `/* */` ложно учитывается в счётчике.
+Стоп-если: вход не доходит до S3 (`S3ScanPositions==0` после правки); S3-диагностика изменилась; новый failed-тест не по подзадаче; правка требует второго файла.
+Не делать: не трогать S1/S2/S4/S5/S6, `SpeculativeCache`, `CreateScratchParser`/`ParseRuleOnce`, `HygieneCore`/`ApplyPatches`/`RollbackPatches`/`PatchMemo`, сигнатуру `Generate`, `.csproj`; не коммитить.
+Зависит от: 5a.2.1.
+
+### 5a.2.4: S2 — прыжок к ближайшему multi-char Literal (IndexOf)
+Файлы: `ExtensibleParser/Recovery/RecoveryEngine.cs`; `Tests/ParserTests/Recovery/S2IndexOfTests.cs`
+Цель: `GenerateS2` — прыжок к ближайшему multi-char `Literal` из First-множеств якорей вместо пошагового `FirstMatchesAt` на каждой позиции.
+ДО: `FirstMatchesAt` (:164) на каждой позиции зовёт `t.TryMatch(input, pos)` для каждого терминала First (для multi-char `Literal` — полное строковое сравнение).
+ПОСЛЕ: (1) предвычислить множество multi-char `Literal`-строк из First-множеств всех якорей (однократно, до цикла); (2) в цикле `next = min(input.IndexOf(lit, s) для lit из множества, где IndexOf >= 0)`; если ни один не найден — `break`; (3) если `next > s` — `s = next` (прыжок к вхождению); (4) однобуквенные `Literal` и regex — как были, обычный пошаговый проход. `Speculative`/`AddResyncCandidate` не меняются.
+Пометка: переписывание цикла S2; объём больше, чем у 5a.2.2, но метод один — `GenerateS2`, файл один.
+Тест: `S2IndexOfTests` — тот же вход, что в 5a.2.2 (`"{ a: 1+ ### b ; }"` + паддинг). Ассерт: resync-позиция та же, что до правки; `S2ScanPositions` меньше, чем после 5a.2.2 (IndexOf пропустил позиции).
+Стоп-если: переписывание требует правки вне `GenerateS2` — стоп и доклад, не импровизировать; resync-позиция изменилась; вход не доходит до S2; новый failed-тест не по подзадаче; правка требует второго файла.
+Не делать: не трогать S1/S3/S4/S5/S6, `SpeculativeCache`, `CreateScratchParser`/`ParseRuleOnce`, `HygieneCore`/`ApplyPatches`/`RollbackPatches`/`PatchMemo`, сигнатуру `Generate`, `.csproj`; не коммитить.
+Зависит от: 5a.2.2.
+
+**Порядок:** счётчики (инфраструктура) → S2-счётчик+trivia → S3-счётчик+trivia → S2-IndexOf (опирается на trivia-базу из 5a.2.2). S2-trivia и S3-trivia независимы (разные сканы). Планка: 351/0/2 + ровно новые тесты подзадачи. Прогресс — `docs/RecoveryImprovementPlan-progress5a.2.md`.
+
 **Критерий волны:** на D1-корпусе: меньше итераций и попыток на точку (D2), «expecting»
 сообщения точнее (ручная проверка по сценариям), TDOPP-регрессии отсутствуют.
 
