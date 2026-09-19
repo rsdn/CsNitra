@@ -32,6 +32,14 @@ public partial class Parser
     // Сбрасывается в начале Parse; ограниченно (не пропорционально размеру файла) при точной гигиене.
     public int HygieneRemovals { get; private set; }
 
+    // Хук для тестов (5a.2.2, дешёвые S2-сканы): число позиций, реально проверенных S2-сканом за последний Recover.
+    // Инкремент — в RecoveryEngine (5a.2.2); сброс — в начале Recover.
+    public int S2ScanPositions { get; private set; }
+
+    // Хук для тестов (5a.2.3, дешёвые S3-сканы): число позиций, реально проверенных S3-сканом за последний Recover.
+    // Инкремент — в RecoveryEngine (5a.2.3); сброс — в начале Recover.
+    public int S3ScanPositions { get; private set; }
+
     // B2: кэш спекулятивных парсов (обёртка SpeculativeCache) + D2-счётчики хитов/промахов (read-only,
     // читаются из обёртки). Время жизни кэша — один Recover; сброс (кэш + счётчики) — в начале Recover.
     public SpeculativeCache SpecCache => _specCache;
@@ -289,6 +297,8 @@ public partial class Parser
         EngineGenerateCalls = 0;
         RecoveryPasses = 0;
         HygieneRemovals = 0;
+        S2ScanPositions = 0;
+        S3ScanPositions = 0;
         _specCache.Reset();
         _recoveryPoint = -1;
         _lastSnapshot = null;
