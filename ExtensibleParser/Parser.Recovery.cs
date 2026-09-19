@@ -147,8 +147,17 @@ public partial class Parser
     // ============ Реализации хуков (декларации — в Parser.cs) ============
 
     private partial void OnMismatch(Terminal terminal, int pos) => CaptureSnapshot(pos, terminal);
-    private partial void OnMemoWritten((int pos, string rule, int precedence) key) => RecordMemo(key);
-    private partial void OnMemoRemoved((int pos, string rule, int precedence) key) => RecordMemoRemove(key);
+    private partial void OnMemoWritten((int pos, string rule, int precedence) key)
+    {
+        IndexMemoAdd(key);
+        RecordMemo(key);
+    }
+
+    private partial void OnMemoRemoved((int pos, string rule, int precedence) key)
+    {
+        IndexMemoRemove(key);
+        RecordMemoRemove(key);
+    }
     private partial void OnInjectionApplied((int Pos, Terminal Terminal) key) => RecordInjection(key);
     private partial void OnPartialCaptured(Result partialResult) => _lastPartial = partialResult;
     private partial bool IsRecoveryPosition(int pos) => pos == _recoveryPoint;
@@ -530,15 +539,21 @@ public partial class Parser
     // Success/Partial никогда не удаляются (I2: валидные факты префикса). Требует активный лог патчей.
     private void HygieneCore(int e, FailureSnapshot? snapshot, string startRule, int currentStartPos)
     {
-        foreach (var key in _memo.Keys.ToList())
+        for (var p = currentStartPos; p <= e; p++)
         {
-            var isStartRuleAtCurrentStart = key.pos == currentStartPos && key.rule == startRule;
-            var value = _memo[key];
-            var isInvalidFailure = value.ResultKind == Result.Kind.Failure && key.pos >= currentStartPos && key.pos <= e;
-            if (isStartRuleAtCurrentStart || isInvalidFailure)
+            if (!_memoByPos.TryGetValue(p, out var keys))
+                continue;
+            foreach (var key in keys.ToArray())
             {
-                RemoveMemo(key.rule, key.pos, key.precedence);
-                HygieneRemovals++;
+                if (!_memo.TryGetValue(key, out var value))
+                    continue;
+                var isStartRuleAtCurrentStart = key.pos == currentStartPos && key.rule == startRule;
+                var isInvalidFailure = value.ResultKind == Result.Kind.Failure && key.pos >= currentStartPos && key.pos <= e;
+                if (isStartRuleAtCurrentStart || isInvalidFailure)
+                {
+                    RemoveMemo(key.rule, key.pos, key.precedence);
+                    HygieneRemovals++;
+                }
             }
         }
     }
@@ -550,9 +565,15 @@ public partial class Parser
         {
             var patch = log.Memo[i];
             if (patch.OldValue is { } old)
+            {
                 _memo[patch.Key] = old;
+                IndexMemoAdd(patch.Key);
+            }
             else
+            {
                 _memo.Remove(patch.Key);
+                IndexMemoRemove(patch.Key);
+            }
         }
 
         for (var i = log.Injection.Count - 1; i >= 0; i--)

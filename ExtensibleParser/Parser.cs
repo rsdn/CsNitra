@@ -38,6 +38,24 @@ public partial class Parser(Terminal trivia, Log? log = null)
     public Dictionary<string, TdoppRule> TdoppRules { get; } = new();
 
     private readonly Dictionary<(int pos, string rule, int precedence), Result> _memo = new();
+    private readonly Dictionary<int, HashSet<(int pos, string rule, int precedence)>> _memoByPos = new();
+
+    private void IndexMemoAdd((int pos, string rule, int precedence) key)
+    {
+        if (!_memoByPos.TryGetValue(key.pos, out var set))
+            _memoByPos[key.pos] = set = new HashSet<(int, string, int)>();
+        set.Add(key);
+    }
+
+    private void IndexMemoRemove((int pos, string rule, int precedence) key)
+    {
+        if (_memoByPos.TryGetValue(key.pos, out var set))
+        {
+            set.Remove(key);
+            if (set.Count == 0)
+                _memoByPos.Remove(key.pos);
+        }
+    }
 
     // Чистый кэш результата TryMatch (length >= 0 или -1); mismatch кэшируется и никогда не чистится в ходе прохода.
     private readonly Dictionary<(int Pos, Terminal Terminal), int> _terminalCache = new(TerminalComparer.KeyComparer);
@@ -229,6 +247,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
         ErrorPos = startPos;
         var currentStartPos = startPos;
         _memo.Clear();
+        _memoByPos.Clear();
         _terminalCache.Clear();
         _firstCache.Clear();
         ClearInjections();
@@ -262,6 +281,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
         ErrorInfo = null;
         ErrorPos = startPos;
         _memo.Clear();
+        _memoByPos.Clear();
         _terminalCache.Clear();
         _firstCache.Clear();
         ClearInjections();
