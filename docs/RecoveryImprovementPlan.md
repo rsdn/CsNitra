@@ -346,6 +346,74 @@ Stop-if: правка требует второго продакшн-файла;
 
 **Порядок:** enum (5a.4.1, инфраструктура) → генератор+подключение (5a.4.2). Планка: 358/0/2 + ровно новые тесты подзадачи. Прогресс — `docs/RecoveryImprovementPlan-progress5a.4.md`.
 
+#### 5a.5 (A4-4) — First-префильтр: декомпозиция на подзадачи
+
+**Решения по вопросам (закрыты до нарезки):**
+
+1. **Где:** `ParseRule` (Parser.cs:224), цикл `for (var altIdx = ...)`, после `var prefix = prefixRules[altIdx];`, до `var altOptions = OptionsFor(prefix);`. `ParseAlternative` альтернативы не пробует — это делает `ParseRule`. Фильтр проверяет First-набор каждого префикса.
+2. **Кэш First:** `Dictionary<Rule, Terminal[]> _firstCache` на `Parser`, ключ — **ссылка** на `Rule`. Сброс в `Parse` (:202-203, рядом с `_memo.Clear()`/`_terminalCache.Clear()`). **Reference-компаратор обязателен** (см. 5a.5.1): `Rule` — record, дефолтный comparer даст value equality (некорректно + дорого).
+3. **Nullable-первый-элемент:** `FirstSets.Get` уже учитывает nullable + `Ref`/`ReqRef` (через `calculator.GetFirstSet`). Пре-фильтр использует полный First-набор. Специальной обработки не нужно.
+4. **Recovery-альтернативы:** пре-фильтр применяется и к recovery-альтернативам. Пустой First-набор → no-op. Безопасно.
+5. **Exit-tokens (пункт 2):** rule-level `GetFollowSet(ruleName)`. Но пункт 2 — **deferred** (см. 5a.5.3).
+6. **Механизм `_expected` (пункт 2):** NEEDS-SPEC → deferred. `_expected` очищается в `ReportMismatch` при `pos > ErrorPos` (Parser.cs:800-801); запись при выходе из цикла теряется. Варианты (б)/(в) требуют изменения `ReportMismatch`/стека кадров — не recovery-only.
+
+**Non-goals (все подзадачи):** не менять S1–S6, `SpeculativeCache`, `HygieneCore`/`ApplyPatches`/`RollbackPatches`/`PatchMemo`, `TryCandidate`, `Recover`, `InQuietZone`, `_quietZoneEnd`, сигнатуру `Generate`, `ReportMismatch`, `.csproj`; не коммитить.
+
+**Общий Stop-if:** новый failed-тест не по подзадаче — стоп; правка требует второго продакшн-файла — стоп, разбить; результат парса изменился (фильтр не behavior-preserving) — стоп; перф-ассерт 5a.5.2 упал — стоп и доклад; тестовый вход не попадает в пре-фильтр — стоп и доклад; ассерт «падает без правки» фактически проходит без правки — стоп, переделать.
+
+### 5a.5.1: кэш First (`_firstCache` + reference-компаратор)
+Файл: `ExtensibleParser/Parser.cs`
+Цель: добавить поле `_firstCache` и вложенный reference-компаратор; сброс в `Parse`.
+ДО: в `Parse` (:202-203) есть `_memo.Clear(); _terminalCache.Clear();`.
+ПОСЛЕ: (1) вложенный `private sealed class ReferenceComparer : IEqualityComparer<Rule>` со `static readonly Instance`, `Equals` = `ReferenceEquals`, `GetHashCode` = `RuntimeHelpers.GetHashCode`; (2) поле `private readonly Dictionary<Rule, Terminal[]> _firstCache = new(ReferenceComparer.Instance);`; (3) в `Parse` после `_terminalCache.Clear();` — `_firstCache.Clear();`.
+Почему reference-компаратор: `Rule` — record; дефолтный `EqualityComparer<Rule>.Default` даёт value equality (для `Seq(Rule[])` хэш по ссылке массива, для скалярных полей — по значению) → смешанное/некорректное поведение + дорогое хэширование на TDOPP-правилах. `ReferenceEqualityComparer` недоступен (netstandard2.0, появился в .NET 5).
+Тест: нет (инфраструктура); проверяется в 5a.5.2.
+Стоп-если: поле/компаратор уже существуют.
+Не делать: не трогать `ParseTerminal`, `ParseRule`, S1–S6, `ReportMismatch`, `.csproj`; не коммитить.
+Зависит от: нет.
+
+### 5a.5.2: First-префильтр в `ParseRule` + счётчик `SkippedAlternatives`
+Файл: `ExtensibleParser/Parser.cs`
+Цель: в цикле `ParseRule` пропускать альтернативы, чей First-набор не матчит на `startPos`; счётчик пропущенных.
+ДО: цикл `for (var altIdx = 0; altIdx < prefixRules.Length; altIdx++) { var prefix = prefixRules[altIdx]; var altOptions = OptionsFor(prefix); PushRuleFrame(...); ... }`.
+ПОСЛЕ: между `var prefix = prefixRules[altIdx];` и `var altOptions = OptionsFor(prefix);`:
+```
+var first = GetFirstCached(prefix);
+if (first.Length > 0)
+{
+    var canStart = false;
+    foreach (var t in first)
+    {
+        if (t is EofTerminal or EpsilonTerminal)
+            continue;
+        if (TryMatchCached(t, startPos, input) >= 0)
+        {
+            canStart = true;
+            break;
+        }
+    }
+    if (!canStart)
+    {
+        SkippedAlternatives++;
+        continue;
+    }
+}
+```
+Новые члены (все в `Parser.cs`): (1) `private Terminal[] GetFirstCached(Rule rule)` — лениво: `_firstCache.TryGetValue(rule, out var cached) ? cached : _firstCache[rule] = FirstSets.Get(rule, _followCalculator)`; (2) `private int TryMatchCached(Terminal terminal, int startPos, string input)` — логика как в `ParseTerminal` :758-762 (`_terminalCache` lookup → `terminal.TryMatch` → запись в кэш); (3) `public int SkippedAlternatives { get; private set; }` — **сброс в `Parse`** (:202-203, рядом с `_memo.Clear()`/`_terminalCache.Clear()`/`_firstCache.Clear()`), НЕ в `Recover` (счётчик работает на чистом коде, вне recovery — в отличие от S2/S3 из 5a.2).
+Почему behavior-preserving: фильтр пропускает только альтернативы, которые бы всё равно упали на первом терминале (`LA(1) ∉ First(prefix)`); результат парса не меняется.
+Почему одна подзадача: пре-фильтр + helper'ы + счётчик неразрывны (один файл, один механизм).
+Перф-ассерт: D1.2-корпус (одна ошибка в конце большого файла, основной префикс чистый); `newTime <= oldTime * 1.05` (5% — реалистичный шум in-process). Точное число/корпус зафиксировать до запуска.
+Тест: `FirstPrefixFilterTests` — грамматика `Module := Ref(Expr)`; `Expr` — TDOPP с двумя префиксами: `Literal("a")` (невалидный для входа) и `Literal("b")` (валидный). Вход: `"b"`. Траектория: первый префикс `Literal("a")` — `TryMatch("b", 0) = -1` → фильтр пропускает (`SkippedAlternatives++`); второй префикс `Literal("b")` — `TryMatch("b", 0) = 1 >= 0` → парс успешен. **Главный ассерт (падает без правки):** `SkippedAlternatives >= 1` (без правки: поле есть, но никто не инкрементит → `== 0`). Сопутствующий: `Success@EOF` (проходит и без правки). Режим как 5a.2.2/5a.2.4: главный ассерт — счётчик, результат не меняется.
+Стоп-если: результат парса изменился; перф-ассерт упал; `SkippedAlternatives` не инкрементируется; вход не попадает в пре-фильтр; новый failed-тест не по подзадаче; правка требует второго файла.
+Не делать: не трогать `ParseTerminal` (использовать `TryMatchCached`-копию логики, не рефакторить `ParseTerminal`), S1–S6, `ReportMismatch`, `.csproj`; не коммитить.
+Зависит от: 5a.5.1.
+
+### 5a.5.3: expected at loop boundary (пункт 2) — DEFERRED
+NEEDS-SPEC подтверждён: `_expected` очищается при `pos > ErrorPos` (Parser.cs:800-801), а после выхода из цикла следующий mismatch почти всегда на `pos > ErrorPos` → запись `First(body) ∪ exit-tokens` при выходе теряется. Вариант (б)/(в) требует изменения `ReportMismatch`/стека кадров — не recovery-only, трогает main-парс.
+**Отложено:** «A4-4 п.2 (expected at loop boundary) — deferred; требует пересмотра `ReportMismatch`/стека кадров; место — 5b (A5-6 per-call-site FOLLOW) или Wave 7 (A4-7 точный expected)». В чек-листе 5a.5 — частично закрыт.
+
+**Порядок:** кэш (5a.5.1, инфраструктура) → пре-фильтр+счётчик (5a.5.2). 5a.5.3 — deferred. Планка: 359/0/2 + ровно новые тесты подзадачи. Прогресс — `docs/RecoveryImprovementPlan-progress5a.5.md`.
+
 ---
 
 ### Волна 6 — диагностика и метрики
