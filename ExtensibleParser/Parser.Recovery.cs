@@ -32,16 +32,21 @@ public partial class Parser
     // Сбрасывается в начале Parse; ограниченно (не пропорционально размеру файла) при точной гигиене.
     public int HygieneRemovals { get; private set; }
 
-    // Лимиты цикла восстановления: предельное число итераций и число попыток кандидатов на одной точке восстановления.
+    // Лимиты цикла восстановления: предельное число итераций.
     public int MaxRecoveryIterations { get; set; } = 1000;
 
-    // Дефолт 3 — «предохранитель» по плану (§3.1, I3): ограничивает число попыток кандидатов на одной
-    // точке восстановления. Глубокие сценарии (E2E: resync/panic/trailing, ранги S2/S3/S5 = 11-я+ попытка)
-    // ставят бюджет ЯВНО (parser.MaxRecoveryAttemptsPerPosition = 16) — глобальный подъём дефолта ломает
-    // консервативное поведение существующих тестов (загрязнение _expected / восстановление вопреки
-    // Recoverable=false), проверено (3.0b). 3.0a гарантирует, что подъём бюджета не даёт краша.
+    // A2: бюджеты по тирам (не по кандидатам). Каждый тир — свой под-бюджет: число кандидатов тира,
+    // допустимое на точке восстановления. «Попыткой» считается кандидат тира; S0 (ранг 0) и S6 (ранг 6)
+    // вне под-бюджетов (S6 — гарантированное дно, 1.3.2). Под-бюджеты раздельны, поэтому S1 (много
+    // вставок) не выедает общий бюджет и не глушит S2/S3/S6. Значения — константы (A3 RecoveryProfile — волна 4.1).
+    public int S1TierBudget { get; set; } = 4;
+    public int S2TierBudget { get; set; } = 2;
+    public int S3S6TierBudget { get; set; } = 2;
+
+    // Legacy (до A2): пер-позиционный бюджет кандидатов. Сохранён для совместимости (тесты его ставят),
+    // но более не ограничивает выбор кандидатов — вместо него под-бюджеты тиров (A2).
     public int MaxRecoveryAttemptsPerPosition { get; set; } = 3;
-    private readonly Dictionary<int, HashSet<string>> _attempts = new();
+    private readonly Dictionary<int, TierBudget> _attempts = new();
 
     // Состояние, перенесённое из ядра: используется только recovery-подсистемой
     // (ядро обращается к нему исключительно через partial-хуки в Parser.cs).
@@ -306,7 +311,7 @@ public partial class Parser
 
             if (!_attempts.TryGetValue(e, out var attempts))
             {
-                attempts = new HashSet<string>();
+                attempts = new TierBudget();
                 _attempts[e] = attempts;
             }
 
@@ -316,13 +321,37 @@ public partial class Parser
 
             bool TryCandidate(RecoveryCandidate candidate)
             {
-                if (attempts.Contains(candidate.Id))
+                if (attempts.TriedIds.Contains(candidate.Id))
                     return false; // уже пробовали на этой точке — следующий кандидат
-                attempts.Add(candidate.Id);
-                // 1.3.2: S6 (ранг 6) — гарантированное дно, всегда пробуем даже при исчерпанном бюджите;
-                // остальные кандидаты пропускаются (следующий кандидат), а не стопят цикл.
-                if (attempts.Count > MaxRecoveryAttemptsPerPosition && candidate.Rank != 6)
-                    return false;
+                attempts.TriedIds.Add(candidate.Id);
+                // A2: бюджеты по тирам (не по кандидатам). S0 (ранг 0) — базовый re-парс, S6 (ранг 6) —
+                // гарантированное дно (1.3.2): оба вне под-бюджетов (всегда пробуются). Остальные —
+                // под-бюджет своего тира: S1 (много вставок) не выедает общий бюджет → S2/S3/S6 не голодают.
+                if (candidate.Rank is not 0 and not 6)
+                {
+                    var count = candidate.Rank switch
+                    {
+                        1 => attempts.S1,
+                        2 => attempts.S2,
+                        _ => attempts.S3S6
+                    };
+                    var budget = candidate.Rank switch
+                    {
+                        1 => S1TierBudget,
+                        2 => S2TierBudget,
+                        _ => S3S6TierBudget
+                    };
+                    if (count >= budget)
+                        return false; // под-бюджет тира исчерпан — следующий кандидат (не стопим цикл)
+                }
+                switch (candidate.Rank)
+                {
+                    case 1: attempts.S1++; break;
+                    case 2: attempts.S2++; break;
+                    case 3:
+                    case 4:
+                    case 5: attempts.S3S6++; break;
+                }
 
                 var log = ApplyPatches(candidate, e, snapshot, startRule, currentStartPos); // патчи + Hygiene атомарно, всё в лог
                 var savedErrorPos = ErrorPos;
@@ -532,6 +561,16 @@ public partial class Parser
         if (!expected.Contains(failedTerminal))
             expected.Add(failedTerminal);
         _lastSnapshot = new FailureSnapshot(pos, stack, failedTerminal, expected.ToArray());
+    }
+
+    // A2: состояние под-бюджетов тиров на одной точке восстановления. S0 (ранг 0) и S6 (ранг 6)
+    // вне под-бюджетов; счётчики S1/S2/S3S6 — число кандидатов тира, уже пробованных на точке.
+    private sealed class TierBudget
+    {
+        public readonly HashSet<string> TriedIds = new();
+        public int S1;
+        public int S2;
+        public int S3S6;
     }
 }
 

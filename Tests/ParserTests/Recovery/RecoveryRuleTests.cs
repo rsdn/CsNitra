@@ -306,10 +306,12 @@ public sealed class RecoveryRuleTests
             "Recoverable=false: the EOF is reached via the S6 absorber (Kind \"Skipped\"), not the ε-match");
     }
 
-    // ε-операнд (вставка): нулевой IsRecovery-терминал, не абсорбер — результат ε-принятия Error-правила.
+    // ε-операнд (вставка): нулевой IsRecovery-терминал Kind "Error", не абсорбер — результат ε-принятия
+    // Error-правила. Вид "Error" отличает ε-совпадение от нулевых вставок S1/S4 (Kind — реальный
+    // терминал, напр. ";"), которые — легитимный ремонт, а не ε-совпадение (регресс A2: S3 пробуются).
     private static bool HasEpsilonOperand(ISyntaxNode node) => node switch
     {
-        TerminalNode t => t.IsRecovery && !t.IsAbsorber && t.ContentLength == 0,
+        TerminalNode t => t.IsRecovery && !t.IsAbsorber && t.ContentLength == 0 && t.Kind == "Error",
         SeqNode s => s.RawElements.Any(HasEpsilonOperand),
         ListNode l => l.RawElements.Any(HasEpsilonOperand) || l.Delimiters.Any(HasEpsilonOperand),
         SomeNode o => HasEpsilonOperand(o.Value),

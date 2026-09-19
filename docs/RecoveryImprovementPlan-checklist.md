@@ -24,8 +24,8 @@ Status: `[ ]` not started · `[~]` in progress (exactly one) · `[✅]` done · 
 - [✅] 1.6 C2: Partial-after-recovery semantics — verified S6 gives `Success@EOF` (not `Partial`); `Partial@EOF` is a distinct, intentional final state (postfix path reached EOF with holes, no recovery applied, `ErrorInfo==null`, empty diagnostics). No code change needed. `PartialAfterRecoveryTests.cs` (2). ParserTests 346/0/2.
 
 ## Wave 2 — re-parse speed (B1, A2)
-- [~] 2.1 B1: exact hygiene — `HygieneCore` removes only `Failure` with `pos < E && MaxFailPos >= E` + start-rule record at `currentStartPos`. Test "one error at end of large file": memo removals before/after (D2); re-parse time drops.
-- [ ] 2.2 A2: budgets by tiers, not candidates — S1 sub-budget (e.g. 4 insertions); S2 own sub-budget (separate from S3/S6); S3/S6 separate sub-budget; "attempt" = tier. Param in `RecoveryProfile`. Regression: "garbage with identifier tokens" → S3 still tried.
+- [✅] 2.1 B1: exact hygiene — `HygieneCore` removes only the start-rule record at `currentStartPos` + `Failure` with `currentStartPos <= pos <= e`; `Success`/`Partial` never removed (I2). `HygieneRemovals` test hook + `HygieneTests` (long file, removals bounded). ParserTests 347/0/2. Commit f65ff66.
+- [~] 2.2 A2: budgets by tiers, not candidates — S1 sub-budget (e.g. 4 insertions); S2 own sub-budget (separate from S3/S6); S3/S6 separate sub-budget; "attempt" = tier. Param in `RecoveryProfile`. Regression: "garbage with identifier tokens" → S3 still tried.
 
 ## Wave 3 — "nothing matched" class (R1)
 - [ ] 3.1 R1: garbage terminal (Roslyn `BadToken` analogue) — built-in `Garbage`, `TryMatch(p)` = "no terminal of the set matched at p", consumes to first position where someone matches or limit (64 chars / 16 tokens). Local absorber, not explosive S2/S3/S6.
