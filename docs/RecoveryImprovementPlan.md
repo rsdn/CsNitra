@@ -118,6 +118,53 @@ memo-hit'ами; время на D1-корпусе не хуже до-волны
 | B3 (база) | **Дешёвые сканы S2/S3**: прыжки по токенам (trivia одним `Trivia.TryMatch`); для `Literal`-терминаторов — `input.IndexOf` вместо попозиционного `TryMatch` (DFA только для regex) | `Recovery/RecoveryEngine.cs` (107-108, 262, 397) | O(MaxSkip × #терминалов) → O(токенов × дешёвых проверок) |
 | R2 (база) | **Стоп-предикат из ожидаемого множества**: S3/S6 останавливают скан на первой позиции, где совпадает ожидаемое продолжение (First-множества структур, ожидаемых вышестоящим правилом в E, ∪ терминаторы) | `Recovery/RecoveryEngine.cs`, `FollowSetCalculator.cs` | Дистанция пропуска короче; меньше ложных синхронизаций (D1.6) |
 
+#### 5a.1 (B2) — декомпозиция на подзадачи
+
+**Решения по микро-развилкам (закрыты до нарезки):**
+
+1. **Тип поля** — обёртка `SpeculativeCache` (отдельный файл `ExtensibleParser/Recovery/SpeculativeCache.cs`). Обёртка держит счётчики вместе с состоянием кэша → переключение `GenerateS2` остаётся одним изменением поведения; голый `Dictionary` разорвал бы счётчики по `Parser` + `RecoveryEngine` (нарушение гранулярности).
+2. **Точка сброса** — начало `Recover` (рядом с `HygieneRemovals = 0;`), `_specCache.Reset()` (кэш + счётчики атомарно). Время жизни кэша = один `Recover`.
+3. **Видимость** — `private readonly SpeculativeCache _specCache` на `Parser` + `public SpecCache`-аксессор; `RecoveryEngine` (static) читает через `parser.SpecCache`. `#if RECOVERY` закрывает обе стороны.
+4. **Счётчики (D2)** — инкремент внутри `SpeculativeCache.Speculative` (хит = `compute` не звали; промах = звали); на `Parser` — `public int SpecCacheHits => _specCache.Hits;` / `SpecCacheMisses` (read-only), сброс в `Recover`.
+5. **Изоляция** — `specCache` не участвует в `PatchLog`/`HygieneCore`/`RollbackPatches`/`PatchMemo` (read-only кэш результатов спекулятивного парса на `scratch`-копии); единственный сброс — `Recover`.
+
+**Non-goals (все подзадачи):** не менять `CreateScratchParser`/`ParseRuleOnce`/precedence зонда (=0); не менять `HygieneCore`/`ApplyPatches`/`RollbackPatches`/`PatchMemo`; не трогать S1–S6, кроме точки чтения `specCache`; не менять сигнатуру `RecoveryEngine.Generate`; не трогать `.csproj`; не коммитить.
+
+**Общий Stop-if:** новый failed-тест не по подзадаче — стоп; поле `_specCache` уже существует — стоп и доклад; правка требует второго продакшн-файла — стоп, разбить; требуется решение уровня A2/A3 — стоп и доклад.
+
+### 5a.1.1: обёртка `SpeculativeCache`
+Файлы: `ExtensibleParser/Recovery/SpeculativeCache.cs` (новый); `Tests/ParserTests/Recovery/SpeculativeCacheTests.cs`
+Цель: Создать `sealed class SpeculativeCache` — кэш `(rule,pos)→(Ok,EndPos)` + счётчики + `Reset`.
+ДО: `specCache` — локальный `Dictionary` внутри `GenerateS2` (`RecoveryEngine.cs:155`); счётчиков нет.
+ПОСЛЕ: `SpeculativeCache` с `Dictionary<(string,int),(bool,int)>`, `int Hits`, `int Misses`, методом `(bool,int) Speculative(string rule, int pos, Func<(bool,int)> compute)` (хит = `compute` не звали; промах = звали и записали) и `void Reset()` (чистит кэш + счётчики).
+Тест: `SpeculativeCacheTests` — 1-й вызов `Speculative("r",0,()=>(true,10))` → `(true,10)`, `Misses==1`; 2-й вызов с другим `compute` → всё ещё `(true,10)`, `Hits==1`, `Misses==1`; `Reset()` → `Hits==0`, `Misses==0`.
+Stop-if: тип `SpeculativeCache` уже существует; правка требует правки `Parser`/`RecoveryEngine`.
+НЕ делать: не трогать `Parser`, `RecoveryEngine`, `GenerateS2`, `CreateScratchParser`, `ParseRuleOnce`; не менять сигнатуру `Generate`; не трогать `.csproj`; не коммитить.
+Зависит от: нет.
+
+### 5a.1.2: поле `_specCache` на `Parser` + сброс + аксессор + счётчики
+Файлы: `ExtensibleParser/Parser.Recovery.cs`; `Tests/ParserTests/Recovery/SpecCacheFieldTests.cs`
+Цель: Поднять кэш в поле на `Parser` со временем жизни один `Recover`, вынести публичные счётчики.
+ДО: поля `_specCache` нет; `Recover` не сбрасывает кэш; публичных счётчиков нет.
+ПОСЛЕ: `private readonly SpeculativeCache _specCache = new();` + `public SpeculativeCache SpecCache => _specCache;` + `public int SpecCacheHits => _specCache.Hits;` + `public int SpecCacheMisses => _specCache.Misses;` + в начале `Recover` (рядом с `HygieneRemovals = 0;`) — `_specCache.Reset();`.
+Почему одна подзадача: поле без сброса протекает между Parse-вызовами; сброс без поля невозможен; аксессор и счётчики нужны для 5a.1.3 — по отдельности правки не имеют смысла.
+Тест: `SpecCacheFieldTests` — (1) создать `Parser`; (2) `parser.SpecCache.Speculative("x", 0, () => (true, 1))` через публичный аксессор → `SpecCacheMisses == 1`; (3) повторный вызов с тем же ключом (другой `compute`) → `SpecCacheHits == 1`, `SpecCacheMisses == 1`; (4) `parser.Parse(...)` на любом входе (даже чистом) — вызовет `Recover` и сбросит кэш; (5) `SpecCacheHits == 0` и `SpecCacheMisses == 0`. (Проверка, что `GenerateS2` пишет в общий кэш, — в 5a.1.3, не здесь.)
+Stop-if: поле `_specCache` уже существует; правка требует второго продакшн-файла; новый failed-тест не по подзадаче.
+НЕ делать: не менять `GenerateS2`/`Speculative`-локалку в engine, `CreateScratchParser`, `ParseRuleOnce`, `HygieneCore`, `ApplyPatches`, `RollbackPatches`, `PatchMemo`; не менять сигнатуру `Generate`; не трогать `.csproj`; не коммитить.
+Зависит от: 5a.1.1.
+
+### 5a.1.3: переключение `GenerateS2` на `parser.SpecCache`
+Файлы: `ExtensibleParser/Recovery/RecoveryEngine.cs`; `Tests/ParserTests/Recovery/SpecCacheSharedTests.cs`
+Цель: `GenerateS2` читает/пишет общий кэш `Parser`, а не локальный.
+ДО: `GenerateS2` создаёт локальный `specCache` (:155); `Speculative`-локалка (:157-165) читает/пишет его; локальный кэш умирает с вызовом.
+ПОСЛЕ: локальный `specCache` удалён; `Speculative`-локалка = `parser.SpecCache.Speculative(ruleName, pos, () => { var r = scratch.ParseRuleOnce(ruleName, 0, pos, input); var ok = r.TryGetSuccess(out _, out var end); return (ok, ok ? end : -1); });`. `scratch` остаётся локальным (как было).
+Тест: `SpecCacheSharedTests` — грамматика `TierBudgetTests` (`Module := '{' ZeroOrMany(Stmt) '}'`, `Stmt := Ident ':' Expr ';'`, `Expr` — TDOPP с шестью операторами), вход `"{ a: 1+ ### ; }"`; после `Parse` `parser.SpecCacheMisses > 0` (до правки локальный кэш не инкрементит обёртку → 0 → тест падает; после → проходит).
+Stop-if: правка требует второго продакшн-файла; изменилась сигнатура `Generate`; новый failed-тест не по подзадаче (регресс S1–S6).
+НЕ делать: не менять `CreateScratchParser`, `ParseRuleOnce`, precedence зонда (=0), `HygieneCore`, `ApplyPatches`, `RollbackPatches`, `PatchMemo`, S1–S6 кроме точки чтения; не трогать `.csproj`; не коммитить.
+Зависит от: 5a.1.2.
+
+**Порядок:** обёртка (тип) → поле/сброс/счётчики (инфраструктура на `Parser`) → переключение (тест опирается на счётчики из 5a.1.2). Планка: 348/0/2 + ровно новые тесты подзадачи. Прогресс — `docs/RecoveryImprovementPlan-progress5a.1.md`.
+
 **Критерий волны:** на D1-корпусе: меньше итераций и попыток на точку (D2), «expecting»
 сообщения точнее (ручная проверка по сценариям), TDOPP-регрессии отсутствуют.
 
