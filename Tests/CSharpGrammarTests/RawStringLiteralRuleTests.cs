@@ -1,12 +1,13 @@
 using CSharpGrammar;
+using ExtensibleParser;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace CSharpGrammarTests;
 
 // Fragment parsing of non-interpolated raw string literals (Cs11.grammar). RawStringLiteral
-// wraps the RawString [Regex] terminal: one match = opening quote run of 3+, content where
-// every quote is part of a 1..2 run (alt: single " | "" + non-quote), 1+ content (empty
-// body rejected), closing quote run of 3+ (the whole run).
+// wraps the hand-written RawString terminal (CSharpTerminals.cs): one match = the maximal
+// opening quote run N >= 3, content, then the FIRST quote run of length >= N (the whole run
+// is the close; an empty body is impossible by construction).
 // Clean parse = TryGetSuccess && end == input.Length && ErrorInfo is null && no recovery
 // diagnostics (a recovered parse, e.g. an unterminated literal with an inserted quote run, is
 // a reject).
@@ -93,9 +94,64 @@ public class RawStringLiteralRuleTests
     [TestMethod]
     public void RawStringLiteral_QuoteRun3InContent_N4_Parses()
     {
-        // A content quote run of 3..N-1 at N>=4 is matched as quote parts (the single-regex
-        // terminal needs no context bound) — scanner-consistent (scanner: 15).
+        // A content quote run of 3..N-1 at N>=4 is legal content (only a run >= N closes the
+        // string) — scanner-consistent (scanner: 15).
         AssertParses("\"\"\"\"  \n\"\"\"\n\"\"\"\"", Raw);
+    }
+
+    // === Q: adjacent raw strings must NOT merge into one literal ===
+
+    [TestMethod]
+    public void RawStringLiteral_AdjacentLiterals_TwoLiterals()
+    {
+        // The old regex terminal absorbed the first literal's closing run and the second
+        // literal's opening run into the content — one literal of length 19. Now each literal
+        // is a separate match: the first spans [0, 9), the second [10, 19).
+        var parser = CreateParser();
+        const string input = "\"\"\"abc\"\"\" \"\"\"def\"\"\"";
+
+        var first = parser.Parser.ParseSubRule(input, Raw, 0);
+        Assert.IsTrue(first.TryGetSuccess(out var firstNode, out _),
+            $"Expected the first literal to match, errorPos={parser.Parser.ErrorPos}");
+        var firstTerminal = AsTerminal(firstNode, "first");
+        Assert.AreEqual(0, firstTerminal.StartPos);
+        Assert.AreEqual(9, firstTerminal.ContentLength);
+
+        var second = parser.Parser.ParseSubRule(input, Raw, 10);
+        Assert.IsTrue(second.TryGetSuccess(out var secondNode, out _),
+            $"Expected the second literal to match, errorPos={parser.Parser.ErrorPos}");
+        var secondTerminal = AsTerminal(secondNode, "second");
+        Assert.AreEqual(10, secondTerminal.StartPos);
+        Assert.AreEqual(9, secondTerminal.ContentLength);
+    }
+
+    [TestMethod]
+    public void RawStringLiteral_TwoQuoteRunInContent_OneLiteral()
+    {
+        // Regression: a 2-quote run inside the content is legal — one literal of length 10.
+        var parser = CreateParser();
+        const string input = "\"\"\"a\"\"b\"\"\"";
+
+        var result = parser.Parser.ParseSubRule(input, Raw, 0);
+        Assert.IsTrue(result.TryGetSuccess(out var node, out _),
+            $"Expected the literal to match, errorPos={parser.Parser.ErrorPos}");
+        var terminal = AsTerminal(node, "literal");
+        Assert.AreEqual(0, terminal.StartPos);
+        Assert.AreEqual(10, terminal.ContentLength);
+    }
+
+    [TestMethod]
+    public void RawStringLiteral_Simple_OneLiteralOfLength9()
+    {
+        var parser = CreateParser();
+        const string input = "\"\"\"abc\"\"\"";
+
+        var result = parser.Parser.ParseSubRule(input, Raw, 0);
+        Assert.IsTrue(result.TryGetSuccess(out var node, out _),
+            $"Expected the literal to match, errorPos={parser.Parser.ErrorPos}");
+        var terminal = AsTerminal(node, "literal");
+        Assert.AreEqual(0, terminal.StartPos);
+        Assert.AreEqual(9, terminal.ContentLength);
     }
 
     [Ignore]
@@ -109,6 +165,13 @@ public class RawStringLiteralRuleTests
         var result = parser.Parse("\"\"\"a\"\"\"\"b\"\"\"", Raw, out _);
         result.TryGetSuccess(out _, out var end);
         Assert.AreEqual(8, end);
+    }
+
+    private static TerminalNode AsTerminal(ISyntaxNode? node, string what)
+    {
+        Assert.IsNotNull(node, $"{what} node is null");
+        Assert.IsTrue(node is TerminalNode, $"{what} node is {node.GetType().Name}");
+        return (TerminalNode)node;
     }
 
     private static CSharpParser CreateParser() =>

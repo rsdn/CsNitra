@@ -85,16 +85,17 @@ public sealed partial class CSharpTerminals
     [Regex("""[^"]+""")]
     public static partial Terminal NonQuoteText();
 
-    // Non-interpolated raw string literal (C# 11) as ONE match: opening run of 3+ quotes,
-    // content where every quote is part of a 1..2 run (alt: single " | "" + non-quote), 1+
-    // content (rejects """""" empty, scanner -1), closing run of 3+ (whole run, scanner
-    // semantics). One match = no intra-match trivia skip (a OneOrMany quote-literal source
-    // would let the post-terminal trivia skip merge runs separated by whitespace).
-    // Content quote runs of 3..N-1 at N>=4 match as quote parts — scanner-consistent.
-    [Regex("""""
-        """+("|""[^"]|[^"])+"""+
-        """"")]
-    public static partial Terminal RawString();
+    // Non-interpolated raw string literal (C# 11) as ONE match, hand-written (Q): the old regex
+    // `"""+("|""[^"]|[^"])+"""+` had a bare `"` content alternative with no run-length bound, so a
+    // 3+ quote run in the content was absorbed — two adjacent raw strings merged into one literal.
+    // Scanner semantics (Roslyn ScanRawStringLiteral): the opening run N >= 3 is the MAXIMAL
+    // leading quote run; the string ends at the FIRST quote run of length >= N (the whole run is
+    // the close; a longer run ends the string, excess quotes are outside). An empty body is
+    // impossible by construction: the opening run is maximal, so the first content char is never
+    // a quote ("""""" = open 6, unterminated — scanner -1). One match = no intra-match trivia
+    // skip (a OneOrMany quote-literal source would let the post-terminal trivia skip merge runs
+    // separated by whitespace). Content quote runs of 1..N-1 are legal content — scanner-consistent.
+    public static Terminal RawString() => _rawString;
 
     // One valid plain-string escape, same set as StringEscape. Escapes RESOLVING to '{' / '}'
     // (\x7B..\x7D, \u007B..\u007D, \U0000007B..\U0000007D) are accepted — the regex engine
@@ -165,6 +166,8 @@ public sealed partial class CSharpTerminals
 
     private static readonly Terminal _rawHoleOpenBraces = new RawHoleOpenBracesTerminal();
 
+    private static readonly Terminal _rawString = new RawStringTerminal();
+
     // Raw string content: a brace run of length 1..D-1, where D is the dollar count of the
     // enclosing literal (Parser.ContextCount, set by the context scope). A run of D+ braces is
     // a hole (or an error) and does not match here.
@@ -227,6 +230,55 @@ public sealed partial class CSharpTerminals
         public override bool Injectable => false;
 
         public override string ToString() => "RawHoleOpenBraces";
+    }
+
+    // Non-interpolated raw string literal (C# 11): opening run N >= 3 (the maximal leading quote
+    // run), then the FIRST quote run of length >= N ends the string (the whole run is the close).
+    // An empty body is impossible by construction: the opening run is maximal, so the first
+    // content char is never a quote. No active-context dependency, but Injectable = false: an
+    // injected (zero-width) raw-string token is meaningless — a raw literal always consumes text.
+    private sealed record RawStringTerminal : Terminal
+    {
+        public RawStringTerminal() : base("RawString")
+        {
+        }
+
+        public override int TryMatch(string input, int startPos)
+        {
+            var pos = startPos;
+            var length = input.Length;
+
+            while (pos < length && input[pos] == '"')
+                pos++;
+
+            var openLen = pos - startPos;
+            if (openLen < 3)
+                return -1;
+
+            while (pos < length)
+            {
+                if (input[pos] != '"')
+                {
+                    pos++;
+                    continue;
+                }
+
+                var runEnd = pos;
+                while (runEnd < length && input[runEnd] == '"')
+                    runEnd++;
+
+                if (runEnd - pos >= openLen)
+                    return runEnd - startPos;
+
+                pos = runEnd;
+            }
+
+            return -1;
+        }
+
+        public override bool Injectable => false;
+
+        public override string ToString() => "RawString";
     }
 
     private static int TryMatchLiteralBraceRun(string input, int startPos, char brace)

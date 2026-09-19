@@ -171,6 +171,51 @@ public class CSharpTerminalsTests
     }
 
     [TestMethod]
+    public void RawString_ValidLiterals_MatchWholeLiteral()
+    {
+        AssertAll(
+            CSharpTerminals.RawString(),
+            [
+                ("\"\"\"abc\"\"\"", 9),
+                ("\"\"\"a\"b\"\"\"", 9),
+                ("\"\"\"a\"\"b\"\"\"", 10),
+                ("\"\"\"{x}\"\"\"", 9),
+                ("\"\"\"\nabc\n\"\"\"", 11),
+                ("\"\"\"a\"\"\"\"", 8),
+                ("\"\"\"a\"\"\"\"\"", 9),
+                ("\"\"\"\"ab\"\"\"\"", 10),
+                ("\"\"\"\"  \n\"\"\"\n\"\"\"\"", 15)]);
+    }
+
+    [TestMethod]
+    public void RawString_AdjacentLiterals_MatchFirstOnly()
+    {
+        // Q regression: the old regex matched the whole 19-char input as ONE literal (the
+        // content alternative absorbed the 3+ quote runs between the two strings). Now the
+        // first literal is 9 chars and the second one matches from position 10.
+        const string input = "\"\"\"abc\"\"\" \"\"\"def\"\"\"";
+        AssertMatch(CSharpTerminals.RawString(), input, 9);
+        AssertMatch(CSharpTerminals.RawString(), input, 9, 10);
+    }
+
+    [TestMethod]
+    public void RawString_UnterminatedOrEmpty_Fails()
+    {
+        AssertAll(
+            CSharpTerminals.RawString(),
+            [
+                ("\"\"\"abc", -1),
+                ("\"\"\"abc\"\"", -1),
+                ("\"\"\"", -1),
+                ("\"\"\"\"", -1),
+                ("\"\"\"\"\"\"", -1),
+                ("\"\"\"\"x\"\"\"", -1),
+                ("\"\"\"\"\"\"\"\"\"", -1),
+                ("\"\"abc", -1),
+                ("abc", -1)]);
+    }
+
+    [TestMethod]
     public void Trivia_Whitespace_MatchesRun()
     {
         AssertMatch(CSharpTerminals.Trivia(), "   ", 3);
