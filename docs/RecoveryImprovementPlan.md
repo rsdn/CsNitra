@@ -306,6 +306,46 @@ Stop-if: правка требует второго продакшн-файла;
 
 **Порядок:** состояние (5a.3.1, инфраструктура) → подавление (5a.3.2, два файла). Планка: 358/0/2 + ровно новые тесты подзадачи. Прогресс — `docs/RecoveryImprovementPlan-progress5a.3.md`.
 
+**Статус 5a.3:** 5a.3.1 ✅ (a995e88). 5a.3.2/5a.3.3 — NEEDS-SPEC (артефактный сценарий ненаблюдаем в текущей архитектуре: после принятого кандидата патч остаётся применённым, main-парс следующей итерации идёт через патч и не натыкается на mismatch `pos <= E` с другим терминалом). A4-1 → Wave 6 как метрика (D2-счётчик подавленных mismatch'ов в тихой зоне).
+
+#### 5a.4 (A4-3) — single-token deletion: декомпозиция на подзадачи
+
+**Решения по вопросам (закрыты до нарезки):**
+
+1. **«Следующий за E»:** первый non-trivia терминал начиная с `E+1`. `var triviaLen = parser.Trivia.TryMatch(input, e + 1); var pos = e + 1 + triviaLen;` затем `TryMatch` для каждого терминала из `snapshot.Expected` на `pos`.
+2. **Длина абсорбера:** `len = pos - e`, где `pos = e + 1 + triviaLen` из Q1. Абсорбер `[e..e+len)`. НЕ «maximal non-trivia run» (приводит к перепоглощению: для `"aab"` absorber `[1..3)` объявил бы `'b'` совпавшим над `"ab"`).
+3. **«∈ ожидаемому»:** `snapshot.Expected` (без `FailedTerminal` — `CaptureSnapshot` уже добавляет его в `Expected`). Без `TryInsert` (авторские опции дают ложные срабатывания).
+4. **Ранг и бюджет:** ранг 1, соревнуется с S1 за `S1TierBudget=4`. Отдельный под-бюджет не вводим (требует изменения `TierBudget`/`TryCandidate` — non-goal). Known limitation: на грамматиках с большим Follow S1 может исчерпать бюджет (волна 4.1 A3 решит).
+5. **`RecoveryKind`:** новый kind `Extraneous`. Третий файл (`RecoveryDiagnostic.cs`) — подзадача 5a.4.1.
+6. **Порядок эмиссии:** `GenerateS1` → `GenerateS1b` → `GenerateS2` (строка между :32 и :33). При равных ключах сортировки S1 выигрывает тай-брейк по стабильности (стабильная сортировка: при равных `(Rank, Cost, Pos, RuleName, TerminalKind)` сохраняет порядок эмиссии). Cost = `CostCalculator.SkipCost(input, e, e + len)`.
+
+**Non-goals (все подзадачи):** не менять S1–S6 (кроме точки подключения в `Generate`), `SpeculativeCache`, `HygieneCore`/`ApplyPatches`/`RollbackPatches`/`PatchMemo`, `TryCandidate`, `Recover`, `InQuietZone`, `_quietZoneEnd`, сигнатуру `Generate`, `.csproj`; не коммитить.
+
+**Общий Stop-if:** новый failed-тест не по подзадаче — стоп; правка требует второго продакшн-файла — стоп, разбить; нужно решение уровня A2/A3 — стоп и доклад; тестовый вход не попадает в single-token-deletion-path — стоп и доклад; ассерт «падает без правки» фактически проходит без правки — стоп, переделать.
+
+### 5a.4.1: `RecoveryKind.Extraneous` (enum)
+Файлы: `ExtensibleParser/Recovery/RecoveryDiagnostic.cs`
+Цель: добавить `Extraneous` в enum `RecoveryKind`.
+ДО: `public enum RecoveryKind { Inserted, Skipped, Unrecovered }`.
+ПОСЛЕ: `public enum RecoveryKind { Inserted, Skipped, Unrecovered, Extraneous }`.
+Тест: нет отдельного (инфраструктура); проверяется в 5a.4.2.
+Стоп-если: значение уже существует.
+Не делать: не трогать `RecoveryDiagnostic` record, S1–S6, `RecoveryEngine`, `.csproj`; не коммитить.
+Зависит от: нет.
+
+### 5a.4.2: генератор `GenerateS1b` (single-token deletion) + подключение в `Generate`
+Файлы: `ExtensibleParser/Recovery/RecoveryEngine.cs`
+Цель: новый генератор `GenerateS1b` между `GenerateS1` и `GenerateS2` в `Generate`; эмитит кандидата ранга 1 с абсорбером `[E..E+len)` и диагностикой `Extraneous`.
+ДО: `Generate` вызывает `GenerateS1` → `GenerateS2` → `GenerateS3` → `GenerateS4` (строки :32-35).
+ПОСЛЕ: между `GenerateS1` (:32) и `GenerateS2` (:33) — `GenerateS1b(e, snapshot, input, parser, candidates);`. Порядок эмиссии: `GenerateS1` → `GenerateS1b` → `GenerateS2`; при равных ключах сортировки S1 выигрывает тай-брейк по стабильности. Метод `GenerateS1b`: (1) `var triviaLen = parser.Trivia.TryMatch(input, e + 1); var pos = e + 1 + triviaLen;` если `pos >= input.Length` — return; (2) `var len = pos - e;` (длина абсорбера `[e..e+len)`); (3) для каждого терминала из `snapshot.Expected`: если `t is not EofTerminal and not EpsilonTerminal && t.TryMatch(input, pos) >= 0` — эмитить кандидата и return; (4) кандидат: `Id: "S1b:{ruleName}:{t.Kind}"`, `Rank: 1`, `Pos: e`, `Cost: CostCalculator.SkipCost(input, e, e + len)`, `Apply: p => p.ApplyInjection(t, e, Injection.Absorb(t.Kind, len))`, `Rollback: p => p.RollbackInjection(t, e, hadOld ? old : null)`, `Diagnostics: [new RecoveryDiagnostic(e, e + len, RecoveryKind.Extraneous, $"extraneous token, expected {t.Kind}", t, ruleName)]`.
+Почему одна подзадача: генератор и его подключение в `Generate` неразрывны (без подключения генератор мёртвый код). Один файл (`RecoveryEngine.cs`).
+Тест: `SingleTokenDeletionTests` — грамматика `S := 'a' 'b'`, вход `"aab"`. Первый парс: `'a'`@0→1, `'b'` промах@1 (видит `'a'`) → mismatch в E=1, snapshot `{Expected: {b}, FailedTerminal: b}`. Single-token deletion: `triviaLen = Trivia.TryMatch("aab", 2) = 0`, `pos = 2`, `len = 2 - 1 = 1`. `Literal("b").TryMatch("aab", 2) = 1 >= 0`, `'b'` ∈ `Expected` → абсорбер `[1..2)`. Re-parse: `'a'`@0→1, absorber skip@1→2, `'b'`@2→3 = EOF. **Главный ассерт (падает без правки):** `RecoveryDiagnostics` содержит диагностику с `Kind == RecoveryKind.Extraneous` (без правки — `Inserted` от S1). Сопутствующие: `ErrorInfo == null`, `end == 3`.
+Стоп-если: вход не доводит до single-token-deletion-path (`Extraneous` диагностика отсутствует после правки); `e2 > e` не срабатывает; главный ассерт проходит без правки (вход неверный); новый failed-тест не по подзадаче; правка требует второго файла.
+Не делать: не трогать S1/S2/S3/S4/S5/S6, `SpeculativeCache`, `HygieneCore`/`ApplyPatches`/`RollbackPatches`/`PatchMemo`, `TryCandidate`, `Recover`, `InQuietZone`, `_quietZoneEnd`, сигнатуру `Generate`, `.csproj`; не коммитить.
+Зависит от: 5a.4.1.
+
+**Порядок:** enum (5a.4.1, инфраструктура) → генератор+подключение (5a.4.2). Планка: 358/0/2 + ровно новые тесты подзадачи. Прогресс — `docs/RecoveryImprovementPlan-progress5a.4.md`.
+
 ---
 
 ### Волна 6 — диагностика и метрики
