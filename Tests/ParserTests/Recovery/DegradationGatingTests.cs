@@ -212,4 +212,21 @@ public sealed class DegradationGatingTests
         Assert.IsTrue(hardPasses < fullPasses,
             $"Hard-limit run ({hardPasses}) must stop earlier than full run ({fullPasses})");
     }
+
+    // Bug 1: the Test profile has TimeBudget = Infinite (Timeout.InfiniteTimeSpan = -1ms).
+    // Without the `TimeBudget > TimeSpan.Zero` guard in Recover, `Elapsed > TimeBudget` is always
+    // true and the level climbs to 3 within a few iterations. With the guard, the level stays 0.
+    // This test needs multiple iterations (multiple errors) so the climb would be observable.
+    [TestMethod]
+    public void Test_Profile_DoesNotDegrade_WithInfiniteBudget()
+    {
+        var parser = NewHardLimitParser(); // uses RecoveryProfile.Test (TimeBudget = Infinite)
+        var input = "a { i c x i c y } b"; // multiple errors -> multiple iterations
+        parser.Parse(input, "Start", out _);
+
+        Assert.IsTrue(parser.RecoveryPasses > 1,
+            $"Need multiple iterations to expose the bug, got {parser.RecoveryPasses}");
+        Assert.AreEqual(0, parser.DegradationLevel,
+            "Test profile (Infinite budget) must not degrade; the guard must skip the time-check");
+    }
 }

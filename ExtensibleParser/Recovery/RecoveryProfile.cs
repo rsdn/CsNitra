@@ -1,3 +1,5 @@
+using System.Threading;
+
 namespace ExtensibleParser.Recovery;
 
 public enum RecoveryMode { Ide, Compiler, Test }
@@ -47,9 +49,8 @@ public sealed record RecoveryProfile
     // Профили по умолчанию.
     public static RecoveryProfile Ide { get; } = new() { Mode = RecoveryMode.Ide };
     public static RecoveryProfile Compiler { get; } = new() { Mode = RecoveryMode.Compiler, MaxIterations = 64 };
-    // Timeout.InfiniteTimeSpan недоступен на netstandard2.0. Его реальное значение =
-    // new TimeSpan(0,0,0,0,-1) (сентинел -1мс, НЕ Max/MinValue) — храним то же.
-    public static RecoveryProfile Test { get; } = new() { Mode = RecoveryMode.Test, TimeBudget = new TimeSpan(0, 0, 0, 0, -1) };
+    // TimeBudget = Infinite: the time-check is disabled (see Parser guard `TimeBudget > TimeSpan.Zero`).
+    public static RecoveryProfile Test { get; } = new() { Mode = RecoveryMode.Test, TimeBudget = Timeout.InfiniteTimeSpan };
 }
 
 // B4 degradation ladder: level -> effective strategy parameters.

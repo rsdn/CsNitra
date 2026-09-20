@@ -377,8 +377,10 @@ public partial class Parser
             RecoveryPasses++;
 
             // B4: if the recovery session exceeds the wall-clock budget, degrade (coarser).
-            // Test profile has TimeBudget = Infinite, so this never fires in tests.
-            if (DegradationLevel < Degradation.Levels.Length - 1
+            // Guard `TimeBudget > TimeSpan.Zero`: Timeout.InfiniteTimeSpan is -1ms, so without the
+            // guard `Elapsed > TimeBudget` is always true and the Test profile would degrade instantly.
+            if (Profile.TimeBudget > TimeSpan.Zero
+                && DegradationLevel < Degradation.Levels.Length - 1
                 && _recoveryStopwatch.Elapsed > Profile.TimeBudget)
                 DegradationLevel++;
 
