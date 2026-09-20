@@ -351,6 +351,10 @@ public partial class Parser
             if (result.TryGetSuccess(out _, out var end) && end == input.Length)
                 return result; // чистый успех
 
+            // A4-5.2: Compiler profile — bail on first failure, no recovery attempts.
+            if (Profile.Mode == RecoveryMode.Compiler)
+                break;
+
             e = RecoveryPointOf(result, input);
             if (e <= ePrev)
                 break; // глобальный предохранитель (fail-safe)
