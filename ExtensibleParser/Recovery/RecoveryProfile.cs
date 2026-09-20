@@ -37,11 +37,36 @@ public sealed record RecoveryProfile
     public int MaxParseDepthBase { get; init; } = 128;
     public int MaxParseDepthPerChar { get; init; } = 4;
 
+    // B4: wall-clock budget for the recovery session. When exceeded, DegradationLevel
+    // is raised (see Parser). Test profile disables it (Infinite) for determinism.
+    public TimeSpan TimeBudget { get; init; } = TimeSpan.FromMilliseconds(500);
+
     // TODO(A4-5/B4): маска стратегий — поле пока не читается.
     public RecoveryStrategy StrategyMask { get; init; } = RecoveryStrategy.All;
 
     // Профили по умолчанию.
     public static RecoveryProfile Ide { get; } = new() { Mode = RecoveryMode.Ide };
     public static RecoveryProfile Compiler { get; } = new() { Mode = RecoveryMode.Compiler, MaxIterations = 64 };
-    public static RecoveryProfile Test { get; } = new() { Mode = RecoveryMode.Test };
+    // Timeout.InfiniteTimeSpan недоступен на netstandard2.0. Его реальное значение =
+    // new TimeSpan(0,0,0,0,-1) (сентинел -1мс, НЕ Max/MinValue) — храним то же.
+    public static RecoveryProfile Test { get; } = new() { Mode = RecoveryMode.Test, TimeBudget = new TimeSpan(0, 0, 0, 0, -1) };
+}
+
+// B4 degradation ladder: level -> effective strategy parameters.
+// Level 0 = full (default Ide). Higher levels = coarser recovery.
+// MaxSkipMultiplier: Level 1 x4 is an EXPANSION (wider cheap scan compensates
+// for disabling the expensive S2 speculative parse), not a narrowing.
+public sealed record DegradationLevel(int Index, RecoveryStrategy Mask, double MaxSkipMultiplier, bool Speculation, bool ForceS6);
+
+public static class Degradation
+{
+    public static readonly DegradationLevel[] Levels =
+    {
+        new(0, RecoveryStrategy.All,            1.0, true,  false), // full
+        new(1, RecoveryStrategy.All,            4.0, false, false), // S2 no-spec, MaxSkip x4 (expansion)
+        new(2, RecoveryStrategy.S1 | RecoveryStrategy.S3 | RecoveryStrategy.S6, 0.5, false, false), // S1 + short S3 + S6
+        new(3, RecoveryStrategy.S6,             1.0, false, true),  // hard limit: force S6 + stop
+    };
+
+    public static DegradationLevel Get(int index) => Levels[Math.Min(Math.Max(index, 0), Levels.Length - 1)];
 }

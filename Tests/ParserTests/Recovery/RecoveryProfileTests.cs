@@ -130,4 +130,36 @@ public sealed class RecoveryProfileTests
         Assert.IsNull(ide.ErrorInfo);
         Assert.IsTrue(ide.RecoveryPasses > 1, $"Ide profile must use multiple passes, got {ide.RecoveryPasses}");
     }
+
+    // B4: degradation table — level -> strategy parameters, clamping, and profile TimeBudgets.
+    [TestMethod]
+    public void Test_Degradation_Table_And_TimeBudgets()
+    {
+        var l0 = Degradation.Get(0);
+        Assert.AreEqual(RecoveryStrategy.All, l0.Mask);
+        Assert.AreEqual(1.0, l0.MaxSkipMultiplier);
+        Assert.IsTrue(l0.Speculation);
+        Assert.IsFalse(l0.ForceS6);
+
+        var l1 = Degradation.Get(1);
+        Assert.AreEqual(RecoveryStrategy.All, l1.Mask);
+        Assert.AreEqual(4.0, l1.MaxSkipMultiplier);
+        Assert.IsFalse(l1.Speculation);
+
+        var l2 = Degradation.Get(2);
+        Assert.AreEqual(RecoveryStrategy.S1 | RecoveryStrategy.S3 | RecoveryStrategy.S6, l2.Mask);
+        Assert.AreEqual(0.5, l2.MaxSkipMultiplier);
+
+        var l3 = Degradation.Get(3);
+        Assert.AreEqual(RecoveryStrategy.S6, l3.Mask);
+        Assert.IsTrue(l3.ForceS6);
+
+        // Clamping: out-of-range indices map to the nearest level.
+        Assert.AreEqual(Degradation.Levels[0], Degradation.Get(-1));
+        Assert.AreEqual(Degradation.Levels[3], Degradation.Get(99));
+
+        // TimeBudget: Test disables it (Infinite), Ide uses the 500ms default.
+        Assert.AreEqual(Timeout.InfiniteTimeSpan, RecoveryProfile.Test.TimeBudget);
+        Assert.AreEqual(TimeSpan.FromMilliseconds(500), RecoveryProfile.Ide.TimeBudget);
+    }
 }
