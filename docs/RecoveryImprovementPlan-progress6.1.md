@@ -136,3 +136,122 @@ files to their committed state). Not committed.
   distinct unrecovered node. It is a zero-width result-derived marker (A4-2). The pure walk emits only
   `Inserted`/`Skipped`; `Unrecovered` is combined at 6.1.2. Test 3 pins this behavior.
 - Not committed.
+
+---
+
+# 6.1.2 (A5-2) — wire the public diagnostic list to be derived from the tree — **STOP: regression discrepancy**
+
+Sub-point 6.1.2 wires the public `RecoveryDiagnostics` list to `DeriveDiagnostics(finalTree, input)` +
+`Unrecovered` (from the result, when S6 was the accepted fallback), keeping `_recoveryDiagnostics` as an
+internal cache. The wiring is **implemented** (below), but the **critical regression check FAILED**: the
+derived public list is **not** behavior-equivalent to the previously-accumulated public list. Per the
+task's stop-if, work STOPs here and the exact discrepancy is reported. **No test was weakened.**
+
+## Where the public list is now computed
+
+- **Call site**: `Parser.Parse` (`ExtensibleParser/Parser.cs:266`) — immediately after
+  `var result = Recover(input, startRule, currentStartPos);`, i.e. the single point where both the final
+  tree (inside `result.Node`) and the `input` are available, before the Success@EOF early return and
+  `FinalizeResult`.
+- **Method**: `Parser.FinalizeRecoveryDiagnostics(Result result, string input)`
+  (`ExtensibleParser/Parser.Recovery.cs:349-361`, declaration at :354):
+  1. extracts the `Unrecovered` diagnostics from the accumulated `_recoveryDiagnostics` cache
+     (`Where(d => d.Kind == RecoveryKind.Unrecovered)`) — they were added there by `AddUnrecoveredIfS6`
+     (`Parser.Recovery.cs:464-469`) exactly when an S6 candidate was accepted, so the cache IS the
+     carrier of the "from the result" marker at the finalization point;
+  2. clears the cache;
+  3. if the final result is Success or Partial (a tree exists), appends
+     `DiagnosticDerivation.DeriveDiagnostics(node, input)` (already sorted by `(StartPos, EndPos, Kind)`);
+  4. appends the extracted `Unrecovered` diagnostics **after** the derived part, in their accumulated
+     order (deterministic — the recovery loop's `e` only increases, so they are already in position
+     order).
+- The public property `RecoveryDiagnostics` (`Parser.Recovery.cs:21`) is unchanged; it now exposes the
+  derived content because the cache list is refilled in place at finalization.
+
+## `_recoveryDiagnostics` — still used internally
+
+- **Unrecovered source**: `AddUnrecoveredIfS6` (`Parser.Recovery.cs:468`) still appends `Unrecovered` to
+  the cache during the loop (needed by 6.1.2 itself to extract it at finalization).
+- **Soft-separator dedup**: `ParseSeparatedList` (`Parser.cs:1015-1016`) still uses
+  `_recoveryDiagnostics.Contains(...)` to dedup soft-separator `Skipped` diagnostics across recovery
+  re-parses. (These diagnostics are **not** in the derived list — see discrepancy (D2) below.)
+- The per-accepted-candidate accumulation (`_recoveryDiagnostics.AddRange(candidate.Diagnostics)`,
+  `Parser.Recovery.cs:473,482`) is now **redundant for the public list** (overwritten at
+  finalization) but harmless; it was left in place (do-not-change scope: S0–S6 behavior untouched).
+
+## Regression check — **FAILED** (exact discrepancy)
+
+The derived list loses four kinds of information that the accumulated list carried and that existing
+tests assert on. The tree cannot express them: (D1) the `Extraneous` kind, (D2) soft-separator
+diagnostics (their node is a regular non-`IsRecovery` terminal), (D3) message content, (D4) the
+`Terminal`/`RuleName` metadata (the tree stores spans only — documented in 6.1.1).
+
+Exact values (previously-accumulated vs derived, same input, captured by running both code paths):
+
+| # | Input / grammar | Previously accumulated | Derived (new public list) |
+|---|---|---|---|
+| 1 | `"a c"`, `Module := a b c` (S1 insertion) | `Inserted [2..2) "expected b, found «c»" term=b rule=Module` | `Inserted [2..2) "inserted b" term=- rule=-` |
+| 2 | `"12 34 ###"`, `Module := Expr Expr` (S6 floor) | `Skipped [6..9) "bottom skip to 9" term=EOF rule=Module` + `Unrecovered [6..6)` | `Skipped [6..9) "###" term=- rule=-` + `Unrecovered [6..6)` (identical) |
+| 3 | `"aab"`, `S := 'a' 'b'` (S1b + S6) | `Extraneous [1..2) "extraneous token, expected b" term=b rule=S` + `Skipped [2..3) "bottom skip to 3" term=EOF rule=S` + `Unrecovered [2..2)` | `Skipped [1..2) "a"` + `Skipped [2..3) "b"` + `Unrecovered [2..2)` — **`Extraneous` kind lost (D1)**, messages/metadata lost |
+| 4 | `"1;2"`, `List := SeparatedList(Item, ",", Soft:";")` (A5-5) | `Skipped [1..2) "soft separator ';' accepted in place of required separator" term=; rule=List` | **empty — the diagnostic is lost entirely (D2)** |
+| 5 | `"int a; ### int b;"`, T1 anchor grammar (S2 resync) | `Skipped [7..11) "skip to resync point 11" term=- rule=Item` | `Skipped [7..11) "### " term=- rule=-` (D3/D4) |
+| 6 | `"{ a: 1+ ### ; }"`, TDOPP grammar (S3 panic) | `Skipped [8..12) "skip to terminator ;" term=; rule=Expr` | `Skipped [8..12) "### " term=- rule=-` (D3/D4) |
+
+Positions and counts of `Inserted`/`Skipped`/`Unrecovered` are preserved; kinds/messages/terminals are
+not. **12 existing test methods fail** (all on message/kind/terminal assertions, none on
+recovery behavior):
+
+- `SingleTokenDeletionTests.Test_SingleTokenDeletion_ExtraneousDiagnostic` — asserts `Any(Extraneous)` (D1)
+- `SoftSeparatorTests.SoftSeparator_Mismatch_IsRecoveredInline_WithSingleSkippedDiagnostic` — expects 1 diag with `Terminal=";"` (D2)
+- `SoftSeparatorTests.SoftSeparator_Multiple_Mismatches_OneDiagnosticEach` — expects 2 diags with `Terminal=";"` (D2)
+- `T1AnchorReproTests.Test_T1_AuthorAnchor_ResyncToNextItem` — asserts `Message.Contains("resync point")` (D3)
+- `T1AnchorReproTests.Test_T2_AuthorCanStart_DoubleError` — same (D3)
+- `S0IntegrationTests.MissingParen_RecoveredByS1_HasInsertedDiagnostic` — asserts `Terminal?.Kind == "("` (D4)
+- `S2IndexOfTests.S2IndexOf_SpecifiedInput_SameResync` — asserts ≥1 diag with `Message.StartsWith("skip to resync point")` (D3)
+- `S2IndexOfTests.S2IndexOf_MultiCharKeyword_JumpSkipsPositions` — same (D3)
+- `S2IndexOfTests.S2IndexOf_MixedFirst_DisablesJump_SameResync` — same (D3)
+- `S2TriviaJumpTests.S2TriviaJump_SameResync_FewerScannedPositions` — asserts ≥1 diag with `Message.StartsWith("skip to terminator")` (D3)
+- `S3TriviaJumpTests.S3TriviaJump_ClosingBraceInsideBlockComment_NotCounted` — same (D3)
+- `TierBudgetTests.Test_S1ManyCandidates_S3StillTried_NotStarved` — asserts ≥1 Skipped with `Message.Contains("skip to terminator")` (D3)
+
+Reconciling would require either changing recovery behavior (e.g. marking S1b absorbers / soft-separator
+consumption in the tree) or weakening the 12 tests — both out of scope → **STOP**, per the task's
+stop-if. A design decision is needed (options: enrich the tree with the metadata; keep the accumulated
+list public and make the derived list a separate API for the IDE subtree scenario (6.1.3); or accept
+the derived message/kind contract and re-point the 12 tests at positions/kinds — a separate, explicit
+decision).
+
+## Test (added)
+
+`Tests/ParserTests/Recovery/DeriveDiagnosticsTests.cs` — two new tests (both **pass** with the wiring):
+
+5. **`Test_PublicList_EqualsDerived_InsertionCase`** — `"a c"` (`Module := a b c`, S1 insertion, no S6):
+   `parser.RecoveryDiagnostics` == `DeriveDiagnostics(tree, input)` exactly (no `Unrecovered`).
+6. **`Test_PublicList_EqualsDerivedPlusUnrecovered_S6FallbackCase`** — `"12 34 ###"` (`Module :=
+   Expr Expr`, S6 floor): `parser.RecoveryDiagnostics` == `DeriveDiagnostics(tree, input)` + the
+   `Unrecovered` marker, appended last; the `Unrecovered` is exactly one, at `[6..6)` (the recovery
+   point `e`).
+
+## Test results (with the wiring in place)
+
+- `dotnet test Tests/ParserTests` — **Total: 401 · Passed: 387 · Failed: 12 · Skipped: 2** — the 12
+  failures are exactly the discrepancy set above (baseline was 399/397/0/2; +2 = the new tests, both
+  green).
+- `dotnet test Tests/CSharpGrammarTests` — **Total: 1527 · Passed: 1524 · Failed: 0 · Skipped: 3** (no
+  regression; these suites only assert `Count == 0` on valid code / `Count > 0` on malformed code).
+- `dotnet test Tests/CsPreprocessorTests` — **Total: 128 · Passed: 128 · Failed: 0** (no regression).
+
+## Deviations
+
+- **csproj build fix (required), net-zero vs HEAD.** While creating a *temporary* diagnostic-dump test
+  (`Recovery\TmpDiscrepancyDumpTests.cs`, deleted after the dump), an external process on this machine
+  (same behavior documented in the 6.1.1 section) added
+  `<Compile Include="Recovery\TmpDiscrepancyDumpTests.cs" />` to `ParserTests.csproj`, producing
+  `NETSDK1022: Duplicate 'Compile' items` (SDK default globbing already includes the file). The line was
+  removed, restoring `ParserTests.csproj` to its committed (HEAD) state; net `.csproj` diff vs HEAD is
+  zero. The temporary dump file itself was deleted after capturing the accumulated lists.
+- **Wiring left in place, uncommitted.** The working tree is deliberately red (12 tests) as the
+  evidence for the stop-if report. Reverting is a small change (the `Parser.cs:266` call + the
+  `FinalizeRecoveryDiagnostics` method in `Parser.Recovery.cs:349-361` + the 2 tests in
+  `DeriveDiagnosticsTests.cs:116-162`).
+- Not committed.

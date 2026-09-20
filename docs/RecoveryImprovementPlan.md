@@ -555,9 +555,11 @@ Stop-if: S1-кандидаты изменились на TDOPP-граммати�
 
 | # | Что | Где | Приёмка |
 |---|---|---|---|
-| **A5-2** | **Диагностика, выводимая из дерева** (единый источник правды): `_recoveryDiagnostics` (`Parser.Recovery.cs:21-22`) — кэш; добавить `DeriveDiagnostics(root)` — обход IsRecovery-узлов (`SyntaxTree.cs:149-170`): нулевая вставка → `Inserted`, абсорбер → `Skipped` с текстом узла, `Unrecovered` — из результата (A4-2). Публичный список — производный от дерева | `Parser.Recovery.cs`, `SyntaxTree.cs` | Тест: список == обход дерева после откатов/итераций; запрос диагностики поддерева работает (IDE-сценарий) |
+| **A5-2** | **Node-attached диагностика через side-table** (единый источник правды): side-table `ConditionalWeakTable<ISyntaxNode, RecoveryDiagnostic[]>` на `Parser` (fresh per `Parse`); хук `AttachDiagnostic(node, diag)` — стратегии S1..S6/S1b регистрируют диагностику при создании абсорбера/вставки; метаданные (вид `Extraneous`, `Terminal`, `RuleName`, текст) — в записи `RecoveryDiagnostic`, **не в узле**. `DeriveDiagnostics(root)` = обход дерева + lookup в side-table; `Unrecovered` — из результата (A4-2, не узел). Публичный список = `DeriveDiagnostics(root)` + `Unrecovered` | `Parser.Recovery.cs` (side-table, хук, финализация), `RecoveryEngine.cs` (регистрация) | Тест: список == обход дерева (side-table) после откатов/итераций; 12 существующих тестов проходят без ослабления (метаданные в side-table) |
 | D2 (база, полная) | Счётчики по стратегиям: accept/rollback по каждой S (S0..S6); удаления hygiene до/после B1; хиты/миссы specCache (B2); время по фазам (основной парс / генерация / re-парсы) | `Parser.Recovery.cs`, `RecoveryEngine.cs` | «Тормозной сценарий» виден в метриках, а не в таймауте |
 | **A4-6** | **Канал качества грамматики** (аналог `DiagnosticErrorListener` ANTLR4): публичный `GrammarDiagnostics` (отдельно от `RecoveryDiagnostics` — те про ошибки ввода): якорь использован N раз / никогда; все recovery-точки правила — одна и та же; `Recoverable:false` регион никогда не срабатывает на корпусе; S2-якорь избыточен (всегда один и тот же) | новый тип + сбор в D2 | Автор грамматики (C#, будущие языки) получает обратную связь по разметке |
+
+**A5-2: почему side-table, а не обогащение узлов.** Дерево несёт *структуру* (recovery-узел, `IsAbsorber`, span), но не *семантику* диагностики — обход IsRecovery-узлов (6.1.1) не воспроизводит накопленный список: **D1** вид `Extraneous` (S1b) схлопывается в `Skipped`; **D2** soft-separator-узел — обычный терминал, не `IsRecovery`; **D3** текст сообщения; **D4** `Terminal`/`RuleName`. Side-table с reference-identity несёт метаданные в `RecoveryDiagnostic`, не трогая `Node` (immutable; пригодится для Wave 8 green/red). Вариант «дерево — проекция, накопленный список остаётся публичным» снят.
 
 **Критерий волны:** расхождения список/дерево невозможны (тест); отчёт по качеству
 грамматики генерируется на D1-корпусе.
@@ -579,6 +581,47 @@ Stop-if: S1-кандидаты изменились на TDOPP-граммати�
 
 ---
 
+### Волна 8 — IDE-инкрементальная модель (green/red, ленивые позиции)
+
+**Цель.** Первоклассная поддержка IDE: reuse неизменённых поддеревьев
+при инкрементальном изменении файла, ленивое вычисление позиций.
+
+**Мотивация.** Roslyn использует двухуровневое дерево: green (структура,
+relative-width, интернирование по содержимому, immutable shared) + red
+(view с позициями, lazy materialization). Green immutable и shared →
+reuse поддеревьев без пересчёта позиций; node-attached диагностика
+на green переезжает вместе с узлом при reuse. Текущая модель CsNitra:
+`Node` (immutable record) с абсолютными `StartPos`/`EndPos` — при
+вставке в начало файла все позиции сдвигаются, reuse невозможен.
+Для расширяемого языка green/red проще, чем в Roslyn: узлы универсальны
+(`SeqNode`/`TerminalNode`/`ListNode`/`SomeNode`/`NoneNode`/
+`PredicateNode`), DSL не добавляет новых типов — split распространяется
+на фиксированный набор. Семантика DSL-конструкций (метод/тип/...) — в
+интерпретации `Kind` + структуры (visitor'ы/обёртки), не в модели узлов.
+
+**Дизайн-вопросы (без реализации сейчас).**
+1. Полный green/red split vs half-step (relative positions без split)
+   vs reuse через memo (пересборка нового дерева из старых узлов + новых
+   с разделением объектных ссылок — использует уже имеющиеся immutable
+   records и memo; не требует пересмотра модели).
+2. Если reuse через memo — нужен persistent memo между парсами (сейчас
+   per-parse, сбрасывается в `Parse`).
+3. Диагностика: node-attached (green) vs side-table (reference identity);
+   синхронизировать с Wave 8 и с 6.1.2.
+4. Публичный API для IDE: subtree-запросы диагностик, навигация,
+   semantic tokens — с учётом lazy positions.
+5. Взаимодействие с DSL-расширениями: как DSL-аннотации и recovery-хуки
+   отражаются в green/red.
+
+**Место.** Wave 8 (после Wave 7). **Приоритет:** высокий (без этого язык
+не имеет смысла для IDE), но не срочный — блокирует IDE-фичи, не
+cold-start.
+
+**Не делать сейчас** — только дизайн-стадия. Реализация — отдельный
+проект после Wave 7.
+
+---
+
 ## Сводка: новые пункты → волны
 
 | # | Пункт | Источник | Волна | Приоритет |
@@ -597,7 +640,7 @@ Stop-if: S1-кандидаты изменились на TDOPP-граммати�
 | A4-1 | тихая зона (side-эффекты только дальше E) | ANTLR4 `errorRecoveryMode` | 5 | средний |
 | A4-3 | single-token deletion, ранг 1 | ANTLR4 `singleTokenDeletion` | 5 | средний |
 | A4-4 | First-префильтр + ожидаемые на границе циклов | ANTLR4 `sync` | 5 | средний |
-| A5-2 | диагностика, выводимая из дерева | Roslyn node-attached diagnostics | 6 | средний |
+| A5-2 | node-attached диагностика через side-table (reference identity) | Roslyn node-attached diagnostics | 6 | средний |
 | A4-6 | канал качества грамматики | ANTLR4 `DiagnosticErrorListener` | 6 | низкий |
 | H | HygieneCore — O(региона), а не O(memo) (индекс по pos) | B1 follow-up, K×M-квадрат | 4.0a | высокий |
 | A5-3 | диагностика на первом слове региона | Roslyn `GetDiagnosticSpanForMissingNodeOrToken` | 7 | низкий |
