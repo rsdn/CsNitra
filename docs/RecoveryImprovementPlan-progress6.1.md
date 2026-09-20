@@ -255,3 +255,88 @@ decision).
   `FinalizeRecoveryDiagnostics` method in `Parser.Recovery.cs:349-361` + the 2 tests in
   `DeriveDiagnosticsTests.cs:116-162`).
 - Not committed.
+
+---
+
+# 6.1.2a (A5-2) — node-attached diagnostics via a side-table (infrastructure)
+
+Sub-point 6.1.2a adds the **side-table + registration hook + side-table-based derivation** on
+`Parser` for A5-2 (node-attached recovery diagnostics via reference identity). NO engine wiring yet
+(S1..S6/S1b do not call `AttachDiagnostic` — that is 6.1.2b) and the public `RecoveryDiagnostics`
+list is UNCHANGED (that is 6.1.2c). `DiagnosticDerivation.cs` (6.1.1) and its tests are untouched.
+
+## Side-table field + init
+
+- **Field** (`Parser.Recovery.cs:33`):
+  `private Dictionary<WeakReference<ISyntaxNode>, RecoveryDiagnostic[]> _diagSideTable = new(WeakRefNodeKeyComparer.Instance);`
+  — non-`readonly` (re-assigned per parse).
+- **Init**: the field initializer makes it non-null from construction; a 1-line fresh re-init at the
+  start of `Parse` (`Parser.cs:252`): `_diagSideTable = new(WeakRefNodeKeyComparer.Instance);` so each
+  parse gets a clean table.
+
+## Stop-if resolution: `ConditionalWeakTable` UNAVAILABLE in netstandard2.0 → Dictionary fallback used
+
+Verified with a clean netstandard2.0 probe project: `ConditionalWeakTable<,>` fails with **CS0246**
+(type not found), while `WeakReference<T>` (generic) and non-generic `WeakReference` DO compile. So the
+task's prescribed fallback is used: `Dictionary<WeakReference<ISyntaxNode>, RecoveryDiagnostic[]>`.
+- **Key** = `WeakReference<ISyntaxNode>` (weak = future-proofing for Wave 8; harmless for per-parse use).
+- **Value** = `RecoveryDiagnostic[]` (the original spec's value type; a `Dictionary` can replace values,
+  so accumulation is a re-store, unlike `ConditionalWeakTable` which cannot).
+- **`WeakReference<T>.Target` is ALSO unavailable** in this ref set (probe: CS1061); only
+  `TryGetTarget(out T?)` is. The comparer uses `TryGetTarget`.
+- **Comparer** (`WeakRefNodeKeyComparer`, `Parser.Recovery.cs:89`):
+  `IEqualityComparer<WeakReference<ISyntaxNode>>` that compares the target node **by reference**
+  (`ReferenceEquals`) and **identity-hashes** it. This is the same reference-identity pattern as the
+  existing `ReferenceComparer` (5a.5.1, `Parser.cs:66`), which is `Rule`-typed and so **cannot be reused
+  directly** for a `WeakReference<ISyntaxNode>` key (it compares the key object itself by reference; a
+  fresh `WeakReference` wrapper per lookup is a different object). The identity hash is resolved the same
+  way `ReferenceComparer` does (reflection over the BCL `RuntimeHelpers.GetHashCode`, because
+  `Shared/NetStandard2_0Support.cs` shadows that type by name).
+
+## `AttachDiagnostic` (registration hook)
+
+`Parser.Recovery.cs:37`: `public void AttachDiagnostic(ISyntaxNode node, RecoveryDiagnostic diag)`.
+Creates `new WeakReference<ISyntaxNode>(node)`; if the node has no entry, stores `[diag]`; otherwise
+re-stores the existing array with `diag` appended (`[.. existing, diag]`). **Accumulates** multiple
+diagnostics on the same node.
+
+## Derive method (side-table, reference-identity)
+
+`Parser.Recovery.cs:52`: `public IReadOnlyList<RecoveryDiagnostic> DeriveRecoveryDiagnostics(ISyntaxNode root)`.
+Walks the full tree (`SeqNode.RawElements`, `ListNode.RawElements` + `Delimiters`, `SomeNode.Value`;
+leaves = `TerminalNode`/`NoneNode`/`PredicateNode`), and at **every node** looks up the side-table by
+reference identity, collecting its diagnostics. Returns them sorted by `(StartPos, EndPos)`. This is the
+reference-identity lookup — distinct from (and does not modify) the pure structure-based
+`DiagnosticDerivation.DeriveDiagnostics` (6.1.1), which is retired in 6.1.2c.
+
+## Test — `Tests/ParserTests/Recovery/SideTableTests.cs` (new, 3 tests)
+
+Fresh `Parser` (no full `Parse` call needed — the side-table is non-null from construction). Hand-built
+trees (distinct `StartPos`), `AttachDiagnostic` with full-metadata `RecoveryDiagnostic`s (kinds
+`Inserted`/`Skipped`/`Extraneous`, distinct `Terminal`/`RuleName`/`Message`):
+1. `Test_SideTable_Derive_ReturnsAttachedSortedByPosition` — 5 diags attached (scrambled order) to 5
+   different nodes covering every walked node kind (`SeqNode` / `ListNode` element + delimiter /
+   `SomeNode` value); un-attached nodes contribute nothing. Derive returns exactly the 5, ordered by
+   `(StartPos, EndPos)`, with every metadata field (incl. the exact `Terminal` reference) intact.
+2. `Test_SideTable_Accumulate_TwoOnSameNode` — two diags on the SAME node both survive.
+3. `Test_SideTable_EndPosTieBreak` — same `StartPos`, different `EndPos` → ordered by `EndPos`.
+
+## Test results (one-shot)
+
+- `dotnet test Tests/ParserTests` — **Total: 402 · Passed: 400 · Failed: 0 · Skipped: 2** (the 2 skipped
+  are the pre-existing `[Ignore("WIP")]`; +3 vs the 6.1.1 baseline of 399 is exactly the 3 new
+  `SideTableTests`).
+- `dotnet test Tests/CSharpGrammarTests` — **Total: 1527 · Passed: 1524 · Failed: 0 · Skipped: 3** (no regression).
+- `dotnet test Tests/CsPreprocessorTests` — **Total: 128 · Passed: 128 · Failed: 0** (no regression).
+
+## Files changed
+
+- `ExtensibleParser/Parser.Recovery.cs` — **modified**: side-table field + init, `AttachDiagnostic`,
+  `DeriveRecoveryDiagnostics` + `CollectAttached`, and the `WeakRefNodeKeyComparer` (reference-identity
+  comparer for `WeakReference<ISyntaxNode>` keys).
+- `ExtensibleParser/Parser.cs` — **modified**: 1-line fresh-per-parse init at `Parser.cs:252`.
+- `Tests/ParserTests/Recovery/SideTableTests.cs` — **new**: 3 tests.
+- `docs/RecoveryImprovementPlan-progress6.1.md` — this file.
+
+No `.csproj` change, no engine wiring (S0–S6 untouched), public `RecoveryDiagnostics` list unchanged,
+`DiagnosticDerivation.cs` (6.1.1) + its tests untouched. **Not committed.**

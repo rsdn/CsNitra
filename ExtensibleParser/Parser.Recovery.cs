@@ -20,6 +20,114 @@ public partial class Parser
     private readonly List<RecoveryDiagnostic> _recoveryDiagnostics = [];
     public IReadOnlyList<RecoveryDiagnostic> RecoveryDiagnostics => _recoveryDiagnostics;
 
+    // A5-2 (6.1.2a): node-attached recovery diagnostics via a side-table keyed by node reference
+    // identity. The immutable Node records carry structure only; the RecoveryDiagnostic metadata
+    // (kind, Terminal, RuleName, message) lives here, keyed by the node's reference identity.
+    // ConditionalWeakTable<TKey,TValue> is UNAVAILABLE in netstandard2.0 (verified: a clean
+    // netstandard2.0 probe fails with CS0246), so the prescribed fallback is used:
+    // Dictionary<WeakReference<ISyntaxNode>, RecoveryDiagnostic[]>. The weak key is future-proofing
+    // for Wave 8 (subtree reuse); harmless for per-parse use (the table is re-created each Parse).
+    // The key compares the WeakReference's TARGET by reference and identity-hashes it — the same
+    // reference-identity pattern as ReferenceComparer (5a.5.1), which is Rule-typed and so cannot be
+    // reused directly for this key type. Re-initialized fresh per Parse (see Parser.Parse).
+    private Dictionary<WeakReference<ISyntaxNode>, RecoveryDiagnostic[]> _diagSideTable = new(WeakRefNodeKeyComparer.Instance);
+
+    // A5-2 (6.1.2a): registration hook — the recovery engine attaches a diagnostic to a node
+    // (wired in 6.1.2b). Accumulates: multiple diagnostics on the same node all survive.
+    public void AttachDiagnostic(ISyntaxNode node, RecoveryDiagnostic diag)
+    {
+        var key = new WeakReference<ISyntaxNode>(node);
+        if (!_diagSideTable.TryGetValue(key, out var existing))
+        {
+            _diagSideTable[key] = [diag];
+            return;
+        }
+        _diagSideTable[key] = [.. existing, diag];
+    }
+
+    // A5-2 (6.1.2a): side-table derivation — walk the final tree, collect each node's attached
+    // diagnostics by reference identity, return them sorted by (StartPos, EndPos). This is the
+    // reference-identity lookup, distinct from the pure structure-based
+    // DiagnosticDerivation.DeriveDiagnostics (6.1.1, to be retired in 6.1.2c).
+    public IReadOnlyList<RecoveryDiagnostic> DeriveRecoveryDiagnostics(ISyntaxNode root)
+    {
+        var result = new List<RecoveryDiagnostic>();
+        CollectAttached(root, result);
+        result.Sort((a, b) =>
+            a.StartPos == b.StartPos ? a.EndPos.CompareTo(b.EndPos) : a.StartPos.CompareTo(b.StartPos));
+        return result;
+    }
+
+    // Обход полного дерева (RawElements — включая абсорберы, а не «чистых» Elements); на каждом
+    // узле — lookup в side-table по ссылке на узел.
+    private void CollectAttached(ISyntaxNode node, List<RecoveryDiagnostic> result)
+    {
+        if (_diagSideTable.TryGetValue(new WeakReference<ISyntaxNode>(node), out var diags))
+            result.AddRange(diags);
+        switch (node)
+        {
+            case SeqNode seq:
+                foreach (var el in seq.RawElements)
+                    CollectAttached(el, result);
+                break;
+            case ListNode ln:
+                foreach (var el in ln.RawElements)
+                    CollectAttached(el, result);
+                foreach (var d in ln.Delimiters)
+                    CollectAttached(d, result);
+                break;
+            case SomeNode some:
+                CollectAttached(some.Value, result);
+                break;
+            // TerminalNode / NoneNode / PredicateNode — листья, дочерних узлов нет.
+        }
+    }
+
+    // A5-2 (6.1.2a): reference-identity comparer for the side-table's WeakReference<ISyntaxNode>
+    // keys — compares the target node by reference and identity-hashes it (the same pattern as
+    // ReferenceComparer, 5a.5.1; that one is Rule-typed, so it is not reusable for this key type).
+    private sealed class WeakRefNodeKeyComparer : IEqualityComparer<WeakReference<ISyntaxNode>>
+    {
+        public static readonly WeakRefNodeKeyComparer Instance = new();
+
+        public bool Equals(WeakReference<ISyntaxNode>? x, WeakReference<ISyntaxNode>? y)
+        {
+            GetTarget(x, out var xt);
+            GetTarget(y, out var yt);
+            return ReferenceEquals(xt, yt);
+        }
+
+        public int GetHashCode(WeakReference<ISyntaxNode> obj) =>
+            obj.TryGetTarget(out var target) ? _IdentityHash(target!) : 0;
+
+        // netstandard2.0's WeakReference<T> exposes TryGetTarget (no Target property).
+        private static void GetTarget(WeakReference<ISyntaxNode>? wr, out ISyntaxNode? target)
+        {
+            if (wr is null || !wr.TryGetTarget(out var t))
+            {
+                target = null;
+                return;
+            }
+            target = t;
+        }
+
+        private static readonly Func<object, int> _IdentityHash = CreateIdentityHash();
+
+        // Identity hash (BCL RuntimeHelpers.GetHashCode) via a delegate: the local
+        // System.Runtime.CompilerServices.RuntimeHelpers (Shared/NetStandard2_0Support.cs) shadows the
+        // BCL type by name, so the BCL method is resolved by reflection once (same as ReferenceComparer).
+        private static Func<object, int> CreateIdentityHash()
+        {
+            var method = typeof(object)
+                .Assembly
+                .GetType("System.Runtime.CompilerServices.RuntimeHelpers")
+                ?.GetMethod("GetHashCode", [typeof(object)]);
+            return method is null
+                ? static o => o.GetHashCode()
+                : (Func<object, int>)Delegate.CreateDelegate(typeof(Func<object, int>), method)!;
+        }
+    }
+
     // Хук для тестов (паттерн LastSnapshot/LastPartial): число ленивых вызовов RecoveryEngine.Generate в последнем Parse.
     public int EngineGenerateCalls { get; private set; }
 

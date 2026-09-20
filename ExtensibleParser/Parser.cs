@@ -249,6 +249,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
         _memoByPos.Clear();
         _terminalCache.Clear();
         _firstCache.Clear();
+        _diagSideTable = new(WeakRefNodeKeyComparer.Instance);
         ClearInjections();
         SetMaxParseDepth(input.Length);
 
