@@ -28,3 +28,30 @@
 
 ## Stop-if
 - None hit. (Tests 1, 2, 4 pass; no second production file touched; no unrelated regressions; constructor signatures determined from FollowSetTests.cs.)
+
+## 5b.1.1a — Bug fix: `TailOf` had no `LoopFrame` branch
+
+### Fix
+`ExtensibleParser/FollowSetCalculator.cs`, `TailOf`: added a `LoopFrameLocation` branch BEFORE the final rule-level fallback. Previously a `LoopFrame` fell through to `return (SafeFollow(parent.RuleName), true)`, where `parent.RuleName` is the ENCLOSING rule — yielding `follow(R)` (what follows the whole rule) instead of what follows the loop, over-including terminals.
+
+New branch (mirrors the `SeqFrame` branch: reads the `SeqFrame` directly below the `LoopFrame`, then the `RuleFrame` below that to resolve the `Seq` production):
+- `parent.Location is LoopFrameLocation && parentIndex >= 2`:
+  - `seqBelow = stack[parentIndex - 1]`; require `seqBelow.RuleName == parent.RuleName` and `seqBelow.Location is SeqFrameLocation { ElementIndex: var loopEi }`.
+  - `ruleBelow = stack[parentIndex - 2]`; require `ruleBelow.Location is RuleFrameLocation { AltIndex: var altIdx }`, `_rules.TryGetValue(parent.RuleName, out var alts)`, `0 <= altIdx < alts.Length`, `alts[altIdx] is Seq seq`, `0 <= loopEi < seq.Elements.Length`.
+  - `loopBody = seq.Elements[loopEi]`, `remaining = seq.Elements[(loopEi + 1)..]`.
+  - `bodyFirst = ComputeFirstForSequence([loopBody])`, `(remFirst, remNullable) = ComputeFirstForSequence(remaining)`.
+  - Combine `bodyFirst` + `remFirst` into one list, dedup via `TerminalComparer.Instance` (skipping `EpsilonTerminal`); `return (combined, remNullable)`.
+- Any failed condition falls through to the existing rule-level fallback (unchanged). `SeqFrame` branch, `Recoverable:false`, `Options.Terminators`, and the final fallback were NOT altered.
+
+### New regression test
+`Tests/ParserTests/Recovery/FollowSetPerSiteTests.cs`: `Test_LoopPerSite_NoOverInclude` — grammar `Item := "i"; Body := "{" ZeroOrMany(Item) "}"; Start := "a" Body "b"`; stack `[Start@RuleFrame(0), Start@SeqFrame(1), Body@RuleFrame(0), Body@SeqFrame(1), Body@LoopFrame("ZeroOrMany",0), Item@RuleFrame(0)]`. Asserts per-site terminators contain `"i"` and `"}"` and do NOT contain `"b"` (follow(Body)).
+
+### Build/test results
+- `dotnet build` (repo root, Nitra.sln): **Build succeeded**, 0 errors.
+- `dotnet test Tests/ParserTests --filter "FullyQualifiedName~FollowSetPerSiteTests"`: **Passed — 6/6** (new test `Test_LoopPerSite_NoOverInclude`: PASS).
+- `dotnet test Tests/ParserTests --filter "FullyQualifiedName~Test_Candidates_Sorted_By_Rank_Cost_Pos_Rule_Terminal"`: **Passed — 1/1** (previously failing; now PASS: S1 = {i, }}, no `b`).
+- `dotnet test Tests/ParserTests --filter "FullyQualifiedName~Test_Generate_Is_Deterministic"`: **Passed — 1/1** (previously failing; now PASS).
+- Full `dotnet test Tests/ParserTests`: **Total: 385 · Passed: 383 · Failed: 0 · Skipped: 2**. ALL GREEN.
+
+### Stop-if
+- None hit. Only `FollowSetCalculator.cs` + `FollowSetPerSiteTests.cs` changed; no `.csproj` touched; no commit.

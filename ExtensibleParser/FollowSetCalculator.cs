@@ -280,6 +280,36 @@ public class FollowSetCalculator
                 return ComputeFirstForSequence(tail.ToList());
             }
         }
+        if (parent.Location is LoopFrameLocation && parentIndex >= 2)
+        {
+            var seqBelow = stack[parentIndex - 1];
+            if (seqBelow.RuleName == parent.RuleName
+                && seqBelow.Location is SeqFrameLocation { ElementIndex: var loopEi })
+            {
+                var ruleBelow = stack[parentIndex - 2];
+                if (ruleBelow.Location is RuleFrameLocation { AltIndex: var altIdx }
+                    && _rules.TryGetValue(parent.RuleName, out var alts)
+                    && altIdx >= 0
+                    && altIdx < alts.Length
+                    && alts[altIdx] is Seq seq
+                    && loopEi >= 0
+                    && loopEi < seq.Elements.Length)
+                {
+                    var loopBody = seq.Elements[loopEi];
+                    var remaining = seq.Elements[(loopEi + 1)..];
+                    var (bodyFirst, _) = ComputeFirstForSequence(new List<Rule> { loopBody });
+                    var (remFirst, remNullable) = ComputeFirstForSequence(remaining.ToList());
+                    var combined = new List<Terminal>();
+                    foreach (var t in bodyFirst)
+                        if (t is not EpsilonTerminal && !combined.Contains(t, TerminalComparer.Instance))
+                            combined.Add(t);
+                    foreach (var t in remFirst)
+                        if (t is not EpsilonTerminal && !combined.Contains(t, TerminalComparer.Instance))
+                            combined.Add(t);
+                    return (combined, remNullable);
+                }
+            }
+        }
         return (SafeFollow(parent.RuleName), true);
     }
 

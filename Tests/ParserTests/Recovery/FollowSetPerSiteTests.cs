@@ -132,4 +132,35 @@ public class FollowSetPerSiteTests
         Assert.AreEqual("EOF", perSite[^1].Kind, "per-site result must end with EOF");
         Assert.AreEqual("EOF", ruleLevel[^1].Kind, "rule-level result must end with EOF");
     }
+
+    // ============ Loop per-site: no over-include of enclosing rule follow ============
+    [TestMethod]
+    public void Test_LoopPerSite_NoOverInclude()
+    {
+        // Item := "i";  Body := "{" ZeroOrMany(Item) "}";  Start := "a" Body "b".
+        // follow(Body) = { "b" } — the loop must NOT inherit it; loop terminators =
+        // First(Item) ∪ First("}") = { "i", "}" }.
+        var rules = new Dictionary<string, Rule[]>
+        {
+            {"Item", new Rule[] { new Literal("i") } },
+            {"Body", new Rule[] { new Seq(new Rule[] { new Literal("{"), new ZeroOrMany(new Ref("Item")), new Literal("}") }, "Body") } },
+            {"Start", new Rule[] { new Seq(new Rule[] { new Literal("a"), new Ref("Body"), new Literal("b") }, "Start") } },
+        };
+        var calc = new FollowSetCalculator(rules, "Start");
+        var stack = new List<StackFrame>
+        {
+            new StackFrame("Start", 0, new RuleFrameLocation(0), null, null),
+            new StackFrame("Start", 0, new SeqFrameLocation(1), null, null),
+            new StackFrame("Body", 0, new RuleFrameLocation(0), null, null),
+            new StackFrame("Body", 0, new SeqFrameLocation(1), null, null),
+            new StackFrame("Body", 0, new LoopFrameLocation("ZeroOrMany", 0), null, null),
+            new StackFrame("Item", 0, new RuleFrameLocation(0), null, null),
+        };
+
+        var terminators = calc.GetTerminatorsPerSite(stack);
+
+        Assert.IsTrue(ContainsKind(terminators, "i"), "loop body first: per-site terminators must contain 'i'");
+        Assert.IsTrue(ContainsKind(terminators, "}"), "loop tail first: per-site terminators must contain '}'");
+        Assert.IsFalse(ContainsKind(terminators, "b"), "loop must not inherit follow(Body)='b'");
+    }
 }
