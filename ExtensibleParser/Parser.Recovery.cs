@@ -51,16 +51,36 @@ public partial class Parser
     public int SpecCacheHits => _specCache.Hits;
     public int SpecCacheMisses => _specCache.Misses;
 
-    // Лимиты цикла восстановления: предельное число итераций.
-    public int MaxRecoveryIterations { get; set; } = 1000;
+    // A3: единый источник recovery-лимитов. Convenience-свойства ниже читают/пишут Profile,
+    // сохраняя существующие тесты, которые ставят их напрямую.
+    public RecoveryProfile Profile { get; set; } = RecoveryProfile.Ide;
+
+    // Лимиты цикла восстановления: предельное число итераций (Profile.MaxIterations).
+    public int MaxRecoveryIterations
+    {
+        get => Profile.MaxIterations;
+        set => Profile = Profile with { MaxIterations = value };
+    }
 
     // A2: бюджеты по тирам (не по кандидатам). Каждый тир — свой под-бюджет: число кандидатов тира,
     // допустимое на точке восстановления. «Попыткой» считается кандидат тира; S0 (ранг 0) и S6 (ранг 6)
     // вне под-бюджетов (S6 — гарантированное дно, 1.3.2). Под-бюджеты раздельны, поэтому S1 (много
-    // вставок) не выедает общий бюджет и не глушит S2/S3/S6. Значения — константы (A3 RecoveryProfile — волна 4.1).
-    public int S1TierBudget { get; set; } = 4;
-    public int S2TierBudget { get; set; } = 2;
-    public int S3S6TierBudget { get; set; } = 2;
+    // вставок) не выедает общий бюджет и не глушит S2/S3/S6. Значения — Profile (A3 RecoveryProfile).
+    public int S1TierBudget
+    {
+        get => Profile.S1TierBudget;
+        set => Profile = Profile with { S1TierBudget = value };
+    }
+    public int S2TierBudget
+    {
+        get => Profile.S2TierBudget;
+        set => Profile = Profile with { S2TierBudget = value };
+    }
+    public int S3S6TierBudget
+    {
+        get => Profile.S3S6TierBudget;
+        set => Profile = Profile with { S3S6TierBudget = value };
+    }
 
     // Legacy (до A2): пер-позиционный бюджет кандидатов. Сохранён для совместимости (тесты его ставят),
     // но более не ограничивает выбор кандидатов — вместо него под-бюджеты тиров (A2).
@@ -199,7 +219,7 @@ public partial class Parser
     private partial void SetMaxParseDepth(int inputLength)
     {
         _parseDepth = 0;
-        _maxParseDepth = inputLength * 4 + 128;
+        _maxParseDepth = Profile.MaxParseDepthBase + inputLength * Profile.MaxParseDepthPerChar;
     }
     private partial void ClearInjections() => _injections.Clear();
 

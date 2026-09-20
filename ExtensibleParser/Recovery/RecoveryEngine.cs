@@ -9,8 +9,6 @@ namespace ExtensibleParser.Recovery;
 /// </summary>
 public static class RecoveryEngine
 {
-    private const int DefaultMaxSkip = 1000;
-
     public static List<RecoveryCandidate> Generate(int e, FailureSnapshot? snapshot, string input, Parser parser, Result.Kind resultKind, string startRule, int currentStartPos, int parseEnd)
     {
         var candidates = new List<RecoveryCandidate>();
@@ -158,7 +156,7 @@ public static class RecoveryEngine
     private static void GenerateS2(int e, FailureSnapshot snapshot, string input, Parser parser, List<RecoveryCandidate> candidates)
     {
         var calculator = parser.FollowCalculator;
-        var maxSkip = GetMaxSkip(snapshot) ?? DefaultMaxSkip;
+        var maxSkip = GetMaxSkip(snapshot) ?? parser.Profile.MaxSkip;
         var maxS = Math.Min(e + maxSkip, input.Length);
         var top = snapshot.Stack[^1];
 
@@ -478,7 +476,7 @@ public static class RecoveryEngine
     private static void GenerateS3(int e, FailureSnapshot snapshot, string input, Parser parser, List<RecoveryCandidate> candidates)
     {
         var terminators = parser.GetTerminators(snapshot.Stack);
-        var maxSkip = GetMaxSkip(snapshot) ?? DefaultMaxSkip;
+        var maxSkip = GetMaxSkip(snapshot) ?? parser.Profile.MaxSkip;
         var maxS = Math.Min(e + maxSkip, input.Length);
         var matchCache = new Dictionary<(int Pos, Terminal Terminal), int>(TerminalComparer.KeyComparer);
 
