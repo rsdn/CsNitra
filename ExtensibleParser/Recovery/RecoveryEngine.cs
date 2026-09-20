@@ -445,6 +445,74 @@ public static class RecoveryEngine
             }
     }
 
+    // A5-1 (5b.4.1): множество выводимых предикатов зонда (декларация — в генерацию кандидатов S2
+    // пока не подключено, 5b.4.2/5b.4.3). Обобщение DeriveLoopAnchors:
+    //   INCLUDE: Ref-альтернативы правила верхнего кадра (если он Ref) + Ref-тела циклов
+    //            Loop-кадров (DeriveLoopAnchors, существующее поведение);
+    //   EXCLUDE: правила с чистым regex-First (Identifier — совпадает почти с чем угодно, их
+    //            покрывают S3/anchor-First) и TDOPP-кадры (PostfixFrameLocation) / ContextScope-кадры
+    //            (выражения стартуют почти чем угодно → ложные кандидаты; зеркало фолбэка A5-6).
+    // Порядок + дедупликация по имени правила: внутренние кадры раньше внешних (top→bottom).
+    public static List<Ref> DeriveProbePredicates(Parser parser, FailureSnapshot snapshot)
+    {
+        if (snapshot.Stack.Length == 0)
+            return [];
+
+        var calculator = parser.FollowCalculator;
+        var result = new List<Ref>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        void Add(Ref r)
+        {
+            if (!seen.Add(r.RuleName))
+                return;
+            if (IsPureRegexFirst(r, calculator))
+                return;
+            result.Add(r);
+        }
+
+        // Правило верхнего кадра, если оно Ref (его Ref-альтернативы) — первым (внутреннее).
+        var top = snapshot.Stack[^1];
+        if (!IsExcludedFrame(parser, top) && parser.Rules.TryGetValue(top.RuleName, out var topAlternatives))
+            foreach (var alt in topAlternatives)
+                if (alt is Ref r)
+                    Add(r);
+
+        // Ref-тела циклов Loop-кадров (существующее поведение DeriveLoopAnchors), top→bottom.
+        for (var i = snapshot.Stack.Length - 1; i >= 0; i--)
+        {
+            var frame = snapshot.Stack[i];
+            if (frame.Location is not LoopFrameLocation)
+                continue;
+            if (IsExcludedFrame(parser, frame))
+                continue;
+            foreach (var anchor in DeriveLoopAnchors(parser, frame.RuleName))
+                Add(anchor);
+        }
+
+        return result;
+    }
+
+    // A5-1: кадр исключается из вывода предикатов, если это TDOPP-кадр (PostfixFrameLocation) или
+    // ContextScope-кадр. ContextScope-кадры не имеют собственного FrameLocation (ParseContextScope
+    // пушит SeqFrameLocation и наследует имя внешнего правила, Parser.cs:781-799), поэтому единственная
+    // метка в снимке — определение правила: любой кадр правила, чьё определение содержит ContextScope,
+    // считается ContextScope-кадром (консервативно: меньше предикатов, без ложных кандидатов).
+    private static bool IsExcludedFrame(Parser parser, StackFrame frame) =>
+        frame.Location is PostfixFrameLocation
+        || (parser.Rules.TryGetValue(frame.RuleName, out var alternatives)
+            && alternatives.Any(alt => alt.GetSubRules<ContextScope>().Any()));
+
+    // A5-1: правило, чьё First-множество — единственный не-Literal-терминал (catch-all regex,
+    // напр. Identifier), — бесполезный предикат зонда: совпадает почти с чем угодно, покрывается
+    // S3/anchor-First (A5-7).
+    private static bool IsPureRegexFirst(Ref refRule, FollowSetCalculator? calculator)
+    {
+        var first = FirstSets.Get(refRule, calculator);
+        return first.Length == 1
+            && first[0] is not Literal and not EofTerminal and not EpsilonTerminal;
+    }
+
     // Ближайший (от верхнего кадра) элемент цикла из снимка — цель абсорбера на уровне цикла (3.0c).
     private static Ref? FindEnclosingLoopElement(Parser parser, FailureSnapshot snapshot)
     {

@@ -336,6 +336,11 @@ public sealed record RecoveryOptions
     /// Resync-scan limit in characters (default 1000).
     public int? MaxSkip { get; init; }
 
+    /// Bounded speculative probe accept depth (A5-1): a probe is accepted when the speculative
+    /// parse consumes at least this many tokens (K, default 2). Declaration only — the probe is
+    /// not yet wired into S2 candidate generation (5b.4.2/5b.4.3).
+    public int SoftDepth { get; init; } = 2;
+
     /// Opt-out: the rule is not recovered (strict contexts).
     public bool Recoverable { get; init; } = true;
 }
