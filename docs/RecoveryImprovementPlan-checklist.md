@@ -42,7 +42,7 @@ Status: `[ ]` not started · `[~]` in progress (exactly one) · `[✅]` done · 
 - [✅] 4.2 A4-5.4: Remove `EnableRecovery`/`DefineConstants` from `Directory.Build.props`, remove CI step — DONE (00b8bab). No functional references remain.
 - [ ] 4.2 A4-5.3: Two-stage (consumer) — [deferred, NEEDS-SPEC: real compiler consumer].
 - [✅] 4.3 B4.1: TimeBudget + degradation table — DONE (9d2558c). TimeBudget (500ms default, Test=Infinite), DegradationLevel record, Degradation.Levels (4 levels), Get with clamping.
-- [ ] 4.3 B4.2: mechanism (DegradationLevel + Stopwatch + time-check + effective props) in Parser.Recovery.cs.
+- [✅] 4.3 B4.2: mechanism (DegradationLevel + Stopwatch + time-check + effective props) — DONE (c2990fe). EffectiveStrategyMask/MaxSkip/Speculation/ForceS6. ParserTests 369/0/2.
 - [ ] 4.3 B4.3: mask + MaxSkip + speculation in RecoveryEngine.Generate (preserve GetMaxSkip frame-override priority).
 - [ ] 4.3 B4.4: hard limit (level 3: force S6 + stop) in Parser.Recovery.cs.
 - [ ] 4.4 P: Parse phase model (Normal vs Recovery) — split `Recover` into explicit phases (Normal / Recovery / Normal again) via `_inRecoveryMode` flag; `ReportMismatch`/`CaptureSnapshot` gate on the flag. Unblocks A4-4 п.1, A5-8, A4-1. Deferred: preventive (unblocks ~3% perf on 5a.5.2); after A3 may take `RecoveryProfile.Mode` form; after A4-5 simpler (no `#if RECOVERY`).
