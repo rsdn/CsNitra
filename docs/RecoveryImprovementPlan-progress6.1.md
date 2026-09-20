@@ -545,5 +545,107 @@ public `RecoveryDiagnostics` list unchanged, no stop-if triggered. **Not committ
   is empty (net-zero). The task's "do not modify any .csproj" is honored in net effect — the only
   edit was the required removal of the external duplicate, exactly per the established pattern.
   (An external workaround file `C:\Users\user\AppData\Local\Temp\opencode\fix-dup.targets` was used
-  transiently to verify the suite before the `.csproj` restore; it lives outside the repo.)
+   transiently to verify the suite before the `.csproj` restore; it lives outside the repo.)
 - Not committed.
+
+---
+
+# 6.1.2c (A5-2) — the public `RecoveryDiagnostics` list is now DERIVED from the tree + side-table + `Unrecovered`
+
+Sub-point 6.1.2c is the **FINAL** sub-point of 6.1.2. It re-points the public `RecoveryDiagnostics`
+accessor off the accumulated `_recoveryDiagnostics` cache onto a list **derived at finalization**:
+`DeriveRecoveryDiagnostics(finalTree)` (the node-attached diagnostics, in tree position order) + the
+`Unrecovered` marker(s) from the cache (appended, since `Unrecovered` is not a tree node — A4-2).
+`_recoveryDiagnostics` is kept as the internal cache. This closes the 6.1.2 STOP regression: the
+side-table carries the **exact accumulated instances** (D1/D2/D3/D4 fidelity), so the derived list is
+behavior-equivalent to the previously-accumulated public list. S0–S6, the side-table (6.1.2a), the
+session-end match (6.1.2b), the soft-separator attach (6.1.2b2), `DiagnosticDerivation.cs` (6.1.1), and
+all `.csproj` files are untouched. **No test was weakened; no stop-if triggered.**
+
+## Where the public list is now computed
+
+- **Field** (`Parser.Recovery.cs:29`): `private List<RecoveryDiagnostic> _finalRecoveryDiagnostics = [];`
+  (non-`readonly` — rebuilt per Parse). The public accessor (`Parser.Recovery.cs:30`) now returns it:
+  `public IReadOnlyList<RecoveryDiagnostic> RecoveryDiagnostics => _finalRecoveryDiagnostics;`.
+- **Computed at**: `FinishRecovery(Result)` (`Parser.Recovery.cs:652-668`) — the single session-end
+  point (called at all three `Recover` exit points) where the final tree + result are available. After
+  `AttachDiagnosticsToTree(node)` (6.1.2b, which populates the side-table), each Success/Partial branch
+  calls `FinalizeRecoveryDiagnostics(node)`; the Failure branch calls `FinalizeRecoveryDiagnostics(null)`.
+- **Method**: `FinalizeRecoveryDiagnostics(ISyntaxNode? node)` (`Parser.Recovery.cs:677-684`):
+  1. `derived = node is null ? new List<RecoveryDiagnostic>() : DeriveRecoveryDiagnostics(node).ToList();`
+     — the node-attached diagnostics (the EXACT accumulated instances), in tree `(StartPos, EndPos)` order;
+  2. `derived.AddRange(_recoveryDiagnostics.Where(d => d.Kind == RecoveryKind.Unrecovered));` — the
+     `Unrecovered` marker(s) appended from the cache;
+  3. `_finalRecoveryDiagnostics = derived;`.
+
+### How `Unrecovered` is appended
+
+`Unrecovered` is added to the `_recoveryDiagnostics` cache by `AddUnrecoveredIfS6`
+(`Parser.Recovery.cs:577`) exactly when an S6 (rank 6) candidate is the accepted fallback — it is a
+zero-width marker at the recovery point `e`, NOT a tree node (A4-2), so `MatchesRecoveryNode`
+(`Parser.Recovery.cs:713`) never attaches it and `DeriveRecoveryDiagnostics` never emits it. It is
+therefore extracted from the cache at finalization and **appended after** the derived part. At most one
+`Unrecovered` is ever produced (S6 is the floor: once accepted it absorbs to EOF via the start-rule memo
+patch, so no further candidate is accepted), and it sits at the highest recovery point — so appending it
+last preserves the accumulated list's position order (the recovery loop's `e` strictly increases).
+
+## `_recoveryDiagnostics` — still used internally (not the public list anymore)
+
+- `Recover` clear at session start (`Parser.Recovery.cs:461`).
+- Per-accepted-candidate accumulation (`Parser.Recovery.cs:582, 591` — `AddRange(candidate.Diagnostics)`).
+- `Unrecovered` source (`Parser.Recovery.cs:577` — `AddUnrecoveredIfS6`).
+- Soft-separator emission + dedup (`Parser.cs:1024, 1026` — `Contains`/`Add`).
+- Read by the session-end match (`Parser.Recovery.cs:668, 674` — `AttachDiagnosticsToTree`).
+- Read by the finalization Unrecovered extraction (`Parser.Recovery.cs:682`).
+
+The accumulated `AddRange` (line 582/591) is now redundant for the public list (the list is derived, not
+the cache) but is **kept**: it is the source the side-table's session-end match (6.1.2b) reads to attach
+the exact instances, so it must still run. No recovery behavior changed.
+
+## Regression check — the 12 previously-failing tests (6.1.2 STOP) — **ALL PASS**
+
+The 6.1.2 STOP report listed 12 test methods failing because the pure tree walk (6.1.1) lost the
+`Extraneous` kind (D1), soft-separator diagnostics (D2), message content (D3), and `Terminal`/`RuleName`
+metadata (D4). The side-table (6.1.2a) + session-end match (6.1.2b) + soft-separator attach (6.1.2b2)
+now store/attach the **exact accumulated instances**, so `DeriveRecoveryDiagnostics` reproduces full
+D1/D2/D3/D4 fidelity and the derived public list is behavior-equivalent to the accumulated list. All 12
+pass (run as a filtered set across their 8 classes — 18 tests, 0 failed):
+
+- `SingleTokenDeletionTests` (1), `SoftSeparatorTests` (3), `T1AnchorReproTests` (2),
+  `S0IntegrationTests` (4), `S2IndexOfTests` (3), `S2TriviaJumpTests` (2), `S3TriviaJumpTests` (2),
+  `TierBudgetTests` (1).
+
+No discrepancy (order vs content) — the order matches the accumulated list (recovery points strictly
+increase ⇒ the skips are already in position order, and the single `Unrecovered` was last in both). No
+test was weakened; no recovery behavior was changed.
+
+## Test (added) — `Tests/ParserTests/Recovery/PublicDerivedListTests.cs` (new, 2 tests)
+
+1. **`Test_PublicList_EqualsDerived_NoUnrecovered`** — `"a c"`, `Module := a b c` (S1 insertion, no S6):
+   `parser.RecoveryDiagnostics` == `DeriveRecoveryDiagnostics(tree)` exactly — same count, same
+   instances (`ReferenceEquals`), same order, no `Unrecovered` in either.
+2. **`Test_PublicList_EqualsDerivedPlusUnrecovered_S6Fallback`** — `"12 34 ###"`, `Module := Expr Expr`
+   (S6 floor): `parser.RecoveryDiagnostics` == `DeriveRecoveryDiagnostics(tree)` (first
+   `derived.Count` entries, `ReferenceEquals`, in order) + exactly one `Unrecovered` appended LAST,
+   zero-width, at the same recovery point as the S6 absorber.
+
+## Test results (one-shot)
+
+- `dotnet test Tests/ParserTests` — **Total: 409 · Passed: 407 · Failed: 0 · Skipped: 2** (the 2 skipped
+  are the pre-existing `[Ignore("WIP")]`; +2 vs the 6.1.2b2 baseline of 407 is exactly the 2 new
+  `PublicDerivedListTests`; the 12 previously-failing tests are now green).
+- `dotnet test Tests/CSharpGrammarTests` — **Total: 1527 · Passed: 1524 · Failed: 0 · Skipped: 3** (no regression).
+- `dotnet test Tests/CsPreprocessorTests` — **Total: 128 · Passed: 128 · Failed: 0** (no regression).
+
+## Files changed
+
+- `ExtensibleParser/Parser.Recovery.cs` — **modified**: new `_finalRecoveryDiagnostics` field + the
+  `RecoveryDiagnostics` accessor re-pointed to it; `FinishRecovery` now calls `FinalizeRecoveryDiagnostics`
+  at all three exit points; new `FinalizeRecoveryDiagnostics(node)` method (derived + appended
+  `Unrecovered`); two comment updates (cache role on the field, and the `DeriveRecoveryDiagnostics`
+  "to be retired" note removed since `DiagnosticDerivation.cs` is untouched).
+- `Tests/ParserTests/Recovery/PublicDerivedListTests.cs` — **new**: 2 tests.
+- `docs/RecoveryImprovementPlan-progress6.1.md` — this file.
+
+No `DiagnosticDerivation.cs` (6.1.1) change, no S0–S6 change, no `.csproj` change (`git diff` on
+`*.csproj` is empty), no stop-if triggered. **Not committed.**

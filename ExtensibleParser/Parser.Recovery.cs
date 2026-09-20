@@ -17,8 +17,17 @@ public partial class Parser
     public FailureSnapshot? LastSnapshot => _lastSnapshot;
     private Result? _lastPartial;
     public Result? LastPartial => _lastPartial;
+    // A5-2: internal cache of the accumulated diagnostics (still written by AddUnrecoveredIfS6, the
+    // per-accepted-candidate AddRange, and the soft-separator emission/dedup in ParseSeparatedList).
+    // It is NO LONGER the public list — that is _finalRecoveryDiagnostics (6.1.2c, derived below).
     private readonly List<RecoveryDiagnostic> _recoveryDiagnostics = [];
-    public IReadOnlyList<RecoveryDiagnostic> RecoveryDiagnostics => _recoveryDiagnostics;
+    // A5-2 (6.1.2c): the PUBLIC diagnostic list, DERIVED from the final tree at finalization:
+    // DeriveRecoveryDiagnostics(finalTree) (the node-attached diagnostics — the exact accumulated
+    // instances — in tree position order) plus the Unrecovered marker(s) from the _recoveryDiagnostics
+    // cache (Unrecovered is not a tree node — A4-2 — so it is appended, not tree-derived). Rebuilt once
+    // per Parse in FinishRecovery (the single point where the final tree + result are available).
+    private List<RecoveryDiagnostic> _finalRecoveryDiagnostics = [];
+    public IReadOnlyList<RecoveryDiagnostic> RecoveryDiagnostics => _finalRecoveryDiagnostics;
 
     // A5-2 (6.1.2a): node-attached recovery diagnostics via a side-table keyed by node reference
     // identity. The immutable Node records carry structure only; the RecoveryDiagnostic metadata
@@ -48,8 +57,9 @@ public partial class Parser
 
     // A5-2 (6.1.2a): side-table derivation — walk the final tree, collect each node's attached
     // diagnostics by reference identity, return them sorted by (StartPos, EndPos). This is the
-    // reference-identity lookup, distinct from the pure structure-based
-    // DiagnosticDerivation.DeriveDiagnostics (6.1.1, to be retired in 6.1.2c).
+    // reference-identity lookup (returns the exact accumulated instances), distinct from the pure
+    // structure-based DiagnosticDerivation.DeriveDiagnostics (6.1.1). It is the source of the
+    // node-attached part of the public list (6.1.2c); the Unrecovered marker is appended separately.
     public IReadOnlyList<RecoveryDiagnostic> DeriveRecoveryDiagnostics(ISyntaxNode root)
     {
         var result = new List<RecoveryDiagnostic>();
@@ -644,14 +654,33 @@ public partial class Parser
         if (result.TryGetSuccess(out var node, out _))
         {
             AttachDiagnosticsToTree(node);
+            FinalizeRecoveryDiagnostics(node);
             return result;
         }
         if (result.TryGetPartial(out var pnode, out _))
         {
             AttachDiagnosticsToTree(pnode);
+            FinalizeRecoveryDiagnostics(pnode);
             return result;
         }
+        FinalizeRecoveryDiagnostics(null);
         return result;
+    }
+
+    // A5-2 (6.1.2c): build the public list from the final tree. DeriveRecoveryDiagnostics(node) returns
+    // the node-attached diagnostics — the EXACT accumulated instances, in tree position order — and the
+    // Unrecovered marker(s) are appended from the _recoveryDiagnostics cache (Unrecovered is not a tree
+    // node, A4-2, so it is not tree-derived; the recovery loop's e only increases, so they are already in
+    // position order and append cleanly after the derived part). node == null (a Failure result) → no
+    // tree; in practice the cache holds no Unrecovered then (a Failure means no candidate was ever
+    // accepted), so the list is empty.
+    private void FinalizeRecoveryDiagnostics(ISyntaxNode? node)
+    {
+        var derived = node is null
+            ? new List<RecoveryDiagnostic>()
+            : DeriveRecoveryDiagnostics(node).ToList();
+        derived.AddRange(_recoveryDiagnostics.Where(d => d.Kind == RecoveryKind.Unrecovered));
+        _finalRecoveryDiagnostics = derived;
     }
 
     // A5-2 (6.1.2b): корреляция узел↔диагностика по позиции+форме — надёжна для всех стратегий:
