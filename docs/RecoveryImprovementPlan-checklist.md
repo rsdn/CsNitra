@@ -38,8 +38,8 @@ Status: `[ ]` not started · `[~]` in progress (exactly one) · `[✅]` done · 
 - [✅] 4.0-t T: ComputeSpans — cheap extent + IsInsideSpan bitmap. DONE (180c959 T1, a8a2816 T2+bitmap). Linear scan for ordinary/verbatim/raw; `RawString().TryMatch` for raw; `bool[]` bitmap for O(1) IsInsideSpan. Test 2: 14.8s → 4.5s. TimeBudget back to 15s (337992c). T3 not needed (0 interpolated in corpus).
 - [✅] 4.1 A3: `RecoveryProfile` — DONE (0614097). Mode, MaxIterations, S1/S2/S3S6TierBudget, MaxSkip, MaxParseDepthBase/PerChar, StrategyMask (TODO). Convenience properties. ParserTests 362/0/2.
 - [✅] 4.2 A4-5.1: Remove `#if RECOVERY`, delete NoRecovery — DONE (2ba05b7). 45 files, 47 changed. One build, depth-guard active in all modes.
-- [ ] 4.2 A4-5.2: Bail mode (`Mode.Compiler`) in `Recover` — after first `ParseRule` without `Success@EOF` → break (no candidates).
-- [ ] 4.2 A4-5.4: Remove `EnableRecovery`/`DefineConstants` from `Directory.Build.props`, remove CI step `dotnet build -p:EnableRecovery=false`.
+- [✅] 4.2 A4-5.2: Bail mode (`Mode.Compiler`) in `Recover` — DONE (00b8bab). Break after first failure. RecoveryPasses==1, EngineGenerateCalls==0.
+- [✅] 4.2 A4-5.4: Remove `EnableRecovery`/`DefineConstants` from `Directory.Build.props`, remove CI step — DONE (00b8bab). No functional references remain.
 - [ ] 4.2 A4-5.3: Two-stage (consumer) — [deferred, NEEDS-SPEC: real compiler consumer].
 - [ ] 4.3 B4: time-budget with degradation ladder — (1) full S0–S6; (2) disable S2 speculation, MaxSkip ×4; (3) only S1 + short S3 + S6; (4) hard limit: accept S6 and stop. Worst IDE delay bounded; "not recovered" degrades to "recovered coarsely", not FatalError.
 - [ ] 4.4 P: Parse phase model (Normal vs Recovery) — split `Recover` into explicit phases (Normal / Recovery / Normal again) via `_inRecoveryMode` flag; `ReportMismatch`/`CaptureSnapshot` gate on the flag. Unblocks A4-4 п.1, A5-8, A4-1. Deferred: preventive (unblocks ~3% perf on 5a.5.2); after A3 may take `RecoveryProfile.Mode` form; after A4-5 simpler (no `#if RECOVERY`).
