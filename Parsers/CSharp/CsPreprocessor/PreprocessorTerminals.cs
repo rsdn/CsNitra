@@ -249,22 +249,44 @@ public static class PreprocessorTerminals
         [ThreadStatic]
         private static IReadOnlyList<(int Start, int End)>? _cachedSpans;
 
+        // T-IsInsideSpan — O(1) membership bitmap: _cachedInside[i] is true iff position i falls
+        // inside some multi-line string span. Built once per input alongside _cachedSpans from the
+        // same [start, end) set, so IsInsideSpan is a single array read instead of a linear scan over
+        // every span (which was O(spans) per '#' line — O(n^2) overall).
+        [ThreadStatic]
+        private static bool[]? _cachedInside;
+
         public static bool IsInsideSpan(string input, int pos)
         {
-            foreach (var (start, end) in GetSpans(input))
-                if (pos >= start && pos < end)
-                    return true;
-            return false;
+            EnsureCache(input);
+            return _cachedInside![pos];
+        }
+
+        private static void EnsureCache(string input)
+        {
+            if (ReferenceEquals(_cachedInput, input))
+                return;
+
+            _cachedInput = input;
+            _cachedSpans = ComputeSpans(input);
+            _cachedInside = BuildInside(_cachedSpans, input.Length);
         }
 
         private static IReadOnlyList<(int Start, int End)> GetSpans(string input)
         {
-            if (ReferenceEquals(_cachedInput, input))
-                return _cachedSpans!;
+            EnsureCache(input);
+            return _cachedSpans!;
+        }
 
-            _cachedInput = input;
-            _cachedSpans = ComputeSpans(input);
-            return _cachedSpans;
+        // Fills a bool[] of the input's length, marking every position covered by a span. O(total
+        // span length) — cheap relative to the O(spans x '#' lines) scan it replaces.
+        private static bool[] BuildInside(IReadOnlyList<(int Start, int End)> spans, int length)
+        {
+            var inside = new bool[length];
+            foreach (var (start, end) in spans)
+                for (var i = start; i < end; i++)
+                    inside[i] = true;
+            return inside;
         }
 
         private static IReadOnlyList<(int Start, int End)> ComputeSpans(string input)
@@ -284,12 +306,23 @@ public static class PreprocessorTerminals
                     continue;
                 }
 
-                // T1 — ordinary and verbatim literals get a cheap linear-scan extent; raw (a quote run
-                // of 3+) and interpolated strings still go through the C# Expression parser (T2/T3 will
-                // replace those). StringExtent returns -1 for the parser-kept forms.
+                // T1 — ordinary and verbatim literals get a cheap linear-scan extent. StringExtent
+                // returns -1 for the two forms it does not scan: raw (a quote run of 3+) and
+                // interpolated (a '$' before the quote).
                 var extent = StringExtent(input, pos, length);
                 if (extent < 0)
-                    extent = ParseExpressionLength(input, pos);
+                {
+                    // T2 — a non-interpolated raw string (open quote run >= 3) matches directly via the
+                    // raw-string terminal, the very terminal the grammar's RawStringLiteral delegates to:
+                    // the same extent ParseExpressionLength would return for the literal, without resetting
+                    // parser state per call. Interpolated strings (a '$' before the quote) still go through
+                    // ParseExpressionLength (T3). Same cosmetic caveat as T1: the terminal matches only the
+                    // literal, so a following operator/trivia on the same line is not included in the span.
+                    if (pos > 0 && input[pos - 1] == '$')
+                        extent = ParseExpressionLength(input, pos);
+                    else
+                        extent = CSharpTerminals.RawString().TryMatch(input, pos);
+                }
                 if (extent <= 0)
                 {
                     pos++;
@@ -335,7 +368,7 @@ public static class PreprocessorTerminals
                 return (i < length ? i + 1 : length) - pos;
             }
 
-            // A quote run of 3+ is a raw string — keep the parser (T2).
+            // A quote run of 3+ is a raw string — matched via the raw terminal in ComputeSpans (T2).
             var q = pos;
             while (q < length && input[q] == '"')
                 q++;
