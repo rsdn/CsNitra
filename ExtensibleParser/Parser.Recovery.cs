@@ -58,6 +58,12 @@ public partial class Parser
     // deterministically (no wall-clock in tests).
     public int DegradationLevel { get; set; }
 
+    // B4.4: test hook — starting degradation level for the recovery session (default 0).
+    // Production leaves it at 0 (each parse starts fresh). Tests set it to drive the ladder
+    // deterministically (e.g. 3 = hard limit) without relying on the wall-clock TimeBudget,
+    // since the Recover-start reset would otherwise clobber a pre-set DegradationLevel.
+    public int ForcedDegradationLevel { get; set; }
+
     private Stopwatch _recoveryStopwatch = new();
 
     // B4: level-aware effective properties, derived from DegradationLevel via the Degradation table.
@@ -358,7 +364,8 @@ public partial class Parser
         _suppressSideEffects = false;
 
         // B4: reset the degradation mechanism for this recovery session.
-        DegradationLevel = 0;
+        // B4.4: start at ForcedDegradationLevel (default 0) so tests can drive the ladder deterministically.
+        DegradationLevel = ForcedDegradationLevel;
         _recoveryStopwatch.Restart();
 
         var ePrev = -1;
@@ -485,8 +492,21 @@ public partial class Parser
 
             if (!TryCandidate(CandidateS0(e, snapshot, startRule)))
             {
+                // B4.4: hard limit — force the S6 floor (absorber) and stop. Coarse recovery, not FatalError.
+                if (ForceS6)
+                {
+                    var pe = result.TryGetSuccess(out _, out var p1) ? p1 : result.TryGetPartial(out _, out var p2) ? p2 : 0;
+                    foreach (var c in Recovery.RecoveryEngine.Generate(e, snapshot, input, this, result.ResultKind, startRule, currentStartPos, pe))
+                        if (c.Rank == 6)
+                        {
+                            TryCandidate(c);
+                            break;
+                        }
+                    break; // stop the recovery loop: hard limit reached
+                }
+
                 EngineGenerateCalls++;
-                var parseEnd = result.TryGetSuccess(out _, out var pe) ? pe : result.TryGetPartial(out _, out var pp) ? pp : 0;
+                var parseEnd = result.TryGetSuccess(out _, out var pe2) ? pe2 : result.TryGetPartial(out _, out var pp2) ? pp2 : 0;
                 foreach (var candidate in Recovery.RecoveryEngine.Generate(e, snapshot, input, this, result.ResultKind, startRule, currentStartPos, parseEnd))
                     if (TryCandidate(candidate))
                         break;

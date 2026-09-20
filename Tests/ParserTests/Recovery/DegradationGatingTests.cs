@@ -57,6 +57,21 @@ public sealed class DegradationGatingTests
         return parser;
     }
 
+    // B4.4: same braced grammar as NewBracedParser but with a non-zero recovery iteration
+    // budget (Test profile default = 1000), so the full (level 0) run can take multiple passes.
+    // Test profile (TimeBudget = Infinite) keeps the level fixed at ForcedDegradationLevel
+    // (no wall-clock degradation), making the level-0 vs level-3 comparison deterministic.
+    private static Parser NewHardLimitParser()
+    {
+        var parser = new Parser(new SpaceTrivia("Trivia"));
+        parser.Profile = RecoveryProfile.Test;
+        parser.Rules["Start"] = [new Seq([new Literal("a"), new Ref("Body"), new Literal("b")], "Start")];
+        parser.Rules["Body"] = [new Seq([new Literal("{"), new ZeroOrMany(new Ref("Item")), new Literal("}")], "Body")];
+        parser.Rules["Item"] = [new Seq([new Literal("i"), new Literal("c")], "Item")];
+        parser.BuildTdoppRules();
+        return parser;
+    }
+
     // B4.3 mask gating: with EffectiveStrategyMask = S1|S6, the disabled strategies (S2/S3/S4/S5)
     // are not generated; S1 and the guaranteed floor S6 remain. The scenario's baseline (mask = All)
     // generates S3/S4, so the mask provably shrinks the candidate set.
@@ -171,5 +186,30 @@ public sealed class DegradationGatingTests
 
         Assert.IsTrue(spec0 > 0, $"Level 0 must perform speculative parsing, got {spec0}");
         Assert.AreEqual(0, spec1, $"Level 1 must skip speculative parsing, got {spec1}");
+    }
+
+    // B4.4: hard limit — when ForceS6 is true (DegradationLevel = 3), the recovery loop forces
+    // the S6 floor and stops on the first pass. The full (level 0) run recovers the multiple
+    // errors one pass at a time, so it takes strictly more RecoveryPasses than the hard-limit run.
+    [TestMethod]
+    public void Test_HardLimit_Level3_StopsEarly()
+    {
+        // Two errors ('x' and 'y') inside the braced body: the full run needs a pass per error.
+        var input = "a { i c x i c y } b";
+
+        // Full run (level 0): recovers each error in its own pass.
+        var parserFull = NewHardLimitParser();
+        parserFull.Parse(input, "Start", out _);
+        var fullPasses = parserFull.RecoveryPasses;
+
+        // Hard-limit run (level 3): ForceS6 forces the S6 absorber and stops at the first pass.
+        var parserHard = NewHardLimitParser();
+        parserHard.ForcedDegradationLevel = 3;
+        parserHard.Parse(input, "Start", out _);
+        var hardPasses = parserHard.RecoveryPasses;
+
+        Assert.IsTrue(fullPasses > 1, $"Full run must take multiple passes, got {fullPasses}");
+        Assert.IsTrue(hardPasses < fullPasses,
+            $"Hard-limit run ({hardPasses}) must stop earlier than full run ({fullPasses})");
     }
 }
