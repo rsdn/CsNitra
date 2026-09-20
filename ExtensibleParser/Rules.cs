@@ -527,12 +527,14 @@ public record NotPredicate(Rule PredicateRule) : Rule("!")
 /// <param name="Kind">Name for this list rule</param>
 /// <param name="EndBehavior">Controls whether a trailing separator is allowed, required, or forbidden</param>
 /// <param name="CanBeEmpty">Whether the list can be empty (no elements)</param>
+/// <param name="SoftSeparator">Optional terminal recognized as a soft separator between elements (no effect when null)</param>
 public record SeparatedList(
     Rule Element,
     Rule Separator,
     string Kind,
     SeparatorEndBehavior EndBehavior = SeparatorEndBehavior.Optional,
-    bool CanBeEmpty = true)
+    bool CanBeEmpty = true,
+    Terminal? SoftSeparator = null)
     : Rule(Kind)
 {
     public override string ToString() => $"{Kind}=({Element}; {Separator} {EndBehavior})*{(CanBeEmpty ? "" : "+")}";
@@ -541,7 +543,7 @@ public record SeparatedList(
     {
         var inlinedElement = Element.InlineReferences(inlineableRules);
         var inlinedSeparator = Separator.InlineReferences(inlineableRules);
-        return new SeparatedList(inlinedElement, inlinedSeparator, Kind, EndBehavior, CanBeEmpty);
+        return new SeparatedList(inlinedElement, inlinedSeparator, Kind, EndBehavior, CanBeEmpty, SoftSeparator);
     }
 
     public override IEnumerable<Rule> GetSubRules<T>()
