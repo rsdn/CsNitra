@@ -460,3 +460,90 @@ No `RecoveryEngine.cs` change, no `.csproj` change, public `RecoveryDiagnostics`
 - **Derived list excludes `Unrecovered`** (no tree node, A4-2) — same split as the 6.1.2 stop
   report; combining it with the result marker is 6.1.2c's job.
 - Not committed.
+
+---
+
+# 6.1.2b2 (A5-2) — attach the SOFT-SEPARATOR diagnostic to its node (D2)
+
+Sub-point 6.1.2b2 closes **D2**: the soft-separator (5b.3.2, A5-5) `Skipped` diagnostic is attached
+to the consumed soft-separator node **directly, at the emission point** in `ParseSeparatedList` —
+unlike the 6.1.2b session-end match, which only sees `IsRecovery` nodes and therefore cannot match
+this one (the consumed node is a **regular terminal**, `IsRecovery == false`). The public
+`RecoveryDiagnostics` list is UNCHANGED (6.1.2c); the 6.1.2b session-end match,
+`DiagnosticDerivation.cs` (6.1.1), S0–S6, and all `.csproj` files are untouched.
+
+## Attach point
+
+`ExtensibleParser/Parser.cs:1021-1028` — the 5b.3.2 soft-separator block in `ParseSeparatedList`
+(the `if (softResult.TryGetSuccess(out var softNode, out var softNewPos))` branch, `Parser.cs:1009`):
+
+- **Node attached**: `sepNode` **after** the 5b.3.2 reassignment (`sepNode = softNode.AssertIsNonNull();`,
+  `Parser.cs:1016`) — i.e. the node returned by `ParseAlternative(softSeparator, currentPos, input)`
+  (the consumed soft separator, a regular `TerminalNode`, `IsRecovery == false`). It is the exact
+  instance later added to `ListNode.Delimiters` (`delimiters.Add(sepNode)`, `Parser.cs:1053`), so
+  `DeriveRecoveryDiagnostics`'s walk (which covers `ListNode.Delimiters`) reaches it.
+- **Diagnostic attached**: `softDiagnostic` — the very `RecoveryDiagnostic(currentPos, softNewPos,
+  RecoveryKind.Skipped, "soft separator '<Kind>' accepted in place of required separator",
+  softSeparator, listRule.Kind)` instance emitted at `Parser.cs:1012-1014` (the exact accumulated
+  instance, so derive returns it by reference).
+
+## Guards mirrored
+
+The attach is under the **exact same guard as the emission** (`Parser.cs:1024`):
+`if (!SuppressSideEffects && !_recoveryDiagnostics.Contains(softDiagnostic))` — both the
+`!SuppressSideEffects` suppression (speculative parses) and the dedup (re-parse must not duplicate
+the diagnostic for the same position). The `Add` and the `AttachDiagnostic` share ONE guard block,
+so the attach happens **exactly when** the diagnostic is actually recorded (a post-`Add` re-check of
+`Contains` would always be false-positive, so the two statements are in the same `if`). The
+local reassignments (`sepNode`/`newPos`/`gotSuccess`/`gotPartial`) moved above the guard — pure
+local assignments, behavior-neutral reordering; node construction is unchanged
+(`softNode.AssertIsNonNull()` as before).
+
+## D2 test — `Tests/ParserTests/Recovery/SideTableSoftSepTests.cs` (new, 2 tests)
+
+Grammar from `SoftSeparatorTests`: `Item = Number`; `List = SeparatedList(Item, ",", Kind: "List",
+SoftSeparator: ";")`.
+
+1. **`Test_D2_SoftSeparator_SkippedDiagnosticDerivedFromNode`** — input `"1;2"`. Single pass
+   (Success@EOF, no engine). Accumulated list = exactly one `Skipped [1..2)` with `Terminal` = `;`,
+   `RuleName` = `List`. `DeriveRecoveryDiagnostics(root)` returns exactly that diagnostic — the
+   **exact accumulated instance** (`ReferenceEquals`) with full metadata, at `[1..2)`. Before this
+   sub-point this input yielded **nothing** for the soft separator (D2 open: the session-end match
+   cannot see a non-`IsRecovery` node).
+2. **`Test_D2_SoftSeparator_Multiple_AllDerived`** — input `"1;2;3"`. Two soft separators consumed;
+   derive returns both `Skipped` diagnostics (at `[1..2)` and `[3..4)`) as the exact accumulated
+   instances, in position order.
+
+## Test results (one-shot)
+
+- `dotnet test Tests/ParserTests` — **Total: 407 · Passed: 405 · Failed: 0 · Skipped: 2** (the 2
+  skipped are the pre-existing `[Ignore("WIP")]`; +2 vs the 6.1.2b baseline of 405 is exactly the 2
+  new `SideTableSoftSepTests`; both verified 2/2 by a `--filter FullyQualifiedName~SideTableSoftSepTests` run).
+- `dotnet test Tests/CSharpGrammarTests` — **Total: 1527 · Passed: 1524 · Failed: 0 · Skipped: 3** (no regression).
+- `dotnet test Tests/CsPreprocessorTests` — **Total: 128 · Passed: 128 · Failed: 0** (no regression).
+
+## Files changed
+
+- `ExtensibleParser/Parser.cs` — **modified**: the 5b.3.2 soft-separator block in `ParseSeparatedList`
+  (`Parser.cs:1009-1029`): reordering of the local reassignments + the single shared guard now
+  containing `AttachDiagnostic(sepNode, softDiagnostic)` alongside the existing
+  `_recoveryDiagnostics.Add(softDiagnostic)`.
+- `Tests/ParserTests/Recovery/SideTableSoftSepTests.cs` — **new**: 2 tests.
+- `docs/RecoveryImprovementPlan-progress6.1.md` — this file.
+
+No session-end-match change (6.1.2b), no `DiagnosticDerivation.cs` (6.1.1) change, S0–S6 untouched,
+public `RecoveryDiagnostics` list unchanged, no stop-if triggered. **Not committed.**
+
+## Deviations
+
+- **csproj build fix (required), net-zero vs HEAD.** The same external process documented in the
+  6.1.1/6.1.2/6.1.2a/6.1.2b sections added
+  `<Compile Include="Recovery\SideTableSoftSepTests.cs" />` to `ParserTests.csproj` mid-session
+  (NETSDK1022: Duplicate 'Compile' items — SDK default globbing already includes the file; the
+  identical event was observed at 22:57 for the 6.1.2b files and fixed the same way). The line was
+  removed, restoring `ParserTests.csproj` to its committed (HEAD) state; `git diff` on the `.csproj`
+  is empty (net-zero). The task's "do not modify any .csproj" is honored in net effect — the only
+  edit was the required removal of the external duplicate, exactly per the established pattern.
+  (An external workaround file `C:\Users\user\AppData\Local\Temp\opencode\fix-dup.targets` was used
+  transiently to verify the suite before the `.csproj` restore; it lives outside the repo.)
+- Not committed.

@@ -1012,14 +1012,20 @@ public partial class Parser(Terminal trivia, Log? log = null)
                     var softDiagnostic = new RecoveryDiagnostic(currentPos, softNewPos, RecoveryKind.Skipped,
                         $"soft separator '{softSeparator.Kind}' accepted in place of required separator",
                         softSeparator, listRule.Kind);
-                    // Dedup: re-парс recovery-циклом не должен дублировать диагностику за ту же позицию.
-                    if (!SuppressSideEffects && !_recoveryDiagnostics.Contains(softDiagnostic))
-                        _recoveryDiagnostics.Add(softDiagnostic);
 
                     sepNode = softNode.AssertIsNonNull();
                     newPos = softNewPos;
                     gotSuccess = true;
                     gotPartial = false;
+
+                    // Dedup: re-парс recovery-циклом не должен дублировать диагностику за ту же позицию.
+                    // A5-2 (6.1.2b2, D2): узел потреблённого soft-separator'а — обычный терминал (не IsRecovery),
+                    // сессионный матч 6.1.2b его не покрывает — диагностика прикрепляется к узлу в момент записи.
+                    if (!SuppressSideEffects && !_recoveryDiagnostics.Contains(softDiagnostic))
+                    {
+                        _recoveryDiagnostics.Add(softDiagnostic);
+                        AttachDiagnostic(sepNode, softDiagnostic);
+                    }
                 }
             }
 
