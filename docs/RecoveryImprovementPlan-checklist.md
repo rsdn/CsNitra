@@ -41,7 +41,10 @@ Status: `[ ]` not started · `[~]` in progress (exactly one) · `[✅]` done · 
 - [✅] 4.2 A4-5.2: Bail mode (`Mode.Compiler`) in `Recover` — DONE (00b8bab). Break after first failure. RecoveryPasses==1, EngineGenerateCalls==0.
 - [✅] 4.2 A4-5.4: Remove `EnableRecovery`/`DefineConstants` from `Directory.Build.props`, remove CI step — DONE (00b8bab). No functional references remain.
 - [ ] 4.2 A4-5.3: Two-stage (consumer) — [deferred, NEEDS-SPEC: real compiler consumer].
-- [ ] 4.3 B4: time-budget with degradation ladder — (1) full S0–S6; (2) disable S2 speculation, MaxSkip ×4; (3) only S1 + short S3 + S6; (4) hard limit: accept S6 and stop. Worst IDE delay bounded; "not recovered" degrades to "recovered coarsely", not FatalError.
+- [✅] 4.3 B4.1: TimeBudget + degradation table — DONE (9d2558c). TimeBudget (500ms default, Test=Infinite), DegradationLevel record, Degradation.Levels (4 levels), Get with clamping.
+- [ ] 4.3 B4.2: mechanism (DegradationLevel + Stopwatch + time-check + effective props) in Parser.Recovery.cs.
+- [ ] 4.3 B4.3: mask + MaxSkip + speculation in RecoveryEngine.Generate (preserve GetMaxSkip frame-override priority).
+- [ ] 4.3 B4.4: hard limit (level 3: force S6 + stop) in Parser.Recovery.cs.
 - [ ] 4.4 P: Parse phase model (Normal vs Recovery) — split `Recover` into explicit phases (Normal / Recovery / Normal again) via `_inRecoveryMode` flag; `ReportMismatch`/`CaptureSnapshot` gate on the flag. Unblocks A4-4 п.1, A5-8, A4-1. Deferred: preventive (unblocks ~3% perf on 5a.5.2); after A3 may take `RecoveryProfile.Mode` form; after A4-5 simpler (no `#if RECOVERY`).
 
 ## Wave 5 — cheap candidates, boundaries, exact FOLLOW
