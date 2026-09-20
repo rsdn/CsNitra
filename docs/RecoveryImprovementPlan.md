@@ -181,6 +181,11 @@ memo-hit'ами; время на D1-корпусе не хуже до-волны
 | **A4-5** | **Runtime-стратегия вместо `#if RECOVERY`** (аналог `BailErrorStrategy` ANTLR4): `Mode.Compiler` = **bail** — без `RecoveryEngine`, без кандидатов, первый `FatalError`/`Recoverable:false` завершает парсинг сразу. Устраняет compile-time развилку (`Directory.Build.props:6-12`) и её побочный эффект: в no-recovery режиме **пропал depth-guard** (`Parser.NoRecovery.cs:45`) — в runtime-режиме guard сохраняется. Two-stage для компилятора: [deferred, NEEDS-SPEC: real compiler consumer] — bail-проход → при ошибке recovery-проход (когда появится реальный компилятор). Состав: A4-5.1 (remove `#if`, delete NoRecovery), A4-5.2 (bail в Recover), A4-5.4 (props/CI) | `Parser.NoRecovery.cs` → удалить, `Parser.Recovery.cs` (bail), `Directory.Build.props` (удалить EnableRecovery) | Одна сборка покрывает IDE/компилятор/тесты; depth-guard активен во всех режимах (тест R3-репро) |
 | B4 (база) | **Time-budget с лестницей деградации**: (1) полное: S0–S6 со спекуляциями; (2) выключить S2-спекуляции (только First-скан), MaxSkip ×4; (3) только S1 + S3-короткий + S6; (4) жёсткий предел: принять S6 и остановиться — дерево полное, диагностика есть | `RecoveryProfile`, `Recover` | Худшая IDE-задержка ограничена конструктивно; «не восстановилось» → «восстановлено грубо», не `FatalError` |
 
+**B4 — двухслойная модель (разрешение противоречия принципа 1).**
+- **Work-bound** (`MaxIterations`, tier-budgets, `MaxSkip`) — **основной** лимит, всегда активен, детерминирован.
+- **Time-budget** — **второй слой** поверх work-bound: активируется только когда wall-clock превышает `TimeBudget`; **не заменяет** work-bound, а **ускоряет деградацию** (повышает `DegradationLevel`, что сужает `StrategyMask`/`MaxSkip`/спекуляции).
+- Профили: **Ide** — time-budget активен (default `TimeBudget`); **Test** — выключен (`TimeBudget = Infinite`, детерминизм); **Compiler** — не нужен (bail выходит после первого провала, time-check не достигается).
+
 **Критерий волны:** худшее время на D1-корпусе ограничено профилем; Compiler-проход на
 корректном коде — без recovery-работы (замер).
 
