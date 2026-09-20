@@ -227,24 +227,7 @@ public class FollowSetCalculator
 
     // Упорядоченная агрегация терминаторов по кадрам снимка: от внутреннего (последний) к внешнему (stack[0]).
     // Терминаторы кадра = Options.Terminators ?? follow(правила кадра); дедупликация с сохранением порядка; EOF в конец.
-    public Terminal[] GetTerminators(IReadOnlyList<StackFrame> stack)
-    {
-        var result = new List<Terminal>();
-        for (int i = stack.Count - 1; i >= 0; i--)
-        {
-            var frame = stack[i];
-            // §3.9: кадр с Recoverable=false — авторские Terminators не используются (follow — fallback).
-            var terminals = frame.Options is { Recoverable: false }
-                ? GetFollowSet(frame.RuleName).ToArray()
-                : frame.Options?.Terminators ?? GetFollowSet(frame.RuleName).ToArray();
-            foreach (var t in terminals)
-                if (t is not EofTerminal && !result.Contains(t, TerminalComparer.Instance))
-                    result.Add(t);
-        }
-
-        result.Add(EofTerminal.Instance);
-        return result.ToArray();
-    }
+    public Terminal[] GetTerminators(IReadOnlyList<StackFrame> stack) => GetTerminatorsPerSite(stack);
 
     // Терминаторы per-call-site (A5-6): обход стека от внутреннего кадра к внешнему (цепочка follow_site).
     // Seq-кадры дают узкое first(хвост последовательности), остальные — rule-level follow (fallback).

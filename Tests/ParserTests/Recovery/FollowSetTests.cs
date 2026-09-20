@@ -687,7 +687,11 @@ public class FollowSetTests
     public void Test_GetTerminators_InnerFirst_ThenOuter()
     {
         // S = A p → follow(A) = { p };  A = B q → follow(B) = { q }
-        // stack = [A, B] (A внешний, B внутренний) → B первыми, затем A, EOF в конце
+        // stack = [A, B] (A внешний, B внутренний), оба RuleFrame → per-site.
+        // Per-site точнее старого rule-level union: терминаторы = follow(внешнего) ∪ {EOF}.
+        // follow(B)={q} НЕ добавляется — B это текущая позиция (не источник терминаторов) и без
+        // Seq-контекста не уточняется. Старый union добавлял follow(B) — терминалы, следующие за B
+        // на ДРУГИХ call-sites (rule-level агрегация), а не точное продолжение в ЭТОМ call-path.
         var rules = new Dictionary<string, Rule[]>
         {
             {"S", new Rule[] { new Seq(new Rule[] { new Ref("A"), new Literal("p") }, "S") } },
@@ -704,17 +708,18 @@ public class FollowSetTests
 
         var terminators = calc.GetTerminators(stack);
 
-        Assert.AreEqual(3, terminators.Length);
-        Assert.AreEqual("q", ((Literal)terminators[0]).Value, "inner frame B terminator first");
-        Assert.AreEqual("p", ((Literal)terminators[1]).Value, "outer frame A terminator next");
-        Assert.AreEqual("EOF", terminators[2].Kind, "EOF at the end");
+        Assert.AreEqual(2, terminators.Length);
+        Assert.AreEqual("p", ((Literal)terminators[0]).Value, "outer frame A terminator (follow(A))");
+        Assert.AreEqual("EOF", terminators[1].Kind, "EOF at the end");
     }
 
     [TestMethod]
     public void Test_GetTerminators_Dedup()
     {
         // S = A p → follow(A) = { p };  A = B p → follow(B) = { p }
-        // stack = [A, B] → p дедуплицируется, EOF в конце
+        // stack = [A, B] (RuleFrame-only) → per-site: вносит вклад только внешний кадр A,
+        // т.е. follow(A) ∪ {EOF}. follow(B) не добавляется (B — текущая позиция).
+        // Результат {p, EOF} совпадает со старым dedup, но теперь по per-site-семантике.
         var rules = new Dictionary<string, Rule[]>
         {
             {"S", new Rule[] { new Seq(new Rule[] { new Ref("A"), new Literal("p") }, "S") } },
@@ -739,8 +744,9 @@ public class FollowSetTests
     [TestMethod]
     public void Test_GetTerminators_EofAtEnd()
     {
-        // B — стартовое правило, follow(B) содержит EOF; B — внутренний кадр.
-        // EOF должен оказаться в конце, а не в середине.
+        // B — стартовое правило (follow(B) содержит EOF); A — внешний кадр, B — внутренний.
+        // Per-site: терминаторы = follow(A) ∪ {EOF}; follow(B) не используется (B — текущая
+        // позиция). EOF должен оказаться в конце, а не в середине.
         var rules = new Dictionary<string, Rule[]>
         {
             {"B", new Rule[] { new Seq(new Rule[] { new Ref("A"), new Literal("p") }, "B") } },
@@ -763,11 +769,16 @@ public class FollowSetTests
     [TestMethod]
     public void Test_GetTerminators_OptionsOverride()
     {
-        // S = A p → follow(A) = { p }; Options кадра A задают явные терминаторы [ z ]
+        // S = A p → follow(A) = { p };  A = B q → follow(B) = { q }
+        // Per-site: Options.Terminators берутся с кадра в цепочке follow_site (здесь внешний
+        // кадр A), а внутренний кадр B — текущая позиция и сам не даёт терминаторов. Поэтому
+        // Options вешаем на внешний кадр A: они переопределяют follow(A)={p} → [ z, EOF ].
+        // (Однокадрный вариант устарел: per-site не читает Options самого внутреннего кадра.)
         var rules = new Dictionary<string, Rule[]>
         {
             {"S", new Rule[] { new Seq(new Rule[] { new Ref("A"), new Literal("p") }, "S") } },
-            {"A", new Rule[] { new Literal("q") } },
+            {"A", new Rule[] { new Seq(new Rule[] { new Ref("B"), new Literal("q") }, "A") } },
+            {"B", new Rule[] { new Literal("r") } },
         };
         var calc = new FollowSetCalculator(rules, "S");
 
@@ -775,13 +786,44 @@ public class FollowSetTests
         var stack = new List<StackFrame>
         {
             new StackFrame("A", 0, new RuleFrameLocation(0), null, options),
+            new StackFrame("B", 0, new RuleFrameLocation(0), null, null),
         };
 
         var terminators = calc.GetTerminators(stack);
 
         Assert.AreEqual(2, terminators.Length);
-        Assert.AreEqual("z", ((Literal)terminators[0]).Value, "Options.Terminators override follow(A)");
+        Assert.AreEqual("z", ((Literal)terminators[0]).Value, "Options.Terminators (outer frame) override follow(A)");
         Assert.AreEqual("EOF", terminators[1].Kind);
         Assert.IsFalse(terminators.Any(t => t is Literal l && l.Value == "p"), "follow(A) 'p' must NOT appear when Options.Terminators set");
+    }
+
+    [TestMethod]
+    public void Test_GetTerminators_ListPerSite()
+    {
+        // Wiring: GetTerminators delegates to GetTerminatorsPerSite (S3 stop-set source).
+        // X — первый элемент List := X ',' X, поэтому per-site-продолжение на этом call-site
+        // — разделитель ',' (хвост Seq), а НЕ '}' (rule-level follow X с чужого call-site Block).
+        // Проверяем, что per-site-сужение реально подключено к GetTerminators.
+        var rules = new Dictionary<string, Rule[]>
+        {
+            {"X", new Rule[] { new Literal("x") } },
+            {"List", new Rule[] { new Seq(new Rule[] { new Ref("X"), new Literal(","), new Ref("X") }, "List") } },
+            {"StartList", new Rule[] { new Ref("List") } },
+        };
+        var calc = new FollowSetCalculator(rules, "StartList");
+
+        var stack = new List<StackFrame>
+        {
+            new StackFrame("StartList", 0, new RuleFrameLocation(0), null, null),
+            new StackFrame("StartList", 0, new SeqFrameLocation(0), null, null),
+            new StackFrame("List", 0, new RuleFrameLocation(0), null, null),
+            new StackFrame("List", 0, new SeqFrameLocation(0), null, null),
+            new StackFrame("X", 0, new RuleFrameLocation(0), null, null),
+        };
+
+        var terminators = calc.GetTerminators(stack);
+
+        Assert.IsTrue(terminators.Any(t => t.Kind == ","), "per-site terminators contain ',' (List separator)");
+        Assert.IsFalse(terminators.Any(t => t.Kind == "}"), "per-site terminators must NOT contain '}' (unrelated call site)");
     }
 }
