@@ -24,6 +24,14 @@ public static class RecoveryEngine
         {
             // S1..S5 intentionally suppressed: the strict region cannot be soundly repaired (C1).
             // Only S6 (below) is emitted, so the parse still reaches EOF.
+            // A4-6 (6.3.1): a strict (Recoverable=false) region fired — count it per strict rule
+            // (observation-only; signal 3 "never fires" is derived from count == 0 over the corpus).
+            // `strict` implies snapshot is non-null; one count per distinct strict rule on the stack.
+            foreach (var ruleName in snapshot!.Stack
+                     .Where(f => f.Options is { Recoverable: false })
+                     .Select(f => f.RuleName)
+                     .Distinct())
+                parser.GrammarDiagnostics.NoteStrictRegionFiring(ruleName);
         }
         else
         {
@@ -225,6 +233,9 @@ public static class RecoveryEngine
 
         void AddResyncCandidate(int resyncPos, string tier, string anchorName)
         {
+            // A4-6 (6.3.1): an S2 resync candidate is generated for this anchor — count its use
+            // (observation-only; signals 1 anchor-usage + 4 S2-anchor redundancy).
+            parser.GrammarDiagnostics.NoteAnchorUse(anchorName);
             var penalty = CostCalculator.TierPenalty(tier);
             var insertions = new List<(int Pos, Terminal T, Injection Injection)>();
             var diagnostics = new List<RecoveryDiagnostic>();

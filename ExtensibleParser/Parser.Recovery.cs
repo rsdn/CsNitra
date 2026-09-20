@@ -172,6 +172,12 @@ public partial class Parser
     // per strategy S0..S6 + specCache hits/misses (read through the shared SpeculativeCache).
     public RecoveryMetrics Metrics => _metrics ??= new(_specCache);
 
+    // A4-6 (6.3.1): observation-only GRAMMAR-QUALITY diagnostics — feedback for the grammar author
+    // about their recovery annotations (anchor usage, recovery points per rule, strict-region firing,
+    // S2-anchor redundancy). SEPARATE from Metrics (per-session) and RecoveryDiagnostics (per-input):
+    // this ACCUMULATES across parses for the lifetime of the Parser (the signals are corpus-level).
+    public GrammarDiagnostics GrammarDiagnostics => _grammarDiagnostics ??= new();
+
     // A3: единый источник recovery-лимитов. Convenience-свойства ниже читают/пишут Profile,
     // сохраняя существующие тесты, которые ставят их напрямую.
     public RecoveryProfile Profile { get; set; } = RecoveryProfile.Ide;
@@ -240,6 +246,10 @@ public partial class Parser
     // Не readonly / null до первого создания: field-инициализатор не может ссылаться на _specCache
     // (CS0236), поэтому создаётся лениво в свойстве Metrics и в начале Recover.
     private RecoveryMetrics? _metrics;
+
+    // A4-6 (6.3.1): grammar-quality diagnostics, lazy-created in the GrammarDiagnostics property.
+    // Не сбрасывается в начале Recover (накопление на протяжении жизни Parser — корпусные сигналы).
+    private GrammarDiagnostics? _grammarDiagnostics;
 
     // Состояние, перенесённое из ядра: используется только recovery-подсистемой
     // (ядро обращается к нему исключительно через partial-хуки в Parser.cs).
@@ -606,10 +616,24 @@ public partial class Parser
                     _recoveryDiagnostics.Add(new RecoveryDiagnostic(e, e, RecoveryKind.Unrecovered, $"error at {e} not recovered (absorbed to EOF)", null, startRule));
                 }
 
+                // A4-6 (6.3.1): a recovery was accepted in the failing rule — record its distinct
+                // recovery point (the snapshot top frame's Location). Observation-only (signal 2:
+                // "all recovery points of a rule identical"). Only the top frame is the failing rule;
+                // a null/empty snapshot (e.g. S6 with no snapshot) has no rule to attribute.
+                void NoteRecoveryPoint()
+                {
+                    if (snapshot is { Stack.Length: > 0 })
+                    {
+                        var top = snapshot.Stack[^1];
+                        GrammarDiagnostics.NoteRecoveryPoint(top.RuleName, top.Location);
+                    }
+                }
+
                 if (next.TryGetSuccess(out _, out var end2) && end2 == input.Length)
                 {
                     _recoveryDiagnostics.AddRange(candidate.Diagnostics);
                     AddUnrecoveredIfS6();
+                    NoteRecoveryPoint(); // A4-6 (6.3.1): grammar-quality recovery point
                     result = next;
                     _quietZoneEnd = e;
                     recoveredThisIteration = true;
@@ -620,6 +644,7 @@ public partial class Parser
                 {
                     _recoveryDiagnostics.AddRange(candidate.Diagnostics);
                     AddUnrecoveredIfS6();
+                    NoteRecoveryPoint(); // A4-6 (6.3.1): grammar-quality recovery point
                     result = next;
                     _quietZoneEnd = e;
                     recoveredThisIteration = true;
