@@ -45,6 +45,7 @@ Status: `[ ]` not started · `[~]` in progress (exactly one) · `[✅]` done · 
 - [✅] 4.3 B4.2: mechanism (DegradationLevel + Stopwatch + time-check + effective props) — DONE (c2990fe). EffectiveStrategyMask/MaxSkip/Speculation/ForceS6. ParserTests 369/0/2.
 - [✅] 4.3 B4.3: mask + MaxSkip + speculation in RecoveryEngine — DONE (e97e12c). Generate gates S1-S5 by EffectiveStrategyMask (S6 floor not gated); GetMaxSkip fallback → EffectiveMaxSkip (frame override preserved, both sites); S2 speculation gated. ParserTests 373/0/2.
 - [✅] 4.3 B4.4: hard limit (level 3: force S6 + stop) — DONE (2ab693c). ForceS6 branch in Recover; ForcedDegradationLevel test hook. Level 0 passes=3, level 3=1. ParserTests 374/0/2. B4 COMPLETE.
+- [✅] 4.3 B4 bugfix: Test profile degraded instantly (Infinite=-1ms made `Elapsed>TimeBudget` always true). Guard `TimeBudget>TimeSpan.Zero` + Timeout.InfiniteTimeSpan. DONE (8251499). ParserTests 375/0/2.
 - [ ] 4.4 P: Parse phase model (Normal vs Recovery) — split `Recover` into explicit phases (Normal / Recovery / Normal again) via `_inRecoveryMode` flag; `ReportMismatch`/`CaptureSnapshot` gate on the flag. Unblocks A4-4 п.1, A5-8, A4-1. Deferred: preventive (unblocks ~3% perf on 5a.5.2); after A3 may take `RecoveryProfile.Mode` form; after A4-5 simpler (no `#if RECOVERY`).
 
 ## Wave 5 — cheap candidates, boundaries, exact FOLLOW
