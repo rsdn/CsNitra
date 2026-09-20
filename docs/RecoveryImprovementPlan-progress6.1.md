@@ -340,3 +340,123 @@ trees (distinct `StartPos`), `AttachDiagnostic` with full-metadata `RecoveryDiag
 
 No `.csproj` change, no engine wiring (S0–S6 untouched), public `RecoveryDiagnostics` list unchanged,
 `DiagnosticDerivation.cs` (6.1.1) + its tests untouched. **Not committed.**
+
+---
+
+# 6.1.2b (A5-2) — strategies register their diagnostics in the side-table (D1 + D4)
+
+Sub-point 6.1.2b makes the recovery strategies' diagnostics (S1b/S1/S3/S6/S2/S4/S5) attach to the
+recovery NODES they correspond to, so `DeriveRecoveryDiagnostics(root)` reproduces the accumulated
+list's KIND (D1: S1b → `Extraneous`, not `Skipped`) and `Terminal`/`RuleName` metadata (D4). The
+public `RecoveryDiagnostics` list is UNCHANGED (6.1.2c); soft-separator (D2) is out of scope (6.1.2b2);
+`DiagnosticDerivation.cs` (6.1.1) + its tests, S0, and all `.csproj` files are untouched.
+
+## Mechanism chosen: B (post-hoc position+shape match) for ALL strategies, at SESSION END
+
+Mechanism A (attach at node-creation in the engine) is only directly possible for the engine-created
+nodes (S2/S3 memo-absorber branches, S6). But the decisive factor is WHERE the attach must survive:
+**iterative recovery re-parses from `currentStartPos` on every loop iteration**, and injection nodes
+(S1/S1b/S2-inj/S3-inj/S4/S5 — created by `CreateInjectedResult` on every consumption) are **fresh
+instances each re-parse**. An attach at candidate-accept time k would be lost when iteration k+1
+re-parses and recreates the node (the side-table is keyed by reference identity). The memo-patched
+nodes (S2/S3/S6 absorbers) DO persist across iterations via the memo, so a per-accept attach would
+work for them but not for the injection nodes — two mechanisms, one of them unreliable. A **single
+position+shape match against the FINAL tree at session end** covers both uniformly, in one place,
+with no engine changes.
+
+The match (per accumulated `_recoveryDiagnostics` entry) is reliable because:
+- **region diagnostic** (`StartPos < EndPos`) — absorber (S1b/S2/S3-inj/S5/S6): matches the
+  `IsRecovery + IsAbsorber` node with the **exact** `[StartPos..EndPos)` span. Unique: one candidate
+  is accepted per recovery point, recovery points strictly increase (`e <= ePrev` break), and the
+  injection/engine absorber spans are exact (`CreateInjectedResult`: `EndPos = pos + Length`;
+  engine: `new TerminalNode("Skipped", e, S, ...)`).
+- **zero diagnostic** (`StartPos == EndPos`) — insertion (S1/S2-inj/S4): matches the zero-width
+  `IsRecovery` node at `StartPos`; when the diagnostic carries a `Terminal`, only a node with
+  `Kind == Terminal.Kind` (injections create the node with `NodeKind == t.Kind`).
+- **`Unrecovered`** — never matched (by design NOT a tree node, A4-2; it is the zero marker added by
+  `AddUnrecoveredIfS6`).
+- **Soft-separator (D2)** — its node is a regular non-`IsRecovery` terminal, so it is not matched
+  here (6.1.2b2).
+
+Note: the derived list therefore returns the accumulated `Inserted`/`Skipped`/`Extraneous`
+diagnostics (as the EXACT same instances) but not `Unrecovered` — same split as the 6.1.2 stop
+report (the Unrecovered marker is result-derived, A4-2).
+
+## Attach points
+
+All in `ExtensibleParser/Parser.Recovery.cs` (no `RecoveryEngine.cs` change):
+- `Recover` — the three exit points now return `FinishRecovery(result)`:
+  clean success (`Parser.Recovery.cs:500`), recovered-in-iteration (`Parser.Recovery.cs:627`),
+  and the loop-end return (`Parser.Recovery.cs:633`).
+- `FinishRecovery(Result)` (`Parser.Recovery.cs:642-657`): extracts the final tree node
+  (`TryGetSuccess` → `TryGetPartial`; Failure has no node → no-op) and calls `AttachDiagnosticsToTree`.
+- `AttachDiagnosticsToTree(ISyntaxNode)` (`Parser.Recovery.cs:666-685`): no-op when
+  `_recoveryDiagnostics` is empty (clean parse); otherwise collects all `IsRecovery` `TerminalNode`s
+  once and, per diagnostic, attaches it to the first matching node via the existing
+  `AttachDiagnostic(node, diag)` hook.
+- `CollectRecoveryNodes` (`Parser.Recovery.cs:688-709`) — full-tree walk (`SeqNode.RawElements`,
+  `ListNode.RawElements` + `Delimiters`, `SomeNode.Value`), same walk shape as `CollectAttached`.
+- `MatchesRecoveryNode` (`Parser.Recovery.cs:711-721`) — the position+shape predicate above.
+
+Per strategy: **S1** insertion → zero-width node at `e` with `Kind == t.Kind`; **S1b** absorber →
+absorber `[e..e+len)`; **S2** memo-absorber branches → absorber `[e..resyncPos)` (engine node,
+persists via memo), injection branch → absorber `[e..resyncPos)` / zero-width at `e`; **S3**
+memo-absorber branches → absorber `[e..foundS)`, injection branch → absorber `[e..foundS)`;
+**S4** → zero-width at `input.Length` per inserted terminal; **S5** → absorber `[e..EOF)`;
+**S6** → engine absorber `[start..s)` (persists via the start-rule memo patch). All seven
+(S1b/S1/S3/S6/S2/S4/S5) are covered by the same matcher.
+
+## Test — `Tests/ParserTests/Recovery/SideTableEngineTests.cs` (new, 3 tests)
+
+1. **D1** `Test_D1_SingleTokenDeletion_DerivedIsExtraneousWithMetadata` — `S := 'a' 'b'`, input
+   `"aab"` (S1b). The S1b absorber satisfies the `'b'` slot at `[1..2)`, so the real `'b'@2` is
+   trailing garbage: accumulated = `Extraneous [1..2)` (S1b) + `Skipped [2..3)` (S6 floor) +
+   `Unrecovered [2..2)` (marker, not a node). Derive returns exactly the first two — the S1b one as
+   the **exact accumulated instance** with `Kind == Extraneous` (NOT `Skipped`), `Terminal` = `b`,
+   `RuleName` = `S`; asserts no `Skipped` covers the `[1..2)` span.
+2. **D4** `Test_D4_S1Insertion_DerivedCarriesTerminalAndRuleName` — IterativeRecoveryTests grammar,
+   input `"int f ) { int x; }"` (missing `'('`, no OftenMissed for it → S1 insertion at `e=6`).
+   Derive returns exactly the accumulated `Inserted [6..6)` as the exact instance with non-null
+   `Terminal` (`Kind == "("`) and non-null `RuleName` (`"Function"` — the top frame's rule name).
+3. **Iterative** `Test_Iterative_TwoInsertions_BothDerived` — `"int f ) { int x; } int g ) { int y; }"`:
+   two S1 insertions across two iterations (`e=6`, `e=25`). Pins the session-end design: f's node
+   instance survives via the memo, g's is fresh — derive returns both, in position order, as the
+   exact accumulated instances with full metadata.
+
+## Test results (one-shot)
+
+- `dotnet test Tests/ParserTests` — **Total: 405 · Passed: 403 · Failed: 0 · Skipped: 2** (the 2
+  skipped are the pre-existing `[Ignore("WIP")]`; +3 vs the 6.1.2a baseline of 402 is exactly the 3
+  new `SideTableEngineTests`).
+- `dotnet test Tests/CSharpGrammarTests` — **Total: 1527 · Passed: 1524 · Failed: 0 · Skipped: 3** (no regression).
+- `dotnet test Tests/CsPreprocessorTests` — **Total: 128 · Passed: 128 · Failed: 0** (no regression).
+
+## Files changed
+
+- `ExtensibleParser/Parser.Recovery.cs` — **modified**: `FinishRecovery` + `AttachDiagnosticsToTree`
+  + `CollectRecoveryNodes` + `MatchesRecoveryNode`; the three `Recover` exit points wrapped in
+  `FinishRecovery`; one comment update on `AttachDiagnostic`.
+- `Tests/ParserTests/Recovery/SideTableEngineTests.cs` — **new**: 3 tests.
+- `docs/RecoveryImprovementPlan-progress6.1.md` — this file.
+
+No `RecoveryEngine.cs` change, no `.csproj` change, public `RecoveryDiagnostics` list unchanged,
+`DiagnosticDerivation.cs` (6.1.1) + its tests untouched, S0 untouched, no stop-if triggered.
+**Not committed.**
+
+## Deviations
+
+- **csproj build fix (required), net-zero vs HEAD.** The same external process documented in the
+  6.1.1/6.1.2/6.1.2a sections added explicit
+  `<Compile Include="Recovery\SideTableEngineTests.cs" />` and
+  `<Compile Include="Recovery\SideTableTests.cs" />` to `ParserTests.csproj` (NETSDK1022: Duplicate
+  'Compile' items — SDK default globbing already includes both files). Both lines were removed,
+  restoring `ParserTests.csproj` to its committed (HEAD) state; net `.csproj` diff vs HEAD is zero.
+  The same process also added a BOM to `SideTableTests.cs` (cosmetic, no content change); the file
+  was restored to its committed state via `git checkout`.
+- **Session-end attach, not per-accept.** The task's mechanism B said "at candidate-accept time";
+  the attach is instead done once at session end (same file, same loop). Rationale: iterative
+  re-parses recreate injection nodes as fresh instances, so a per-accept attach is lost by the next
+  iteration (test 3 pins this). The position+shape correlation itself is exactly as specified.
+- **Derived list excludes `Unrecovered`** (no tree node, A4-2) — same split as the 6.1.2 stop
+  report; combining it with the result marker is 6.1.2c's job.
+- Not committed.

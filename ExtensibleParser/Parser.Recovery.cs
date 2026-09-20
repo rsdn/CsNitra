@@ -32,8 +32,9 @@ public partial class Parser
     // reused directly for this key type. Re-initialized fresh per Parse (see Parser.Parse).
     private Dictionary<WeakReference<ISyntaxNode>, RecoveryDiagnostic[]> _diagSideTable = new(WeakRefNodeKeyComparer.Instance);
 
-    // A5-2 (6.1.2a): registration hook — the recovery engine attaches a diagnostic to a node
-    // (wired in 6.1.2b). Accumulates: multiple diagnostics on the same node all survive.
+    // A5-2 (6.1.2a/6.1.2b): registration hook — the recovery strategies' diagnostics are attached
+    // to their final-tree nodes by the session-end position+shape match (FinishRecovery, 6.1.2b).
+    // Accumulates: multiple diagnostics on the same node all survive.
     public void AttachDiagnostic(ISyntaxNode node, RecoveryDiagnostic diag)
     {
         var key = new WeakReference<ISyntaxNode>(node);
@@ -496,7 +497,7 @@ public partial class Parser
             result = ParseRule(startRule, minPrecedence: 0, startPos: currentStartPos, input);
 
             if (result.TryGetSuccess(out _, out var end) && end == input.Length)
-                return result; // чистый успех
+                return FinishRecovery(result); // чистый успех
 
             // A4-5.2: Compiler profile — bail on first failure, no recovery attempts.
             if (Profile.Mode == RecoveryMode.Compiler)
@@ -623,13 +624,100 @@ public partial class Parser
             }
 
             if (result.TryGetSuccess(out _, out var endAfter) && endAfter == input.Length)
-                return result; // полностью восстановлено
+                return FinishRecovery(result); // полностью восстановлено
 
             if (!recoveredThisIteration)
                 break; // кандидаты исчерпаны — ошибка неотвратима
         }
 
+        return FinishRecovery(result);
+    }
+
+    // A5-2 (6.1.2b): завершение recovery-сессии (механизм B): каждая накопленная диагностика
+    // прикрепляется к узлу финального дерева, которому она соответствует, — DeriveRecoveryDiagnostics(root)
+    // воспроизводит kind (D1: S1b → Extraneous, а не Skipped) и метаданные Terminal/RuleName (D4)
+    // накопленного списка. Точка — КОНЕЦ сессии (не момент акцепта кандидата): итеративный re-парс
+    // пересоздаёт инъекционные узлы как новые инстанции (а memo-патченные узлы S2/S3/S6 живут через
+    // memo) — единый матч по финальному дереву покрывает оба вида одинаково.
+    private Result FinishRecovery(Result result)
+    {
+        if (result.TryGetSuccess(out var node, out _))
+        {
+            AttachDiagnosticsToTree(node);
+            return result;
+        }
+        if (result.TryGetPartial(out var pnode, out _))
+        {
+            AttachDiagnosticsToTree(pnode);
+            return result;
+        }
         return result;
+    }
+
+    // A5-2 (6.1.2b): корреляция узел↔диагностика по позиции+форме — надёжна для всех стратегий:
+    //   • диагностика с регионом (StartPos < EndPos) — абсорбер (S1b/S2/S3/S5/S6): IsRecovery +
+    //     IsAbsorber узел с точным пролётом [StartPos..EndPos) (уникален: на точку восстановления
+    //     принимается один кандидат, точки строго возрастают);
+    //   • нулевая диагностика (StartPos == EndPos) — вставка (S1/S2/S4): нулевой IsRecovery узел в
+    //     StartPos; если диагностика несёт Terminal — только узел с тем же Kind (инъекция создаёт
+    //     узел с NodeKind == t.Kind, CreateInjectedResult);
+    //   • Unrecovered — не узел дерева (нулевой маркер в точке восстановления, A4-2) — не матчится.
+    // Мягкий разделитель (D2) вне матча — его узел обычный терминал (6.1.2b2).
+    private void AttachDiagnosticsToTree(ISyntaxNode root)
+    {
+        if (_recoveryDiagnostics.Count == 0)
+            return;
+
+        var nodes = new List<TerminalNode>();
+        CollectRecoveryNodes(root, nodes);
+
+        foreach (var diag in _recoveryDiagnostics)
+        {
+            for (var i = 0; i < nodes.Count; i++)
+            {
+                if (MatchesRecoveryNode(nodes[i], diag))
+                {
+                    AttachDiagnostic(nodes[i], diag);
+                    break;
+                }
+            }
+        }
+    }
+
+    // Обход полного дерева (RawElements — включая абсорберы): собирает IsRecovery-терминалы.
+    private static void CollectRecoveryNodes(ISyntaxNode node, List<TerminalNode> result)
+    {
+        switch (node)
+        {
+            case TerminalNode { IsRecovery: true } terminal:
+                result.Add(terminal);
+                break;
+            case SeqNode seq:
+                foreach (var el in seq.RawElements)
+                    CollectRecoveryNodes(el, result);
+                break;
+            case ListNode ln:
+                foreach (var el in ln.RawElements)
+                    CollectRecoveryNodes(el, result);
+                foreach (var d in ln.Delimiters)
+                    CollectRecoveryNodes(d, result);
+                break;
+            case SomeNode some:
+                CollectRecoveryNodes(some.Value, result);
+                break;
+        }
+    }
+
+    private static bool MatchesRecoveryNode(TerminalNode node, RecoveryDiagnostic diag)
+    {
+        if (diag.Kind is RecoveryKind.Unrecovered)
+            return false;
+        if (diag.StartPos < diag.EndPos)
+            return node.IsAbsorber && node.StartPos == diag.StartPos && node.EndPos == diag.EndPos;
+        return !node.IsAbsorber
+            && node.StartPos == diag.StartPos
+            && node.EndPos == diag.StartPos
+            && (diag.Terminal is null || node.Kind == diag.Terminal.Kind);
     }
 
     // Спекулятивный parse: подавление побочных эффектов (снимки/ErrorPos/_expected) на время parse и откат.
