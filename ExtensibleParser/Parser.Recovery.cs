@@ -168,6 +168,10 @@ public partial class Parser
     public int SpecCacheHits => _specCache.Hits;
     public int SpecCacheMisses => _specCache.Misses;
 
+    // D2-full (6.2.1): observation-only metrics for the last recovery session (Parse) — accept/rollback
+    // per strategy S0..S6 + specCache hits/misses (read through the shared SpeculativeCache).
+    public RecoveryMetrics Metrics => _metrics ??= new(_specCache);
+
     // A3: единый источник recovery-лимитов. Convenience-свойства ниже читают/пишут Profile,
     // сохраняя существующие тесты, которые ставят их напрямую.
     public RecoveryProfile Profile { get; set; } = RecoveryProfile.Ide;
@@ -230,6 +234,12 @@ public partial class Parser
 
     // B2: кэш спекулятивных парсов на scratch-копии, время жизни = один Recover (сброс в начале Recover).
     private readonly SpeculativeCache _specCache = new();
+
+    // D2-full (6.2.1): метрики последней recovery-сессии (accept/rollback per S0..S6 + specCache).
+    // Наблюдательные; время жизни = один Recover (сброс в начале Recover, вместе с _specCache).
+    // Не readonly / null до первого создания: field-инициализатор не может ссылаться на _specCache
+    // (CS0236), поэтому создаётся лениво в свойстве Metrics и в начале Recover.
+    private RecoveryMetrics? _metrics;
 
     // Состояние, перенесённое из ядра: используется только recovery-подсистемой
     // (ядро обращается к нему исключительно через partial-хуки в Parser.cs).
@@ -476,6 +486,8 @@ public partial class Parser
         S2ScanPositions = 0;
         S3ScanPositions = 0;
         _specCache.Reset();
+        var metrics = _metrics ??= new(_specCache);
+        metrics.Reset();
         _recoveryPoint = -1;
         _quietZoneEnd = -1;
         _lastSnapshot = null;
@@ -594,6 +606,7 @@ public partial class Parser
                     result = next;
                     _quietZoneEnd = e;
                     recoveredThisIteration = true;
+                    metrics.NoteAccept(candidate.Rank); // D2-full (6.2.1): кандидат стратегии принят
                     return true; // полностью восстановлено
                 }
                 if (e2 > e)
@@ -603,8 +616,10 @@ public partial class Parser
                     result = next;
                     _quietZoneEnd = e;
                     recoveredThisIteration = true;
+                    metrics.NoteAccept(candidate.Rank); // D2-full (6.2.1): кандидат стратегии дал прогресс
                     return true; // I1: прогресс — к следующему итеративному проходу
                 }
+                metrics.NoteRollback(candidate.Rank); // D2-full (6.2.1): кандидат отклонён — откат
                 RollbackPatches(log); // нет прогресса — откат (включая Hygiene), следующий кандидат
                 ErrorPos = savedErrorPos;
                 _expected = new HashSet<Terminal>(savedExpected);
