@@ -16,6 +16,10 @@ public static class RecoveryEngine
         // emitted so the IDE profile always reaches EOF (C1: "strict ⇒ only S6").
         var strict = snapshot is not null && snapshot.Stack.Any(f => f.Options is { Recoverable: false });
 
+        // B4.3: level-aware effective strategy mask (DegradationLevel + Profile.StrategyMask).
+        // S1b is part of S1 (same rank 1) — gated with S1. S6 is NOT gated here (guaranteed floor).
+        var mask = parser.EffectiveStrategyMask;
+
         if (strict)
         {
             // S1..S5 intentionally suppressed: the strict region cannot be soundly repaired (C1).
@@ -25,20 +29,26 @@ public static class RecoveryEngine
         {
             if (snapshot is not null)
             {
-                GenerateS1(e, snapshot, input, parser, candidates);
-                GenerateS1b(e, snapshot, input, parser, candidates);
-                GenerateS2(e, snapshot, input, parser, candidates);
-                GenerateS3(e, snapshot, input, parser, candidates);
-                GenerateS4(e, snapshot, input, parser, candidates);
+                if (mask.HasFlag(RecoveryStrategy.S1))
+                    GenerateS1(e, snapshot, input, parser, candidates);
+                if (mask.HasFlag(RecoveryStrategy.S1))
+                    GenerateS1b(e, snapshot, input, parser, candidates); // S1b is part of S1 (same rank 1)
+                if (mask.HasFlag(RecoveryStrategy.S2))
+                    GenerateS2(e, snapshot, input, parser, candidates);
+                if (mask.HasFlag(RecoveryStrategy.S3))
+                    GenerateS3(e, snapshot, input, parser, candidates);
+                if (mask.HasFlag(RecoveryStrategy.S4))
+                    GenerateS4(e, snapshot, input, parser, candidates);
             }
 
-            if (resultKind == Result.Kind.Success && e < input.Length)
+            if (mask.HasFlag(RecoveryStrategy.S5) && resultKind == Result.Kind.Success && e < input.Length)
                 GenerateS5(e, snapshot, input, parser, candidates);
         }
 
         // S6 — гарантированное дно (A1/A5-7): при parseEnd < EOF (фактический хвостовой мусор),
         // включая snapshot == null и strict-регион (C1). parseEnd (не e) — чтобы ErrorPos на EOF не
-        // блокировал генерацию.
+        // блокировал генерацию. B4.3: НЕ gate'ится маской (гарантированное дно; флаг S6 в маске —
+        // только level 3, B4.4).
         if (parseEnd < input.Length)
             GenerateS6(e, parseEnd, snapshot, input, parser, startRule, currentStartPos, candidates);
 
@@ -154,7 +164,7 @@ public static class RecoveryEngine
     private static void GenerateS2(int e, FailureSnapshot snapshot, string input, Parser parser, List<RecoveryCandidate> candidates)
     {
         var calculator = parser.FollowCalculator;
-        var maxSkip = GetMaxSkip(snapshot) ?? parser.Profile.MaxSkip;
+        var maxSkip = GetMaxSkip(snapshot) ?? parser.EffectiveMaxSkip;
         var maxS = Math.Min(e + maxSkip, input.Length);
         var top = snapshot.Stack[^1];
 
@@ -190,12 +200,20 @@ public static class RecoveryEngine
         var scratch = CreateScratchParser(parser);
 
         (bool Ok, int EndPos) Speculative(string ruleName, int pos)
-            => parser.SpecCache.Speculative(ruleName, pos, () =>
+        {
+            // B4.3: speculation disabled (level >= 1) — skip the expensive per-position
+            // speculative re-parse; the First-scan (FirstMatchesAt) pre-filter that already
+            // passed is the acceptance criterion (cheap path). `pos + 1` keeps the T1
+            // `endPos > s` "consumed something" check true.
+            if (!parser.SpeculationEnabled)
+                return (true, pos + 1);
+            return parser.SpecCache.Speculative(ruleName, pos, () =>
             {
                 var specResult = scratch.ParseRuleOnce(ruleName, 0, pos, input);
                 var success = specResult.TryGetSuccess(out _, out var end);
                 return (success, success ? end : -1);
             });
+        }
 
         bool FirstMatchesAt(Ref refRule, int pos)
         {
@@ -474,7 +492,7 @@ public static class RecoveryEngine
     private static void GenerateS3(int e, FailureSnapshot snapshot, string input, Parser parser, List<RecoveryCandidate> candidates)
     {
         var terminators = parser.GetTerminators(snapshot.Stack);
-        var maxSkip = GetMaxSkip(snapshot) ?? parser.Profile.MaxSkip;
+        var maxSkip = GetMaxSkip(snapshot) ?? parser.EffectiveMaxSkip;
         var maxS = Math.Min(e + maxSkip, input.Length);
         var matchCache = new Dictionary<(int Pos, Terminal Terminal), int>(TerminalComparer.KeyComparer);
 
