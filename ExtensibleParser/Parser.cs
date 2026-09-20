@@ -997,6 +997,31 @@ public partial class Parser(Terminal trivia, Log? log = null)
             gotSuccess = sepResult.TryGetSuccess(out var sepNode, out newPos);
             gotPartial = !gotSuccess && sepResult.TryGetPartial(out sepNode, out newPos);
 
+            if (!gotSuccess && !gotPartial && listRule.SoftSeparator is { } softSeparator)
+            {
+                // A5-5 (SoftSeparator): обязательный разделитель не совпал, но на позиции стоит мягкий
+                // разделитель — потребляем его инлайн (без S2/S3): одна Skipped-диагностика, дальше элемент.
+                var softResult = ParseAlternative(softSeparator, currentPos, input);
+                if (softResult.MaxFailPos > maxFailPos)
+                    maxFailPos = softResult.MaxFailPos;
+
+                if (softResult.TryGetSuccess(out var softNode, out var softNewPos))
+                {
+                    Log($"Soft separator '{softSeparator.Kind}' at {currentPos} accepted in place of required separator", LogImportance.High);
+                    var softDiagnostic = new RecoveryDiagnostic(currentPos, softNewPos, RecoveryKind.Skipped,
+                        $"soft separator '{softSeparator.Kind}' accepted in place of required separator",
+                        softSeparator, listRule.Kind);
+                    // Dedup: re-парс recovery-циклом не должен дублировать диагностику за ту же позицию.
+                    if (!SuppressSideEffects && !_recoveryDiagnostics.Contains(softDiagnostic))
+                        _recoveryDiagnostics.Add(softDiagnostic);
+
+                    sepNode = softNode.AssertIsNonNull();
+                    newPos = softNewPos;
+                    gotSuccess = true;
+                    gotPartial = false;
+                }
+            }
+
             if (!gotSuccess && !gotPartial)
             {
                 if (listRule.EndBehavior == SeparatorEndBehavior.Required)
