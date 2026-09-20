@@ -246,6 +246,63 @@ public class FollowSetCalculator
         return result.ToArray();
     }
 
+    // Терминаторы per-call-site (A5-6): обход стека от внутреннего кадра к внешнему (цепочка follow_site).
+    // Seq-кадры дают узкое first(хвост последовательности), остальные — rule-level follow (fallback).
+    public Terminal[] GetTerminatorsPerSite(IReadOnlyList<StackFrame> stack)
+    {
+        if (stack.Count == 0)
+            return new[] { EofTerminal.Instance };
+
+        var outer = new List<Terminal>();
+        for (int i = 1; i < stack.Count; i++)
+        {
+            var (terms, nullable) = TailOf(stack, i - 1);
+            var cur = new List<Terminal>();
+            foreach (var t in terms)
+                if (t is not EofTerminal && !cur.Contains(t, TerminalComparer.Instance))
+                    cur.Add(t);
+            if (nullable)
+                foreach (var t in outer)
+                    if (t is not EofTerminal && !cur.Contains(t, TerminalComparer.Instance))
+                        cur.Add(t);
+            outer = cur;
+        }
+
+        outer.Add(EofTerminal.Instance);
+        return outer.ToArray();
+    }
+
+    // «Что следует после» кадра parentIndex: Seq → first(elements[ei+1..]) (пустой хвост → passthrough наружу),
+    // Options.Terminators → авторские терминаторы, иначе → rule-level follow.
+    private (IEnumerable<Terminal> Terms, bool Nullable) TailOf(IReadOnlyList<StackFrame> stack, int parentIndex)
+    {
+        var parent = stack[parentIndex];
+        if (parent.Options is { Recoverable: false })
+            return (SafeFollow(parent.RuleName), true);
+        if (parent.Options?.Terminators is not null)
+            return (parent.Options.Terminators, false);
+        if (parent.Location is SeqFrameLocation { ElementIndex: var ei } && parentIndex >= 1)
+        {
+            var below = stack[parentIndex - 1];
+            if (below.RuleName == parent.RuleName
+                && below.Location is RuleFrameLocation { AltIndex: var altIdx }
+                && _rules.TryGetValue(parent.RuleName, out var alts)
+                && altIdx >= 0
+                && altIdx < alts.Length
+                && alts[altIdx] is Seq seq)
+            {
+                if (ei >= seq.Elements.Length - 1)
+                    return (new Terminal[0], true);
+                var tail = seq.Elements[(ei + 1)..];
+                return ComputeFirstForSequence(tail.ToList());
+            }
+        }
+        return (SafeFollow(parent.RuleName), true);
+    }
+
+    private HashSet<Terminal> SafeFollow(string ruleName)
+        => _rules.ContainsKey(ruleName) ? GetFollowSet(ruleName) : new HashSet<Terminal>();
+
     private void ComputeFollowSets()
     {
         // Инициализация follow-set для стартовых символов

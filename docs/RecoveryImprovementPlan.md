@@ -512,6 +512,43 @@ NEEDS-SPEC подтверждён: `_expected` очищается при `pos > 
 
 **Порядок:** кэш (5a.5.1, инфраструктура) → пре-фильтр+счётчик (5a.5.2). 5a.5.3 — deferred. Планка: 359/0/2 + ровно новые тесты подзадачи. Прогресс — `docs/RecoveryImprovementPlan-progress5a.5.md`.
 
+#### 5b.1 (A5-6) — per-call-site FOLLOW: декомпозиция на подзадачи
+
+**Решения (закрыты до нарезки):**
+1. **Граница** (спека §9): **Seq-кадры — per-site**; Loop/TDOPP (`PostfixFrameLocation`)/ContextScope/RuleFrame/unresolved — rule-level fallback (`GetFollowSet(R)`, текущее поведение). Каждый тип кадра имеет явное обрабатывание (нет unhandled-ветки). **Loop per-site — DEFERRED**: `LoopFrameLocation` несёт только `(LoopKind, Iteration)`, без индекса элемента; per-site `whatFollows` требует расширение `LoopFrameLocation` (`Parser.cs`, второй файл) — отдельный follow-up. Loop остаётся на rule-level (регрессии нет).
+2. **Сигнатура**: `public Terminal[] GetTerminatorsPerSite(IReadOnlyList<StackFrame> stack)` — instance-метод `FollowSetCalculator` (у неё уже `_rules`, `_firstSets`, `IsNullable`, `GetFollowSet`); параметр `Rule[]` не нужен.
+3. **Модель кадров**: `ParseRule` (Parser.cs:328) пушит `RuleFrame(R, RuleFrameLocation(altIdx))`; `ParseSeq` (Parser.cs:889) пушит `SeqFrame(R, SeqFrameLocation(ei))` с `RuleName = R` (внешнее правило, `PushFrame` тянет его из `_stackFrames[^1].RuleName`). AltIdx SeqFrame-кадра берётся из `RuleFrame(R)` непосредственно ниже в стеке; `tail = _rules[R][altIdx].Elements[ei+1..]`.
+4. **Три случая tail (не два)**: (1) `ei < Elements.Length - 1`: `First(tail) ∪ (nullable(tail) ? follow_site(i-1) : ∅)`; (2) `ei == Elements.Length - 1` (tail пуст): `follow_site(i) = follow_site(i-1)` — **не пустое множество** (самый частый случай — последний элемент Seq); (3) кадр ниже не `RuleFrame` того же правила / production не `Seq` → rule-level fallback.
+5. **Override**: `Options.Terminators ?? follow_site(i)` per-кадр (слито в 5b.1.1); `Recoverable:false` → rule-level follow.
+6. **Порядок**: inner-first, EOF в конец (как сейчас в `GetTerminators`).
+
+**Non-goals (все подзадачи):** не менять S1–S6 (кроме точки источника в `GetTerminators`/`GenerateS1`); не менять `ComputeFollowSets` (global fixed-point); не менять `HygieneCore`/`ApplyPatches`/`RollbackPatches`/`PatchMemo`; не трогать `.csproj`; не коммитить.
+
+**Общий Stop-if:** TDOPP-регрессия (D1.5) сломалась — стоп; S3-стоп-набор изменился иначе, чем List/Block — стоп; авторский override перестал работать — стоп; новый failed-тест не по подзадаче — стоп.
+
+### 5b.1.1: ядро `GetTerminatorsPerSite`
+Файлы: `ExtensibleParser/FollowSetCalculator.cs` (новый метод + приватные хелперы, если нужны); `Tests/ParserTests/Recovery/FollowSetPerSiteTests.cs`
+Цель: `GetTerminatorsPerSite(stack)` — per-call-site follow по стеку (формула §9, три случая tail, границы TDOPP/ContextScope, override, порядок inner-first). Чистое добавление — `GetTerminators`/движок **не** трогаем (подключение — 5b.1.2).
+Тест: вручную собранные стеки (по образцу `FollowSetTests.cs:669-780`): `List := Ref(X) ',' Ref(X)` / `Block := Ref(X) '}'` — follow_site(X) в List содержит `,`, **не** `}`; вложенный nullable-хвост; tail-пуст (последний элемент Seq) → `follow_site(i-1)`, не ∅; TDOPP-кадр → rule-level (равен `GetFollowSet`).
+Stop-if: новый failed-тест не по подзадаче; правка требует 2-го продакшн-файла; List/Block-ассерт не проходит; tail-пуст возвращает ∅.
+НЕ делать: не менять `GetTerminators`, S1–S6, `ComputeFollowSets`, `HygieneCore`/`ApplyPatches`/`RollbackPatches`/`PatchMemo`, `.csproj`; не коммитить.
+Зависит от: нет.
+
+### 5b.1.2: подключение в `GetTerminators` (S3-стоп)
+Файлы: `ExtensibleParser/FollowSetCalculator.cs` (`GetTerminators`); `Tests/ParserTests/Recovery/FollowSetTests.cs` (+ `FollowSetPerSiteTests.cs`)
+Цель: `GetTerminators` делегирует `GetTerminatorsPerSite` (стабильный интерфейс для S6 — сигнатура/порядок не меняются). Обновить существующие тесты 669-780 под per-site.
+Stop-if: **субагент обязан в diff-комментарии объяснить, почему per-site правильнее старого rule-level для каждого изменённого теста** — иначе STOP, доклад («подогнать под новый результат» = потеря покрытия). S3-стоп-набор изменился иначе, чем List/Block; TDOPP D1.5 сломался; полный ParserTests не зелёный.
+НЕ делать: как 5b.1.1 + не менять `GenerateS1` (это 5b.1.3). Зависит от: 5b.1.1.
+
+### 5b.1.3: `Follow(top)` для S1
+Файлы: `ExtensibleParser/Recovery/RecoveryEngine.cs` (`GenerateS1`); `Tests/ParserTests/Recovery/` (новый/существующий тест)
+Цель: `GenerateS1` (стр. 94) `calc.GetFollowSet(top.RuleName)` → `calc.GetTerminatorsPerSite(snapshot.Stack)`.
+Тест: S1-кандидат для List содержит `,`, **не** `}`.
+Stop-if: S1-кандидаты изменились на TDOPP-грамматиках; полный ParserTests не зелёный; новый failed-тест не по подзадаче.
+НЕ делать: не менять `GetTerminators`, S1b/S2–S6, `HygieneCore`/`ApplyPatches`/`RollbackPatches`/`PatchMemo`, `.csproj`; не коммитить. Зависит от: 5b.1.2.
+
+**Порядок:** 5b.1.1 (ядро) → 5b.1.2 (S3) → 5b.1.3 (S1). Планка: ParserTests 374/0/2 + CSharpGrammarTests 1524/0/3 + ровно новые тесты подзадачи. Прогресс — `docs/RecoveryImprovementPlan-progress5b.1.md`.
+
 ---
 
 ### Волна 6 — диагностика и метрики
