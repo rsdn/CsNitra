@@ -162,4 +162,65 @@ public sealed class RecoveryProfileTests
         Assert.AreEqual(Timeout.InfiniteTimeSpan, RecoveryProfile.Test.TimeBudget);
         Assert.AreEqual(TimeSpan.FromMilliseconds(500), RecoveryProfile.Ide.TimeBudget);
     }
+
+    // B4: effective properties reflect DegradationLevel (deterministic, manual level setting — no wall-clock).
+    // Level 0 (default): full strategy, full MaxSkip, speculation on, no forced S6.
+    [TestMethod]
+    public void Test_EffectiveProperties_Level0_Default()
+    {
+        var parser = NewParser();
+        Assert.AreEqual(0, parser.DegradationLevel);
+
+        Assert.AreEqual(RecoveryStrategy.All, parser.EffectiveStrategyMask);
+        Assert.AreEqual(parser.Profile.MaxSkip, parser.EffectiveMaxSkip);
+        Assert.IsTrue(parser.SpeculationEnabled);
+        Assert.IsFalse(parser.ForceS6);
+    }
+
+    // B4: level 1 — MaxSkip x4 (expansion), speculation off, full mask, no forced S6.
+    [TestMethod]
+    public void Test_EffectiveProperties_Level1()
+    {
+        var parser = NewParser();
+        parser.DegradationLevel = 1;
+
+        Assert.AreEqual(parser.Profile.MaxSkip * 4, parser.EffectiveMaxSkip);
+        Assert.IsFalse(parser.SpeculationEnabled);
+        Assert.AreEqual(RecoveryStrategy.All, parser.EffectiveStrategyMask);
+        Assert.IsFalse(parser.ForceS6);
+    }
+
+    // B4: level 2 — mask narrows to S1|S3|S6, speculation off.
+    [TestMethod]
+    public void Test_EffectiveProperties_Level2()
+    {
+        var parser = NewParser();
+        parser.DegradationLevel = 2;
+
+        Assert.AreEqual(RecoveryStrategy.S1 | RecoveryStrategy.S3 | RecoveryStrategy.S6, parser.EffectiveStrategyMask);
+        Assert.IsFalse(parser.SpeculationEnabled);
+    }
+
+    // B4: level 3 — mask narrows to S6, forced S6.
+    [TestMethod]
+    public void Test_EffectiveProperties_Level3()
+    {
+        var parser = NewParser();
+        parser.DegradationLevel = 3;
+
+        Assert.AreEqual(RecoveryStrategy.S6, parser.EffectiveStrategyMask);
+        Assert.IsTrue(parser.ForceS6);
+    }
+
+    // B4: base StrategyMask is respected — EffectiveStrategyMask at level 0 == the profile mask.
+    [TestMethod]
+    public void Test_EffectiveProperties_Respects_Base_StrategyMask()
+    {
+        var parser = NewParser();
+        var mask = RecoveryStrategy.All & ~RecoveryStrategy.S2;
+        parser.Profile = parser.Profile with { StrategyMask = mask };
+        parser.DegradationLevel = 0;
+
+        Assert.AreEqual(mask, parser.EffectiveStrategyMask);
+    }
 }

@@ -1,5 +1,6 @@
 #nullable enable
 
+using System.Diagnostics;
 using Diagnostics;
 
 namespace ExtensibleParser;
@@ -51,6 +52,24 @@ public partial class Parser
     // A3: единый источник recovery-лимитов. Convenience-свойства ниже читают/пишут Profile,
     // сохраняя существующие тесты, которые ставят их напрямую.
     public RecoveryProfile Profile { get; set; } = RecoveryProfile.Ide;
+
+    // B4: current degradation level (0 = full). Raised when the recovery session
+    // exceeds Profile.TimeBudget. Public + settable so tests can drive the ladder
+    // deterministically (no wall-clock in tests).
+    public int DegradationLevel { get; set; }
+
+    private Stopwatch _recoveryStopwatch = new();
+
+    // B4: level-aware effective properties, derived from DegradationLevel via the Degradation table.
+    public RecoveryStrategy EffectiveStrategyMask =>
+        Profile.StrategyMask & Degradation.Get(DegradationLevel).Mask;
+
+    public int EffectiveMaxSkip =>
+        (int)(Profile.MaxSkip * Degradation.Get(DegradationLevel).MaxSkipMultiplier);
+
+    public bool SpeculationEnabled => Degradation.Get(DegradationLevel).Speculation;
+
+    public bool ForceS6 => Degradation.Get(DegradationLevel).ForceS6;
 
     // Лимиты цикла восстановления: предельное число итераций (Profile.MaxIterations).
     public int MaxRecoveryIterations
@@ -338,6 +357,10 @@ public partial class Parser
         _lastPartial = null;
         _suppressSideEffects = false;
 
+        // B4: reset the degradation mechanism for this recovery session.
+        DegradationLevel = 0;
+        _recoveryStopwatch.Restart();
+
         var ePrev = -1;
         var e = -1;
         var result = default(Result);
@@ -345,6 +368,13 @@ public partial class Parser
         for (var iter = 0; ; iter++)
         {
             RecoveryPasses++;
+
+            // B4: if the recovery session exceeds the wall-clock budget, degrade (coarser).
+            // Test profile has TimeBudget = Infinite, so this never fires in tests.
+            if (DegradationLevel < Degradation.Levels.Length - 1
+                && _recoveryStopwatch.Elapsed > Profile.TimeBudget)
+                DegradationLevel++;
+
             Log($"Starting at {currentStartPos} iter={iter} parse for rule '{startRule}' _recoveryPoint={_recoveryPoint}");
             result = ParseRule(startRule, minPrecedence: 0, startPos: currentStartPos, input);
 
