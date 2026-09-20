@@ -91,7 +91,7 @@ public static class RecoveryEngine
         }
 
         if (calculator is { } calc)
-            foreach (var t in calc.GetFollowSet(top.RuleName))
+            foreach (var t in calc.GetTerminatorsPerSite(snapshot.Stack))
                 Add(t, 1);
 
         foreach (var (t, rank) in ordered)
