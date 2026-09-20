@@ -3,7 +3,6 @@
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
-#if RECOVERY
 namespace Recovery;
 
 [TestClass]
@@ -162,5 +161,3 @@ public sealed class SnapshotTests
         Assert.IsNull(parser.LastSnapshot);
     }
 }
-
-#endif

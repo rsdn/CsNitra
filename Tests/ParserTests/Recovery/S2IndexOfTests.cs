@@ -1,5 +1,3 @@
-#if RECOVERY
-
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
@@ -199,4 +197,3 @@ public sealed class S2IndexOfTests
             $"resync positions differ:\nlet:   {d1}\nident: {d2}");
     }
 }
-#endif

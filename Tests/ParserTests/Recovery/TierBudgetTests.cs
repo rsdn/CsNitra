@@ -3,7 +3,6 @@
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
-#if RECOVERY
 namespace Recovery;
 
 [TerminalMatcher]
@@ -75,4 +74,3 @@ public sealed class TierBudgetTests
     private static string Describe(IReadOnlyList<RecoveryDiagnostic> diags)
         => string.Join("; ", diags.Select(d => $"{d.Kind} [{d.StartPos}..{d.EndPos}) {d.Message}"));
 }
-#endif

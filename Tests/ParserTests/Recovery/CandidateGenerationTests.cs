@@ -3,7 +3,6 @@
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
-#if RECOVERY
 namespace Recovery;
 
 [TestClass]
@@ -305,5 +304,3 @@ public sealed class CandidateGenerationTests
         Assert.AreEqual("S1:Start:b", candidates.Single(x => x.TerminalKind == "b").Id);
     }
 }
-
-#endif

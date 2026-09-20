@@ -3,7 +3,6 @@
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
-#if RECOVERY
 namespace Recovery;
 
 [TestClass]
@@ -107,5 +106,3 @@ public sealed class PartialBaseCaseTests
         Assert.IsNull(parser.LastPartial);
     }
 }
-
-#endif

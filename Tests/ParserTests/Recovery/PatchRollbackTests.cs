@@ -3,7 +3,6 @@
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
-#if RECOVERY
 namespace Recovery;
 
 [TerminalMatcher]
@@ -354,4 +353,3 @@ public sealed class PatchRollbackTests
                 $"Phantom injection at {kv.Key.Pos}|{kv.Key.Terminal.Kind}");
     }
 }
-#endif

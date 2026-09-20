@@ -38,7 +38,6 @@ public partial class MiniCTests
         );
     }
 
-#if RECOVERY
     [TestMethod]
     public void Err_MissingOperatorExpression()
     {
@@ -214,8 +213,6 @@ public partial class MiniCTests
         );
     }
 
-#endif
-
     [TestMethod]
     public void TwoFunctionsModule()
     {
@@ -309,7 +306,6 @@ public partial class MiniCTests
         "Call: func(1)"
     );
 
-#if RECOVERY
     [TestMethod]
     public void FunctionCallWithOneComaOneArgs() => TestMiniC(
         "Expr",
@@ -337,8 +333,6 @@ public partial class MiniCTests
         "func(1, , , 2)",
         "Call: func(1, «Error: expected Expr», «Error: expected Expr», 2)"
     );
-
-#endif
 
     [TestMethod]
     public void FunctionCallWithTwoArgs() => TestMiniC(

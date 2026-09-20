@@ -2,7 +2,6 @@
 
 using ExtensibleParser;
 
-#if RECOVERY
 namespace Recovery;
 
 // 2.1/B1: точная гигиена memo. Сценарий «одна ошибка в конце длинного файла»:
@@ -45,4 +44,3 @@ public sealed class HygieneTests
             $"HygieneRemovals={parser.HygieneRemovals} is not bounded (expected <= 10, not proportional to {statements} statements)");
     }
 }
-#endif

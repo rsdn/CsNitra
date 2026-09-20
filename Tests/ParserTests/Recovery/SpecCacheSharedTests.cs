@@ -3,7 +3,6 @@
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
-#if RECOVERY
 namespace Recovery;
 
 // 5a.1.3: GenerateS2 читает/пишет ОБЩИЙ кэш parser.SpecCache, а не локальный Dictionary.
@@ -66,4 +65,3 @@ public sealed class SpecCacheSharedTests
             $"diags=[{string.Join("; ", parser.RecoveryDiagnostics.Select(d => $"{d.Kind} [{d.StartPos}..{d.EndPos}) {d.Message}"))}]");
     }
 }
-#endif

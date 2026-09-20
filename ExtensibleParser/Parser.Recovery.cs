@@ -6,10 +6,7 @@ namespace ExtensibleParser;
 
 using ExtensibleParser.Recovery;
 
-#if RECOVERY
-
 // Recovery-подсистема: состояние, хуки и цикл восстановления.
-// Без RECOVERY (EnableRecovery=false) активен Parser.NoRecovery.cs.
 public partial class Parser
 {
     private int _recoveryPoint = -1;
@@ -643,5 +640,3 @@ public partial class Parser
         public int S3S6;
     }
 }
-
-#endif

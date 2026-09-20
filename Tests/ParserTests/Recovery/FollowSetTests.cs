@@ -3,7 +3,6 @@
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
-#if RECOVERY
 namespace Recovery;
 
 [TestClass]
@@ -786,4 +785,3 @@ public class FollowSetTests
         Assert.IsFalse(terminators.Any(t => t is Literal l && l.Value == "p"), "follow(A) 'p' must NOT appear when Options.Terminators set");
     }
 }
-#endif

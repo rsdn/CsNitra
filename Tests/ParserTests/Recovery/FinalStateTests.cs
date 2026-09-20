@@ -3,7 +3,6 @@
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
-#if RECOVERY
 namespace Recovery;
 
 [TerminalMatcher]
@@ -181,4 +180,3 @@ public sealed class FinalStateTests
         Assert.IsNull(parser.ErrorInfo);
     }
 }
-#endif

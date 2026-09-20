@@ -3,7 +3,6 @@
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
-#if RECOVERY
 namespace Recovery;
 
 // Интеграция Fазы 1: MiniC-подобная грамматика с Error-правилами (RecoveryPrefix),
@@ -110,4 +109,3 @@ public sealed class S0IntegrationTests
     private static string Describe(System.Collections.Generic.IReadOnlyList<RecoveryDiagnostic> diags)
         => string.Join("; ", diags.Select(d => $"{d.Kind} [{d.StartPos}..{d.EndPos}) term={d.Terminal?.Kind ?? "-"} {d.Message}"));
 }
-#endif

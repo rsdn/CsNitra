@@ -3,7 +3,6 @@
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
-#if RECOVERY
 namespace Recovery;
 
 // 1.6 (C2): Partial-after-recovery semantics.
@@ -99,5 +98,3 @@ public sealed class PartialAfterRecoveryTests
             "Partial@EOF arises without an accepted candidate (S6 not generated: parseEnd == EOF)");
     }
 }
-
-#endif

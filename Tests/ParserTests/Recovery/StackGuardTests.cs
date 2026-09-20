@@ -2,7 +2,6 @@
 
 using ExtensibleParser;
 
-#if RECOVERY
 namespace MiniC;
 
 // Репро 3.0a: stack overflow во время recovery re-parse.
@@ -116,4 +115,3 @@ public sealed class StackGuardTests
         Assert.IsNull(_parser.ErrorInfo);
     }
 }
-#endif

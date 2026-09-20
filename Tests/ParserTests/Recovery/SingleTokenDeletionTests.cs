@@ -3,7 +3,6 @@
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
-#if RECOVERY
 namespace Recovery;
 
 [TerminalMatcher]
@@ -49,5 +48,3 @@ public sealed class SingleTokenDeletionTests
             $"Expected Success@EOF (end=3), got {result.ResultKind}@{result.NewPos}/{result.MaxFailPos}");
     }
 }
-
-#endif

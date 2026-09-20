@@ -1,6 +1,4 @@
-﻿#if RECOVERY
-
-using ExtensibleParser;
+﻿using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
 namespace Recovery;
@@ -130,4 +128,3 @@ public sealed class S3TriviaJumpTests
                 $"S3 resync position {i} not shifted by delta={delta} (stopped on a brace inside the block comment?):\nno-comment: {d1}\nwith-comment: {d2}");
     }
 }
-#endif

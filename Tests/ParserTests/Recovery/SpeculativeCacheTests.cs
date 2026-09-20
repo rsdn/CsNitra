@@ -2,7 +2,6 @@
 
 using ExtensibleParser.Recovery;
 
-#if RECOVERY
 namespace Recovery;
 
 [TestClass]
@@ -37,4 +36,3 @@ public sealed class SpeculativeCacheTests
         Assert.AreEqual(0, cache.Hits);
     }
 }
-#endif

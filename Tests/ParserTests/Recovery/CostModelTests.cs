@@ -3,7 +3,6 @@
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
-#if RECOVERY
 namespace Recovery;
 
 [TestClass]
@@ -130,4 +129,3 @@ public sealed class CostModelTests
         return parser;
     }
 }
-#endif

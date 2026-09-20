@@ -1,6 +1,4 @@
-﻿#if RECOVERY
-
-using ExtensibleParser;
+﻿using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
 namespace Recovery;
@@ -140,4 +138,3 @@ public sealed class S2TriviaJumpTests
             $"trivia run not skipped: padded S2ScanPositions={p2.S2ScanPositions}, no-padding={p1.S2ScanPositions} (diff={diff}, expected < 3)\nno-padding: {d1}\npadded:     {d2}");
     }
 }
-#endif

@@ -3,7 +3,6 @@
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
-#if RECOVERY
 namespace Recovery;
 
 [TestClass]
@@ -41,5 +40,3 @@ public sealed class RecoveryDiagnosticTests
         Assert.AreEqual(0, parser.RecoveryDiagnostics.Count);
     }
 }
-
-#endif

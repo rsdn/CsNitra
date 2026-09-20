@@ -3,7 +3,6 @@
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
-#if RECOVERY
 namespace Recovery;
 
 [TestClass]
@@ -357,4 +356,3 @@ public sealed class RecoveryRuleTests
             "Recoverable=false: the engine must ignore the frame's TryInsert options");
     }
 }
-#endif

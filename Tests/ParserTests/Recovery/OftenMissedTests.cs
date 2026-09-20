@@ -3,7 +3,6 @@
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
-#if RECOVERY
 namespace Recovery;
 
 // 2.3: OftenMissed — документированный сахар над TryInsert: эквивалент
@@ -130,4 +129,3 @@ public sealed class OftenMissedTests
         Assert.IsFalse(parser.Injections.ContainsKey((e, new Literal(";"))));
     }
 }
-#endif

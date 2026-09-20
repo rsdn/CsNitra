@@ -3,7 +3,6 @@
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
-#if RECOVERY
 namespace Recovery;
 
 [TerminalMatcher]
@@ -52,4 +51,3 @@ public sealed class SpecCacheFieldTests
         Assert.AreEqual(0, parser.SpecCacheMisses);
     }
 }
-#endif

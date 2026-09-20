@@ -1,7 +1,5 @@
 ﻿namespace ExtensibleParser.Recovery;
 
-#if RECOVERY
-
 // Кэш результатов спекулятивного parse на scratch-копии (B2): (rule,pos) → (Ok,EndPos) + D2-счётчики
 // хитов/промахов. Хит — compute не вызывается; промах — compute вызывается и результат пишется.
 public sealed class SpeculativeCache
@@ -36,5 +34,3 @@ public sealed class SpeculativeCache
         _misses = 0;
     }
 }
-
-#endif

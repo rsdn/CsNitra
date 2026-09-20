@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.Text;
 using ExtensibleParser;
 
-#if RECOVERY
 namespace Recovery;
 
 [TerminalMatcher]
@@ -327,4 +326,3 @@ public sealed class RecoveryCorpusTests
         Assert.AreEqual(7, scenarios.Length);
     }
 }
-#endif

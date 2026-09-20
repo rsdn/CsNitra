@@ -3,7 +3,6 @@
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
-#if RECOVERY
 namespace Recovery;
 
 [TestClass]
@@ -214,5 +213,3 @@ public sealed class FirstSetsTests
         Assert.IsTrue(FirstSets.IsNullable(new SeparatedList(new Literal("a"), new Literal(","), "L", CanBeEmpty: true)));
     }
 }
-
-#endif

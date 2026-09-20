@@ -3,7 +3,6 @@
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
-#if RECOVERY
 namespace Recovery;
 
 // A3: RecoveryProfile — единый источник recovery-лимитов. Тестируем, что Profile можно установить
@@ -60,4 +59,3 @@ public sealed class RecoveryProfileTests
         Assert.AreEqual(4, parser.Profile.MaxParseDepthPerChar);
     }
 }
-#endif

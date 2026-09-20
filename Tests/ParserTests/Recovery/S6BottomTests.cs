@@ -3,7 +3,6 @@
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
-#if RECOVERY
 namespace Recovery;
 
 [TerminalMatcher]
@@ -178,5 +177,3 @@ public sealed class S6BottomTests
     }
 
 }
-
-#endif

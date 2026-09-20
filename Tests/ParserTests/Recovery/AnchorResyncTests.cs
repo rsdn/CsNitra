@@ -3,7 +3,6 @@
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
-#if RECOVERY
 namespace Recovery;
 
 [TerminalMatcher]
@@ -153,5 +152,3 @@ public sealed class AnchorResyncTests
         Assert.AreEqual("S2:Statement:T1:29", s2[1].Id);
     }
 }
-
-#endif

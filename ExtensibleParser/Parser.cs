@@ -101,8 +101,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
         set => _contextCount = value;
     }
 
-    // Хуки recovery-подсистемы: реализация в Parser.Recovery.cs;
-    // в сборке EnableRecovery=false (Parser.NoRecovery.cs) — тривиальные (no-op/константы).
+    // Хуки recovery-подсистемы: реализация в Parser.Recovery.cs.
     // Ядро (этот файл) recovery-кода не содержит: только вызовы этих хуков.
 
     // Точки входа / финализация
@@ -272,9 +271,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
 
     // Parses a single rule from startPos WITHOUT the recovery loop: resets the per-parse state
     // (as Parse does) and returns the raw ParseRule result as-is. Use for sub-expression parsing where
-    // recovery to EOF is neither wanted nor correct (e.g. measuring a string literal's extent). Lives
-    // in the core (not the #if RECOVERY-gated Parser.Recovery.cs) so it works in both RECOVERY and
-    // no-recovery builds.
+    // recovery to EOF is neither wanted nor correct (e.g. measuring a string literal's extent).
     public Result ParseSubRule(string input, string rule, int startPos)
     {
         _debugInput = input;

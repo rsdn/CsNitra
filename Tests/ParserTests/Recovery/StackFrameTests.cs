@@ -3,7 +3,6 @@
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
 
-#if RECOVERY
 namespace Recovery;
 
 [TestClass]
@@ -182,5 +181,3 @@ public sealed class StackFrameTests
         Assert.IsTrue(secondFunction[6].Location is LoopFrameLocation { LoopKind: "ZeroOrMany", Iteration: 0 });
     }
 }
-
-#endif

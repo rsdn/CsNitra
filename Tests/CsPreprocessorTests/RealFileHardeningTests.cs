@@ -27,8 +27,7 @@ public sealed class RealFileHardeningTests
     [
         "ExtensibleParser/Extensions.cs",             // #if NETSTANDARD2_0 / #else / #endif
         "Shared/NetStandard2_0Support.cs",            // #if NATIVEAOT, #if !NETSTANDARD2_0, #pragma warning
-        "ExtensibleParser/Parser.NoRecovery.cs",      // #if !RECOVERY
-        "ExtensibleParser/Parser.Recovery.cs",        // #if RECOVERY
+        "ExtensibleParser/Parser.Recovery.cs",        // plain (recovery hooks)
         "Parsers/Json/Ast.cs",                        // plain (records)
         "Parsers/Json/JsonParser.cs",                 // plain
         "Parsers/Dot/DotParser/DotAst.cs",            // plain (records)

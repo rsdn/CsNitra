@@ -183,7 +183,6 @@ public sealed class MiniCReferenceTests
         Assert.IsTrue(MatchModule(visitor.Result), $"Module AST mismatch:\n{visitor.Result}");
     }
 
-#if RECOVERY
     // ============ Тесты с ошибками: повреждённая функция + неизменность остальных ============
 
     // Хвостовой мусор: абсорбер глотает «###», модуль остаётся идентичным референсному.
@@ -297,8 +296,6 @@ public sealed class MiniCReferenceTests
         };
         Assert.IsTrue(MatchModuleExcept(9, module, damaged), $"Module must match reference except damaged f10:\n{module}");
     }
-
-#endif
 
     private Ast ParseModule(string input, string testName)
     {
