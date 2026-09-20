@@ -284,21 +284,82 @@ public static class PreprocessorTerminals
                     continue;
                 }
 
-                var exprLength = ParseExpressionLength(input, pos);
-                if (exprLength <= 0)
+                // T1 — ordinary and verbatim literals get a cheap linear-scan extent; raw (a quote run
+                // of 3+) and interpolated strings still go through the C# Expression parser (T2/T3 will
+                // replace those). StringExtent returns -1 for the parser-kept forms.
+                var extent = StringExtent(input, pos, length);
+                if (extent < 0)
+                    extent = ParseExpressionLength(input, pos);
+                if (extent <= 0)
                 {
                     pos++;
                     continue;
                 }
 
-                var end = pos + exprLength;
-                if (input.IndexOf('\n', pos, exprLength) >= 0)
+                var end = pos + extent;
+                if (input.IndexOf('\n', pos, extent) >= 0)
                     spans.Add((pos, end));
 
                 pos = end;
             }
 
             return spans;
+        }
+
+        // T1 — linear-scan extent of an ordinary or verbatim string literal (no parser). Returns -1
+        // for the forms that still need the C# Expression parser: raw strings (a quote run of 3+) and
+        // interpolated strings (a '$' immediately before the opening quote). For a well-formed
+        // ordinary or verbatim literal the extent equals what ParseExpressionLength returns for the
+        // same input: the literal is the whole expression when no operator follows it on the same
+        // parse. A verbatim scan is hole-unaware (a lone '"' closes the literal), which matches the
+        // grammar's verbatim rule when the parse starts at the '@' (as it does here).
+        private static int StringExtent(string input, int pos, int length)
+        {
+            if (input[pos] == '@')
+            {
+                // Verbatim: scan to the closing '"'; a doubled '""' is an escaped quote inside.
+                var i = pos + 2;
+                while (i < length)
+                {
+                    if (input[i] == '"')
+                    {
+                        if (i + 1 < length && input[i + 1] == '"')
+                        {
+                            i += 2;
+                            continue;
+                        }
+                        break;
+                    }
+                    i++;
+                }
+                return (i < length ? i + 1 : length) - pos;
+            }
+
+            // A quote run of 3+ is a raw string — keep the parser (T2).
+            var q = pos;
+            while (q < length && input[q] == '"')
+                q++;
+            if (q - pos >= 3)
+                return -1;
+
+            // A '$' immediately before the opening quote marks an interpolated string — keep the parser (T3).
+            if (pos > 0 && input[pos - 1] == '$')
+                return -1;
+
+            // Ordinary: scan to the first unescaped '"' or '\n' or EOF.
+            var j = pos + 1;
+            while (j < length)
+            {
+                if (input[j] == '\\' && j + 1 < length)
+                {
+                    j += 2;
+                    continue;
+                }
+                if (input[j] is '"' or '\n')
+                    break;
+                j++;
+            }
+            return (j < length && input[j] == '"' ? j + 1 : j) - pos;
         }
 
         private static int ParseExpressionLength(string input, int exprStart)
