@@ -154,3 +154,94 @@ behavior change, `SpeculativeCache` and the D2-core counters untouched, no stop-
   reserved now; the per-phase time counters (main parse / generation / re-parses) are left to 6.2.2,
   which decides their exact shape.
 - Not committed.
+
+---
+
+# 6.2.2 (D2-full) — time-by-phase + hygiene-removals counters + braking-scenario acceptance test
+
+Wires the remaining two D2-full counter groups and adds the braking-scenario acceptance test.
+Everything is **observation-only**: one `Stopwatch.StartNew()` per parse/generation call (a small
+number of calls per session — iterations + candidates, NOT per token), no S0–S6 or recovery behavior
+changed, no `.csproj` change.
+
+## The three phases — structure and delimitation
+
+The recovery session is one `Recover` call (`Parser.Recovery.cs:479`); its loop has exactly three
+kinds of expensive work, all cleanly delimited:
+
+| Phase | Site | Why it is clean |
+|---|---|---|
+| (a) MAIN parse | `Parser.Recovery.cs:519-524` — the loop's `ParseRule`, `iter == 0` | The first loop iteration IS the initial parse before recovery (`Recover` is the single session entry, `Parser.cs:266`). `iter == 0 ? NoteMainParse : NoteReparse`. |
+| (b) GENERATION | `Parser.Recovery.cs:656-658` (normal lazy `Generate`) and `:642-644` (the `ForceS6` hard-limit `Generate`) | `RecoveryEngine.Generate` returns a `List<RecoveryCandidate>` **eagerly** (`RecoveryEngine.cs:10`) — the speculative-parse work all happens inside the call, so wall-clock around the call is exact. The `foreach` that follows consumes the ready list (interleaved with `TryCandidate`, whose re-parses go to phase c). |
+| (c) RE-PARSES | `Parser.Recovery.cs:592-594` (the `TryCandidate` candidate re-parse) and `:519-524` (the main-loop `ParseRule` for `iter >= 1`) | Every `ParseRule` after the first is a re-parse: the candidate re-parses in `TryCandidate` (the task's example) PLUS the iterative main-loop passes after a candidate was accepted (a full re-parse of the start rule from `currentStartPos`). Both accumulate into `ReparseTime`. |
+
+**Interpretation note (re-parses):** the task names "the candidate re-parse in the loop, e.g.
+`TryCandidate`'s re-parse". The `iter >= 1` main-loop passes are also re-parses of the start rule and
+carry most of the multi-iteration cost, so they are counted in `ReparseTime` too (not dropped) —
+otherwise a multi-error scenario would show a large unmeasured share.
+
+## Metrics fields added (`ExtensibleParser/Recovery/RecoveryMetrics.cs`)
+
+- `MainParseTime` / `GenerationTime` / `ReparseTime` (`TimeSpan`, `internal set`) —
+  `RecoveryMetrics.cs:44-48`; accumulate across the session via `NoteMainParse` / `NoteGeneration` /
+  `NoteReparse` (`:50-54`); zeroed in `Reset()` (`:84-86`) alongside the 6.2.1 counters.
+- Wall clock = `Stopwatch.StartNew()` per call, `Elapsed` noted after the call. No reuse of
+  `_recoveryStopwatch` (that one drives the B4 `TimeBudget` degradation ladder — separate concern).
+
+## Hygiene-removals wiring + the "before/after" interpretation
+
+- **Where hygiene removes entries:** `HygieneCore` (`Parser.Recovery.cs:853-872`) — exact (post-B1)
+  hygiene; it removes via `RemoveMemo` + the existing per-session `HygieneRemovals++`
+  (`:868`, hook from 2.1/B1, reset per `Recover` at `:485`). No new removal site was added.
+- **Interpretation of "before/after B1":** the plan's wording (`RecoveryImprovementPlan.md:73` —
+  «число удалений memo до/после (D2)») compares the removal count under the PRE-B1 (imprecise) vs
+  POST-B1 (exact) hygiene **implementations**. B1 has already landed (Wave 2, commit f65ff66), so only
+  the exact hygiene exists at runtime — there is a **single live counter**, and "before/after" does not
+  map to two live counters. Hence: the per-session count is recorded in **`HygieneRemovalsAfter`**
+  (the post-B1/exact-hygiene field); **`HygieneRemovalsBefore` stays 0** (the pre-B1 baseline has no
+  runtime referent — it is a historical comparison point, not a live counter).
+- **Wiring point:** `Parser.Recovery.cs:681-685` — `Metrics.HygieneRemovalsAfter = HygieneRemovals;`
+  at the top of `FinishRecovery`, the **single session exit point** (every `Recover` return — `:522`,
+  `:652`, `:658` — goes through it, and it is only called from `Recover`). The counter is per-`Recover`
+  (reset at `:485`), so the value captured at session end is exactly this session's removals.
+
+## Braking-scenario acceptance test
+
+`Tests/ParserTests/Recovery/RecoveryMetricsTests.cs` —
+`Test_BrakingScenario_ManyErrors_PhaseTimesAndHygieneVisible` (3rd test in the class):
+
+- Same grammar as the 6.2.1 tests (`Module/Stmt/Expr`, TDOPP `Expr`); input
+  `"{ a: 1+ ### b; c: 2+ ### d; e: 3+ ### f; g: 4+ ### h; }"` — **4 errors → 4 recovery iterations**
+  (D1.1-style many-errors stress). Each iteration: S0 re-parse (no progress → rollback) → one
+  `Generate` call → candidate re-parses until S3 (panic to `;`) is accepted; `HygieneCore` runs in
+  every `ApplyPatches`.
+- Asserts the "braking" is **visible in the metrics, not a timeout**:
+  `Success@EOF`; `MainParseTime > 0` (a); `EngineGenerateCalls > 0` AND `GenerationTime > 0` (b);
+  `ReparseTime > 0` (c); `HygieneRemovalsAfter > 0` (hygiene ran and removed entries); and
+  `HygieneRemovalsAfter == parser.HygieneRemovals` (the metric agrees with the D2-core hook).
+- Non-zero assertions (not magnitudes) — wall-clock magnitudes are machine-dependent; the point is
+  observability: a slow scenario shows up in the counters, not as a hang.
+
+## Test results (one-shot, from `C:\RSDN\CsNitra`)
+
+- `dotnet test Tests/ParserTests` — **Total: 412 · Passed: 410 · Failed: 0 · Skipped: 2** (the 2
+  skipped are the pre-existing `[Ignore("WIP")]`; +1 vs the 6.2.1 baseline of 411 is exactly the new
+  braking test).
+- `dotnet test Tests/CSharpGrammarTests` — **Total: 1527 · Passed: 1524 · Failed: 0 · Skipped: 3** (identical to the 6.2.1 baseline — no regression).
+- `dotnet test Tests/CsPreprocessorTests` — **Total: 128 · Passed: 128 · Failed: 0** (identical — no regression).
+
+## Files changed (6.2.2)
+
+- `ExtensibleParser/Recovery/RecoveryMetrics.cs` — **modified**: time-by-phase fields + `Note*`
+  methods + `Reset` extension; header/field comments for the hygiene interpretation.
+- `ExtensibleParser/Parser.Recovery.cs` — **modified**: the three phase-timing sites (`:519-524`
+  main/iterative, `:592-594` candidate re-parse, `:642-644` + `:656-658` generation) + the
+  hygiene-removals record in `FinishRecovery` (`:681-685`).
+- `Tests/ParserTests/Recovery/RecoveryMetricsTests.cs` — **modified**: +1 braking-scenario test
+  (3 tests total).
+- `docs/RecoveryImprovementPlan-progress6.2.md` — this file.
+
+No `RecoveryEngine.cs` change, no `.csproj` change, no S0–S6 / recovery behavior change
+(`HygieneCore`, `SpeculativeCache`, the D2-core counters untouched), no stop-if triggered.
+**Not committed.** (Note: `docs/RecoveryImprovementPlan-checklist.md` carried a pre-existing
+uncommitted working-tree edit from the 6.2.1 session — left as-is, not part of 6.2.2.)

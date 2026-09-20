@@ -7,7 +7,16 @@
 // SpeculativeCache (single source of truth — those counters are already incremented at the
 // specCache lookup site, SpeculativeCache.Speculative, B2/5a.1).
 //
-// Time-by-phase and hygiene before/after counters are 6.2.2 (the hygiene fields are reserved below).
+// Time-by-phase (6.2.2): wall-clock time accumulated per phase — MainParseTime (the initial parse
+// before recovery), GenerationTime (RecoveryEngine.Generate calls), ReparseTime (every ParseRule
+// after the first: the candidate re-parses in TryCandidate + the iterative main-loop passes).
+//
+// Hygiene removals (6.2.2): the plan's "hygiene removals before/after B1" is a comparison of the
+// pre-B1 (imprecise) vs post-B1 (exact) hygiene IMPLEMENTATIONS. B1 has landed, so only the exact
+// hygiene exists at runtime — there is a single live counter (Parser.HygieneRemovals, incremented in
+// HygieneCore). It is recorded in HygieneRemovalsAfter; HygieneRemovalsBefore stays 0 (the pre-B1
+// baseline has no runtime referent).
+//
 // Everything here is observation-only: no recovery behavior depends on it.
 public sealed class RecoveryMetrics(SpeculativeCache specCache)
 {
@@ -24,10 +33,25 @@ public sealed class RecoveryMetrics(SpeculativeCache specCache)
 
     public int SpecCacheMisses => _specCache.Misses;
 
-    // 6.2.2 reserved (fields now, wired in 6.2.2): hygiene removals before/after B1.
+    // Hygiene removals (6.2.2, see the file header for the before/after interpretation): the
+    // post-B1 (exact) per-session removal count, read from Parser.HygieneRemovals at session end.
+    // Before has no runtime referent (the pre-B1 hygiene no longer exists) and stays 0.
     public int HygieneRemovalsBefore { get; internal set; }
 
     public int HygieneRemovalsAfter { get; internal set; }
+
+    // 6.2.2: time-by-phase (wall clock, accumulated across the session; see the file header).
+    public TimeSpan MainParseTime { get; internal set; }
+
+    public TimeSpan GenerationTime { get; internal set; }
+
+    public TimeSpan ReparseTime { get; internal set; }
+
+    public void NoteMainParse(TimeSpan elapsed) => MainParseTime += elapsed;
+
+    public void NoteGeneration(TimeSpan elapsed) => GenerationTime += elapsed;
+
+    public void NoteReparse(TimeSpan elapsed) => ReparseTime += elapsed;
 
     // rank 0..6 == strategy index (S0..S6).
     public void NoteAccept(int rank) => _accept[rank]++;
@@ -57,6 +81,9 @@ public sealed class RecoveryMetrics(SpeculativeCache specCache)
         }
         HygieneRemovalsBefore = 0;
         HygieneRemovalsAfter = 0;
+        MainParseTime = TimeSpan.Zero;
+        GenerationTime = TimeSpan.Zero;
+        ReparseTime = TimeSpan.Zero;
     }
 
     private static int Index(RecoveryStrategy strategy) =>

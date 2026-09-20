@@ -516,7 +516,12 @@ public partial class Parser
                 DegradationLevel++;
 
             Log($"Starting at {currentStartPos} iter={iter} parse for rule '{startRule}' _recoveryPoint={_recoveryPoint}");
+            var passSw = Stopwatch.StartNew(); // D2-full (6.2.2): time-by-phase, observation-only
             result = ParseRule(startRule, minPrecedence: 0, startPos: currentStartPos, input);
+            if (iter == 0)
+                metrics.NoteMainParse(passSw.Elapsed); // (a) main parse — the initial parse before recovery
+            else
+                metrics.NoteReparse(passSw.Elapsed); // (c) iterative re-parse after the previous candidate was accepted
 
             if (result.TryGetSuccess(out _, out var end) && end == input.Length)
                 return FinishRecovery(result); // чистый успех
@@ -584,7 +589,9 @@ public partial class Parser
                 var savedErrorPos = ErrorPos;
                 var savedExpected = _expected.ToArray();
                 _recoveryPoint = e;
+                var reparseSw = Stopwatch.StartNew(); // D2-full (6.2.2): (c) candidate re-parse
                 var next = ParseRule(startRule, minPrecedence: 0, startPos: currentStartPos, input);
+                metrics.NoteReparse(reparseSw.Elapsed);
                 var e2 = RecoveryPointOf(next, input);
 
                 // 1.3.4: S6 (ранг 6) — дно, а не восстановление: ошибка в точке e не «починена», а лишь
@@ -632,7 +639,10 @@ public partial class Parser
                 if (ForceS6)
                 {
                     var pe = result.TryGetSuccess(out _, out var p1) ? p1 : result.TryGetPartial(out _, out var p2) ? p2 : 0;
-                    foreach (var c in Recovery.RecoveryEngine.Generate(e, snapshot, input, this, result.ResultKind, startRule, currentStartPos, pe))
+                    var forceGenSw = Stopwatch.StartNew(); // D2-full (6.2.2): (b) generation
+                    var forceCandidates = Recovery.RecoveryEngine.Generate(e, snapshot, input, this, result.ResultKind, startRule, currentStartPos, pe);
+                    metrics.NoteGeneration(forceGenSw.Elapsed);
+                    foreach (var c in forceCandidates)
                         if (c.Rank == 6)
                         {
                             TryCandidate(c);
@@ -643,7 +653,10 @@ public partial class Parser
 
                 EngineGenerateCalls++;
                 var parseEnd = result.TryGetSuccess(out _, out var pe2) ? pe2 : result.TryGetPartial(out _, out var pp2) ? pp2 : 0;
-                foreach (var candidate in Recovery.RecoveryEngine.Generate(e, snapshot, input, this, result.ResultKind, startRule, currentStartPos, parseEnd))
+                var genSw = Stopwatch.StartNew(); // D2-full (6.2.2): (b) generation
+                var candidates = Recovery.RecoveryEngine.Generate(e, snapshot, input, this, result.ResultKind, startRule, currentStartPos, parseEnd);
+                metrics.NoteGeneration(genSw.Elapsed);
+                foreach (var candidate in candidates)
                     if (TryCandidate(candidate))
                         break;
             }
@@ -666,6 +679,10 @@ public partial class Parser
     // memo) — единый матч по финальному дереву покрывает оба вида одинаково.
     private Result FinishRecovery(Result result)
     {
+        // D2-full (6.2.2): record the per-session hygiene removals (the single live counter — post-B1
+        // exact hygiene; HygieneCore increments HygieneRemovals, reset per Recover). Single session
+        // exit point: every Recover return goes through here.
+        Metrics.HygieneRemovalsAfter = HygieneRemovals;
         if (result.TryGetSuccess(out var node, out _))
         {
             AttachDiagnosticsToTree(node);
