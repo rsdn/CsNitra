@@ -156,7 +156,114 @@ carried a pre-existing uncommitted working-tree edit from the 6.2.2 session — 
   (where the anchor identity is explicit). This is the clean observation point and is sufficient for the
   redundancy signal; 6.3.2 can refine to acceptance-based counting if needed (the acceptance site already
   exposes `candidate.TerminalKind` == the anchor name for S2).
-- **Accumulation, not per-`Recover` reset.** Deliberate divergence from `RecoveryMetrics`: the signals
-  are corpus-level, so `GrammarDiagnostics` accumulates across parses and is only cleared by an explicit
-  `Reset()`.
-- Not committed.
+ - **Accumulation, not per-`Recover` reset.** Deliberate divergence from `RecoveryMetrics`: the signals
+   are corpus-level, so `GrammarDiagnostics` accumulates across parses and is only cleared by an explicit
+   `Reset()`.
+ - Not committed.
+
+---
+
+# 6.3.2 (A4-6) — grammar-quality FINDINGS + the D1-corpus test
+
+Sub-point 6.3.2 turns the raw corpus-level counts collected in 6.3.1 into **author-facing findings** and
+adds the corpus-level (negative-signal) test. It adds analysis only — S0–S6 recovery behavior and the
+6.3.1 collection hooks are unchanged, and no `.csproj` is touched.
+
+## The findings API (new, in `GrammarDiagnostics.cs`)
+
+Two new public types and the analysis surface on `GrammarDiagnostics`:
+
+```csharp
+public enum GrammarFindingKind { AnchorNeverUsed, AnchorHeavilyUsed, RuleRecoveryPointsIdentical,
+                                 StrictRegionNeverFires, S2AnchorRedundant }
+
+public sealed record GrammarFinding(GrammarFindingKind Kind, string Name, int Count); // + ToString()
+
+// on GrammarDiagnostics:
+public const int DefaultHeavilyUsedThreshold = 10;
+public IReadOnlyList<GrammarFinding> GetFindings(
+    IEnumerable<string> declaredAnchors, IEnumerable<string> declaredStrictRegions,
+    int heavilyUsedThreshold = DefaultHeavilyUsedThreshold);
+public IReadOnlyList<GrammarFinding> GetFindings(Parser parser, int heavilyUsedThreshold = DefaultHeavilyUsedThreshold);
+public static (IReadOnlyCollection<string> Anchors, IReadOnlyCollection<string> StrictRegions) DeclaredSets(Parser parser);
+```
+
+### The 5 finding kinds
+
+| # | Kind | Condition | `Name` / `Count` |
+|---|---|---|---|
+| 1 | `AnchorNeverUsed` | a **declared** anchor with usage 0 over the corpus | anchor name / 0 |
+| 2 | `AnchorHeavilyUsed` | an anchor used **above** the threshold (default 10, tunable) | anchor name / usage count |
+| 3 | `RuleRecoveryPointsIdentical` | a recovered rule with exactly **1** distinct recovery point | rule name / 1 |
+| 4 | `StrictRegionNeverFires` | a **declared** `Recoverable:false` region with 0 firings over the corpus | region name / 0 |
+| 5 | `S2AnchorRedundant` | only **one** distinct S2 anchor is ever used (`UsedAnchors.Count == 1`) | the single anchor / its count |
+
+- **Threshold (finding #2)**: `DefaultHeavilyUsedThreshold = 10` — an anchor used **more than** 10 times
+  over the accumulated corpus is flagged. It is a corpus-size-dependent heuristic (a bigger corpus uses
+  its anchors more) and is exposed as a `GetFindings` parameter so it is overridable per run.
+- Findings #1 and #4 are the **negative** signals and need the declared set as a baseline (a declared
+  name absent from the usage/firing map has count 0). #3 reads the per-rule recovery-point map directly.
+  #5 reads the used-anchor set directly.
+
+### How the declared set is obtained (`DeclaredSets`)
+
+`DeclaredSets(parser)` walks `parser.Rules` (rule name → alternatives) and, for every `RecoveryRule` found
+at any depth (`alt.GetSubRules<RecoveryRule>()`):
+- **Anchors**: each `Ref` in `Options.Ancors` contributes `Ref.RuleName` — the same name
+  `NoteAnchorUse` records, so a declared anchor is "used" iff that name is in the usage map.
+- **Strict regions**: a `RecoveryRule` with `Options.Recoverable == false` contributes the enclosing
+  `parser.Rules` key — the same name `NoteStrictRegionFiring` records (for a top-level prefix the stack
+  frame's `RuleName` is exactly that key).
+
+This is the declared-set baseline the "never used" / "never fires" findings compare against. The
+convenience overload `GetFindings(parser)` calls `DeclaredSets(parser)` then the core `GetFindings`, so
+the author-facing call is `parser.GrammarDiagnostics.GetFindings(parser)`.
+
+## Tests — `Tests/ParserTests/Recovery/GrammarDiagnosticsTests.cs` (+3, now 6)
+
+1. **`Test_GetFindings_NegativeAndRedundancyKinds`** (controlled, no parser) — populates a
+   `GrammarDiagnostics` directly via the `Note*` hooks (`Item` used 15×, `AltItem` declared-but-never-used,
+   `Strict` declared-but-never-firing) and asserts: `AnchorNeverUsed(AltItem)` present and `AnchorNeverUsed(Item)`
+   absent; `AnchorHeavilyUsed(Item, 15)`; `StrictRegionNeverFires(Strict)`; `S2AnchorRedundant(Item)`; and no
+   `RuleRecoveryPointsIdentical` (no recovery points recorded).
+2. **`Test_GetFindings_RecoveryPointsIdentical`** (controlled) — a rule with 1 distinct recovery point
+   (`Item`) is reported `RuleRecoveryPointsIdentical`; a rule with 2 (`Other`) is not. Also guards the
+   `S2AnchorRedundant` gate: with two used anchors the set is **not** redundant.
+3. **`Test_Findings_CorpusSlice_NegativeSignals`** (the corpus test) — builds the quality grammar
+   (`NewQualityCorpusParser`) and runs a **representative slice of the D1 corpus** (the many-small-errors
+   scenario, like D1.1/D1.6): two inputs of `GenManyItemErrors(12)` = `int a1; ### int a2; ### ... int a12;`
+   (12 well-formed `int aN;` items separated by `###` garbage; each `###` forces one S2 resync to the next
+   `Item`), parsed against the **same** `Parser` so `GrammarDiagnostics` accumulates over the corpus.
+
+   The quality grammar declares: `Item` (the used S2 anchor / resync target), `AltItem` (a declared anchor
+   the inputs never use — no `alt` token), `Strict` (a reachable `Recoverable:false` region the inputs never
+   fire — no `strict` token), and `Module` = `RecoveryRule(ZeroOrMany(Stmt), Anchors = [Item, AltItem])`.
+
+   Asserted findings (via `GetFindings(parser)`): **`AnchorNeverUsed(AltItem)`** (the deliberately-declared-
+   but-never-used anchor) and **`StrictRegionNeverFires(Strict)`** (the never-firing strict region) — the two
+   negative signals — plus `AnchorHeavilyUsed(Item)` (used on every resync, over the threshold) and
+   `S2AnchorRedundant(Item)` (the only S2 anchor ever used). Also asserts `AnchorUsage("Item") > 0` (sanity)
+   and that `AnchorNeverUsed(Item)` is absent.
+
+   Note on the slice: the D1 corpus's generators/terminals are `private` to `RecoveryCorpusTests`, so the
+   slice is a self-contained analog (same *shape* — many small errors in a loop, the D1.1/D1.6 scenario)
+   with the declared anchors + strict region added. This keeps the change within `GrammarDiagnostics.cs` +
+   the test file (no edit to `RecoveryCorpusTests.cs`, which is out of scope per the stop-if).
+
+## Test results (one-shot, from `C:\RSDN\CsNitra`)
+
+- `dotnet test Tests/ParserTests` — **Total: 418 · Passed: 416 · Failed: 0 · Skipped: 2** (the 2 skipped
+  are the pre-existing `[Ignore("WIP")]`; +3 vs the 6.3.1 result of 415 is exactly the 3 new findings tests).
+- `dotnet test Tests/CSharpGrammarTests` — **Total: 1527 · Passed: 1524 · Failed: 0 · Skipped: 3** (identical to the 6.3.1 baseline — no regression).
+- `dotnet test Tests/CsPreprocessorTests` — **Total: 128 · Passed: 128 · Failed: 0** (identical — no regression).
+
+## Files changed (6.3.2)
+
+- `ExtensibleParser/Recovery/GrammarDiagnostics.cs` — **modified**: added `GrammarFindingKind`,
+  `GrammarFinding`, `DefaultHeavilyUsedThreshold`, `GetFindings` (×2 overloads), and `DeclaredSets`.
+- `Tests/ParserTests/Recovery/GrammarDiagnosticsTests.cs` — **modified**: added `NewQualityCorpusParser`,
+  `GenManyItemErrors`, and the 3 findings tests.
+- `docs/RecoveryImprovementPlan-progress6.3.md` — this file.
+
+No S0–S6 / recovery behavior change, no 6.3.1 collection change, no `.csproj` change, no stop-if triggered
+(declared set is enumerable from `parser.Rules`; the D1 slice runs in well under a second). **Not committed.**

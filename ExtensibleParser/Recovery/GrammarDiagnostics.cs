@@ -20,6 +20,38 @@
 //  (4) S2 anchor usage     — the set of distinct anchors actually used for S2 resync; "always the
 //                            same one" (redundant) == UsedAnchors.Count == 1.
 // (1) and (4) share the anchor-usage data: the used anchors are exactly the keys of the count map.
+
+// 6.3.2: the kind of a grammar-quality finding. Each maps to one of the four collected signals
+// (plus the "heavily used" refinement of signal 1).
+public enum GrammarFindingKind
+{
+    // Signal 1 (negative): a declared anchor with usage 0 over the corpus.
+    AnchorNeverUsed,
+    // Signal 1 (refinement): an anchor used above the threshold — over-reliance on one resync target.
+    AnchorHeavilyUsed,
+    // Signal 2: a recovered rule whose distinct recovery points are exactly one (always the same point).
+    RuleRecoveryPointsIdentical,
+    // Signal 3 (negative): a declared Recoverable=false region with 0 firings over the corpus.
+    StrictRegionNeverFires,
+    // Signal 4: only one distinct S2 anchor is ever used (the declared anchor set is redundant).
+    S2AnchorRedundant,
+}
+
+// 6.3.2: one author-facing grammar-quality finding. Name is the anchor / rule / region name the
+// finding is about; Count is the relevant number (usage, firing, or distinct recovery points).
+public sealed record GrammarFinding(GrammarFindingKind Kind, string Name, int Count)
+{
+    public override string ToString() => Kind switch
+    {
+        GrammarFindingKind.AnchorNeverUsed => $"anchor '{Name}' never used on the corpus",
+        GrammarFindingKind.AnchorHeavilyUsed => $"anchor '{Name}' heavily used ({Count} uses)",
+        GrammarFindingKind.RuleRecoveryPointsIdentical => $"rule '{Name}' always recovers at the same point",
+        GrammarFindingKind.StrictRegionNeverFires => $"strict region '{Name}' never fires on the corpus",
+        GrammarFindingKind.S2AnchorRedundant => $"only one S2 anchor is ever used ('{Name}', {Count} uses)",
+        _ => $"{Kind}: {Name}",
+    };
+}
+
 public sealed class GrammarDiagnostics
 {
     private readonly Dictionary<string, int> _anchorUsage = new(StringComparer.Ordinal);
@@ -85,6 +117,95 @@ public sealed class GrammarDiagnostics
 
     // (3): every strict region that fired at least once, with its count.
     public IReadOnlyDictionary<string, int> StrictRegionFiringsAll => _strictRegionFirings;
+
+    // ============ 6.3.2: quality analysis — turn the collected corpus data into author-facing findings ============
+
+    // Default threshold for the "anchor heavily used" finding: an anchor used MORE than this many times
+    // over the accumulated corpus is flagged. This is a corpus-size-dependent heuristic (a large corpus
+    // uses its anchors more), so it is exposed as a parameter on GetFindings and overridable per run.
+    public const int DefaultHeavilyUsedThreshold = 10;
+
+    // Produce the grammar-quality findings from the collected corpus data plus the grammar's DECLARED
+    // anchors and strict regions. The declared sets are the baseline for the negative signals: an anchor
+    // that is declared but used 0 times is "never used"; a strict region that is declared but fired 0
+    // times is "never fires". (The declared sets come from DeclaredSets(parser) or are supplied directly.)
+    public IReadOnlyList<GrammarFinding> GetFindings(
+        IEnumerable<string> declaredAnchors,
+        IEnumerable<string> declaredStrictRegions,
+        int heavilyUsedThreshold = DefaultHeavilyUsedThreshold)
+    {
+        var findings = new List<GrammarFinding>();
+
+        // Signal 1 (negative): a declared anchor with usage 0 over the corpus.
+        foreach (var anchor in declaredAnchors.Distinct(StringComparer.Ordinal))
+            if (AnchorUsage(anchor) == 0)
+                findings.Add(new(GrammarFindingKind.AnchorNeverUsed, anchor, 0));
+
+        // Signal 1 (refinement): an anchor used above the threshold (over-reliance on one resync target).
+        foreach (var kvp in _anchorUsage)
+            if (kvp.Value > heavilyUsedThreshold)
+                findings.Add(new(GrammarFindingKind.AnchorHeavilyUsed, kvp.Key, kvp.Value));
+
+        // Signal 2: a recovered rule with exactly one distinct recovery point (always the same point).
+        foreach (var ruleName in _recoveryPoints.Keys)
+            if (_recoveryPoints[ruleName].Count == 1)
+                findings.Add(new(GrammarFindingKind.RuleRecoveryPointsIdentical, ruleName, 1));
+
+        // Signal 3 (negative): a declared Recoverable=false region with 0 firings over the corpus.
+        foreach (var region in declaredStrictRegions.Distinct(StringComparer.Ordinal))
+            if (StrictRegionFirings(region) == 0)
+                findings.Add(new(GrammarFindingKind.StrictRegionNeverFires, region, 0));
+
+        // Signal 4: only one distinct S2 anchor is ever used (the declared anchor set is redundant).
+        if (_anchorUsage.Count == 1)
+        {
+            var single = _anchorUsage.Single();
+            findings.Add(new(GrammarFindingKind.S2AnchorRedundant, single.Key, single.Value));
+        }
+
+        return findings;
+    }
+
+    // Convenience: derive the declared anchor / strict-region sets from the grammar (parser.Rules) and
+    // produce the findings in one call: parser.GrammarDiagnostics.GetFindings(parser).
+    public IReadOnlyList<GrammarFinding> GetFindings(Parser parser, int heavilyUsedThreshold = DefaultHeavilyUsedThreshold)
+    {
+        var (anchors, strictRegions) = DeclaredSets(parser);
+        return GetFindings(anchors, strictRegions, heavilyUsedThreshold);
+    }
+
+    // The DECLARED set of anchors and strict (Recoverable=false) regions in the grammar, extracted from
+    // parser.Rules. An anchor is a Ref in a RecoveryRule.Options.Ancors — its name is Ref.RuleName, the
+    // same name NoteAnchorUse records (so a declared anchor is "used" iff that name is in the usage map).
+    // A strict region is a rule whose (any-depth) RecoveryRule has Options.Recoverable == false — its name
+    // is the parser.Rules key, the same name NoteStrictRegionFiring records (for a top-level prefix, the
+    // frame RuleName is exactly that key). These declared sets are the baseline for the never-used and
+    // never-fires findings (a declared name absent from the usage/firing map has count 0).
+    public static (IReadOnlyCollection<string> Anchors, IReadOnlyCollection<string> StrictRegions) DeclaredSets(Parser parser)
+    {
+        var anchors = new HashSet<string>(StringComparer.Ordinal);
+        var strictRegions = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var kvp in parser.Rules)
+        {
+            var ruleName = kvp.Key;
+            foreach (var alt in kvp.Value)
+            {
+                foreach (var rr in alt.GetSubRules<RecoveryRule>().OfType<RecoveryRule>())
+                {
+                    var options = rr.Options;
+                    if (options is null)
+                        continue;
+                    if (options.Recoverable is false)
+                        strictRegions.Add(ruleName);
+                    if (options.Anchors is not null)
+                        foreach (var a in options.Anchors)
+                            if (a is Ref r)
+                                anchors.Add(r.RuleName);
+                }
+            }
+        }
+        return (anchors, strictRegions);
+    }
 
     // Clear all four signals (e.g. between corpus runs).
     public void Reset()
