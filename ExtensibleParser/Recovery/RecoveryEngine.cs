@@ -633,11 +633,28 @@ public static class RecoveryEngine
         return scratch;
     }
 
+    // R2 (5b.5): расширение стоп-набора First-терминалами суффиксных обязательств Seq-кадров снимка
+    // (A4-7, respectAltIndex: true — Seq активной альтернативы). Парсер возобновляется ПОСЛЕ упавшего
+    // элемента и ждёт суффикс, поэтому S3/S6 могут остановиться на старте ожидаемого продолжения, а не
+    // на слабом терминаторе/EOF. snapshot.Expected (First упавшего элемента) НЕ добавляется — ложные
+    // остановки. EOF/ε не добавляются (в S3 EOF вынесен в hasEof).
+    private static void AddSuffixObligations(FailureSnapshot? snapshot, Parser parser, List<Terminal> stopSet)
+    {
+        if (snapshot is null)
+            return;
+        foreach (var (t, _) in GetSuffixObligationFirsts(snapshot, parser, snapshot.Stack.Length - 1, respectAltIndex: true))
+            if (t is not EofTerminal and not EpsilonTerminal && !stopSet.Contains(t, TerminalComparer.Instance))
+                stopSet.Add(t);
+    }
+
     // S3: пропуск до токен-терминатора (panic mode): скан от e+1 до MaxSkip с учётом
     // вложенности пар (чужая закрывающая внутри региона не останавливает скан).
     private static void GenerateS3(int e, FailureSnapshot snapshot, string input, Parser parser, List<RecoveryCandidate> candidates)
     {
         var terminators = parser.GetTerminators(snapshot.Stack);
+        // R2 (5b.5): стоп-набор = терминаторы ∪ First-терминалы суффиксных обязательств (AddSuffixObligations).
+        var stopSet = new List<Terminal>(terminators);
+        AddSuffixObligations(snapshot, parser, stopSet);
         var maxSkip = GetMaxSkip(snapshot) ?? parser.EffectiveMaxSkip;
         var maxS = Math.Min(e + maxSkip, input.Length);
         var matchCache = new Dictionary<(int Pos, Terminal Terminal), int>(TerminalComparer.KeyComparer);
@@ -658,16 +675,16 @@ public static class RecoveryEngine
         // Тир (равная категория) — по исходному порядку агрегата. Если несколько терминаторов совпадают
         // в одной позиции — выигрывает дешевле; при равной категории — тот, что раньше в агрегате.
         // EOF (совпадает только при s == input.Length) вынесен из сортировки и проверяется отдельно.
-        var ordered = new List<(Terminal T, int Cost, int OrigIdx)>(terminators.Length);
+        var ordered = new List<(Terminal T, int Cost, int OrigIdx)>(stopSet.Count);
         var hasEof = false;
-        for (var i = 0; i < terminators.Length; i++)
+        for (var i = 0; i < stopSet.Count; i++)
         {
-            if (terminators[i] is EofTerminal)
+            if (stopSet[i] is EofTerminal)
             {
                 hasEof = true;
                 continue;
             }
-            ordered.Add((terminators[i], TerminatorCost(terminators[i]), i));
+            ordered.Add((stopSet[i], TerminatorCost(stopSet[i]), i));
         }
         ordered.Sort((a, b) => a.Cost != b.Cost ? a.Cost.CompareTo(b.Cost) : a.OrigIdx.CompareTo(b.OrigIdx));
 
@@ -916,7 +933,7 @@ public static class RecoveryEngine
         var calculator = parser.FollowCalculator;
         var terminators = parser.GetTerminators(snapshot?.Stack ?? Array.Empty<StackFrame>());
 
-        // стоп-набор = anchor-First (First-терминалы якорей из Loop-кадров снимка) ∪ терминаторы.
+        // стоп-набор = anchor-First (First-терминалы якорей из Loop-кадров снимка) ∪ терминаторы ∪ суффиксные обязательства (R2).
         var stopSet = new List<Terminal>();
         if (snapshot is not null)
         {
@@ -934,6 +951,8 @@ public static class RecoveryEngine
         foreach (var t in terminators)
             if (!stopSet.Contains(t, TerminalComparer.Instance))
                 stopSet.Add(t);
+        // R2 (5b.5): + First-терминалы суффиксных обязательств (no-op при snapshot == null).
+        AddSuffixObligations(snapshot, parser, stopSet);
 
         // скан от e+1 до EOF (без MaxSkip): S — следующая позиция > e, где совпадает стоп-набор, либо EOF.
         var s = input.Length;
