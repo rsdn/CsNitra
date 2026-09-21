@@ -269,6 +269,14 @@ public partial class Parser
     private int _maxParseDepthReached;
     public int MaxParseDepthReached => _maxParseDepthReached;
 
+    // 7.1.2/R3: сработал ли depth-guard за последний Parse (любой кадр отклонён GuardFired).
+    // Сбрасывается в SetMaxParseDepth (как _maxParseDepthReached). Позиция ПЕРВОГО срабатывания —
+    // самая глубокая достигнутая точка (начальный спуск бьётся в потолок раньше всех повторных
+    // спусков/ре-парсов, т.к. GuardFired сжимает лимит после каждого срабатывания) — точка, где
+    // guard «оборвал» ветку; на неё позиционируется диагностика InsufficientStack (дно-контракт A5-4).
+    private bool _guardFired;
+    private int _guardFiredPos;
+
     // Хук для тестов/engine: инжекции в Фазе 0 никто не порождает, слой активен с Фазы 1.
     public void AddInjection(Terminal terminal, int pos, Injection injection) => _injections[(pos, terminal)] = injection;
 
@@ -391,6 +399,8 @@ public partial class Parser
     {
         _parseDepth = 0;
         _maxParseDepthReached = 0;
+        _guardFired = false;
+        _guardFiredPos = 0;
         // 7.1.1/R3: the per-char limit is unbounded, but the thread stack budget is a FIXED number of
         // frames — the absolute cap keeps the guard firing before a stack overflow for long inputs
         // (empirics: `Expr := "(" Expr ")" | Digits`, 350 nesting levels = crash under the old limit).
@@ -431,7 +441,7 @@ public partial class Parser
         // and made every retried descent (memo re-descent, recovery re-parse) fire the guard at a
         // shallower true depth than the calibration allows.
         if (_parseDepth >= _maxParseDepth)
-            return GuardFired();
+            return GuardFired(startPos);
         // 7.1.1/R3: preventive remaining-stack check at the hottest recursion point (every rule
         // dispatch goes through ParseAlternative → BeginParseFrame). Roslyn StackGuard pattern:
         // shallow frames skip the check (MaxUncheckedRecursionDepth). The BCL method throws a
@@ -446,7 +456,7 @@ public partial class Parser
             }
             catch (InsufficientExecutionStackException)
             {
-                return GuardFired();
+                return GuardFired(startPos);
             }
         _parseDepth++;
         if (_parseDepth > _maxParseDepthReached)
@@ -465,8 +475,16 @@ public partial class Parser
     // frame is rejected at frame 1, so the recovery loop's fail-safe (e <= ePrev) ends the
     // session fast. The counter stays semantically clean (depth), and MaxParseDepthReached still
     // records the first firing depth exactly (R3 calibration assertion).
-    private bool GuardFired()
+    private bool GuardFired(int firedAtPos)
     {
+        // 7.1.2/R3: record the FIRST firing (deepest reached position) for the InsufficientStack
+        // diagnostic — see the _guardFired/_guardFiredPos field comment for why the first firing is
+        // the farthest point (GuardFired shrinks the limit, so later firings are shallower).
+        if (!_guardFired)
+        {
+            _guardFired = true;
+            _guardFiredPos = firedAtPos;
+        }
         if (_maxParseDepth > 0)
             _maxParseDepth--;
         return true;
@@ -819,6 +837,14 @@ public partial class Parser
             ? new List<RecoveryDiagnostic>()
             : DeriveRecoveryDiagnostics(node).ToList();
         derived.AddRange(_recoveryDiagnostics.Where(d => d.Kind == RecoveryKind.Unrecovered));
+        // 7.1.2/R3: guard-fired result = A5-4 bottom contract + ONE InsufficientStack diagnostic.
+        // The bottom contract (Success<T> with a tree covering the input) already holds via
+        // recovery-to-EOF/S6; here we add the result-level marker (like Unrecovered — not a tree
+        // node, so it is appended, not tree-derived) at the point where the depth guard first
+        // rejected a frame (the farthest reached position). Emitted once per Parse (this is the
+        // single finalization point reached on every FinishRecovery exit).
+        if (_guardFired)
+            derived.Add(new RecoveryDiagnostic(_guardFiredPos, _guardFiredPos, RecoveryKind.InsufficientStack, $"insufficient execution stack (depth guard fired at pos {_guardFiredPos})", null, null));
         _finalRecoveryDiagnostics = derived;
     }
 

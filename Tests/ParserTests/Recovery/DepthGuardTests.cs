@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
@@ -46,8 +46,16 @@ public sealed class DepthGuardTests
 
         Assert.AreEqual(RecoveryProfile.MaxParseDepthCap, parser.MaxParseDepthReached,
             "depth-счётчик должен остановиться ровно на откалиброванном потолке (guard отклоняет следующий кадр)");
-        Assert.IsTrue(parser.RecoveryDiagnostics.Count > 0,
-            $"guard сработал → результат recovered, а не чистый успех (RecoveryDiagnostics={parser.RecoveryDiagnostics.Count}, kind={result.ResultKind})");
+        // 7.1.2/R3: guard-fired result = A5-4 bottom contract — Success<T> c деревом, покрывающим весь
+        // ввод (recovery-to-EOF/S6), а не bare Failure; ErrorInfo = null (recovered).
+        Assert.IsTrue(result.TryGetSuccess(out var node, out var end) && end == input.Length
+            && node.StartPos == 0 && node.EndPos == input.Length,
+            $"guard сработал → дно-контракт A5-4: Success@EOF с деревом на весь ввод (не bare Failure), got {result.ResultKind}@{result.NewPos}");
+        Assert.IsNull(parser.ErrorInfo, "recovered (дно-контракт) → ErrorInfo = null");
+        // 7.1.2/R3: ровно одна диагностика InsufficientStack в публичном списке (на точке срабатывания guard'а).
+        var insufficient = parser.RecoveryDiagnostics.Where(d => d.Kind == RecoveryKind.InsufficientStack).ToList();
+        Assert.AreEqual(1, insufficient.Count,
+            $"guard сработал → ровно одна диагностика InsufficientStack (RecoveryDiagnostics={parser.RecoveryDiagnostics.Count})");
     }
 
     // ============ Контроль: легитимный parse под потолком проходит чисто (guard и recovery не мешают) ============
@@ -62,6 +70,9 @@ public sealed class DepthGuardTests
         Assert.IsTrue(result.TryGetSuccess(out _, out var end) && end == input.Length,
             $"Expected Success@EOF, got {result.ResultKind}@{result.NewPos}");
         Assert.AreEqual(0, parser.RecoveryDiagnostics.Count);
+        // 7.1.2/R3: guard не сработал (глубина под потолком) → диагностика InsufficientStack отсутствует.
+        Assert.IsFalse(parser.RecoveryDiagnostics.Any(d => d.Kind == RecoveryKind.InsufficientStack),
+            "guard не сработал (под потолком) → диагностика InsufficientStack отсутствует");
         Assert.IsNull(parser.ErrorInfo);
         Assert.AreEqual(102, parser.MaxParseDepthReached, "2 кадра на уровень вложенности + 2");
     }

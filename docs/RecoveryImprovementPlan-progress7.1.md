@@ -76,3 +76,62 @@ shrinks the effective limit by one (`_maxParseDepth--`, floored at 0).
   - ParserTests: Passed 418, Failed 0, Skipped 2 (748 ms)
   - CsPreprocessorTests: Passed 128, Failed 0 (5 s)
 - No commit; working tree left with the fix in place.
+
+# 7.1.2 (R3) — guard-fired result = A5-4 bottom contract + `InsufficientStack` diagnostic
+
+## Goal
+
+7.1.1 made a ~350-level nested input stop crashing (the depth guard fires first). This sub-point
+makes the guard-fired parse produce the A5-4 bottom contract (`Success<T>` with a tree covering the
+whole input) **plus** an `InsufficientStack` diagnostic, instead of just a bare `Failure`.
+
+## Findings (verified by instrumentation before coding)
+
+- The bottom contract **already holds**: for the 350-level `Expr := "(" Expr ")" | Digits` input the
+  guard fires (`MaxParseDepthReached == 400`), recovery-to-EOF (S6) drives the result to
+  `Success@EOF` with a root node spanning `[0..input.Length]`, and `ErrorInfo == null`. No recovery
+  behavior change was needed — only the `InsufficientStack` diagnostic was missing.
+- The 3.0a repro (trailing garbage at EOF, budget 11) now ends at `Success@EOF` with
+  `MaxParseDepthReached == 12` (well under the cap) — the depth guard does **not** fire there, so it
+  carries no `InsufficientStack` (correct: the diagnostic is emitted only when the guard fired).
+
+## Changes
+
+**`ExtensibleParser/Recovery/RecoveryDiagnostic.cs`** — `InsufficientStack` added to `RecoveryKind`
+(it did **not** exist): `enum RecoveryKind { Inserted, Skipped, Unrecovered, Extraneous, InsufficientStack }`.
+No exhaustive switch on `RecoveryKind` exists (verified), so adding a member is non-breaking.
+
+**`ExtensibleParser/Parser.Recovery.cs`** —
+- Guard-fired **signal**: fields `_guardFired` (bool) + `_guardFiredPos` (int), reset in
+  `SetMaxParseDepth` (per-`Parse`, alongside `_maxParseDepthReached`). A **flag** (not
+  `MaxParseDepthReached >= cap`) is used because `GuardFired()` shrinks `_maxParseDepth` on every
+  firing, so the effective cap is no longer comparable at finalization; and for short inputs the
+  effective cap (`128 + 4·len`) is below the global `MaxParseDepthCap`, so `>= cap` would miss
+  legitimate firings.
+- `GuardFired(int firedAtPos)` now records the **first** firing's position (the deepest reached point
+  — the initial descent hits the cap before any backtrack/re-parse re-fires, since the limit shrinks
+  after each firing). Both call sites in `BeginParseFrame` (depth cap + `EnsureSufficientExecutionStack`)
+  pass `startPos`.
+- **Diagnostic emission** in `FinalizeRecoveryDiagnostics` (the single per-`Parse` finalization point
+  reached on every `FinishRecovery` exit): after the tree-derived diagnostics and the `Unrecovered`
+  markers, if `_guardFired` append **one** result-level `InsufficientStack` diagnostic at
+  `[_guardFiredPos.._guardFiredPos]`. It is a result-level marker (like `Unrecovered`, not a tree node —
+  A4-2), so it is appended, not tree-derived, and not attached via the side-table.
+
+## Test
+
+`Tests/ParserTests/Recovery/DepthGuardTests.cs` (extended the two existing methods, no new methods):
+- `Test_DeepNesting_GuardFires_NoCrash` (350 levels): asserts `Success@EOF` with the root node spanning
+  `[0..input.Length]` (bottom contract, not a bare `Failure`), `ErrorInfo == null`, and **exactly one**
+  `InsufficientStack` in the public `RecoveryDiagnostics`.
+- `Test_ShallowNesting_CleanParse` (50 levels, control): asserts `Success@EOF`, zero diagnostics, and
+  explicitly **no** `InsufficientStack` (the guard did not fire).
+
+## Results
+
+- `ParserTests`: Passed 418, Failed 0, Skipped 2.
+- `CSharpGrammarTests`: Passed 1524, Failed 0, Skipped 3 (no regression vs the 7.1.1 baseline).
+- `CsPreprocessorTests`: Passed 128, Failed 0.
+- 350-level end-state: `Success@EOF`, root `Skipped` node `[0..701]`, public diags = `Skipped[0..351]`,
+  `Unrecovered[198]`, `Unrecovered[351]`, `InsufficientStack[200]`.
+- No commit; working tree left with the change in place.

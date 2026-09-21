@@ -1,6 +1,6 @@
 namespace ExtensibleParser.Recovery;
 
-public enum RecoveryKind { Inserted, Skipped, Unrecovered, Extraneous }
+public enum RecoveryKind { Inserted, Skipped, Unrecovered, Extraneous, InsufficientStack }
 
 public sealed record RecoveryDiagnostic(
     int StartPos,
