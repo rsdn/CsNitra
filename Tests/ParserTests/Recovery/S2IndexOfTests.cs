@@ -74,18 +74,20 @@ public sealed class S2IndexOfTests
         return (parser, Describe(parser.RecoveryDiagnostics));
     }
 
-    // Нормализованная диагностика: (Kind, длина, сообщение без абсолютных позиций). Skip-диагностики
-    // ("skip to resync point", "skip to terminator", "bottom skip") начинаются в e (не сдвигается) и
-    // заканчиваются в позиции после e (сдвинута на delta) — длина больше на delta, вычитаем.
-    private static (RecoveryKind Kind, int Len, string Msg)[] Normalize(IReadOnlyList<RecoveryDiagnostic> diags, int shift)
+    // Нормализованная диагностика: (Kind, длина, сообщение без абсолютных позиций). A5-3 (7.2.1):
+    // skip-диагностики пролегают первое СЛОВО региона (не весь регион) — длина слова не меняется от
+    // паддинга, поэтому сдвиг НЕ вычитается.
+    private static (RecoveryKind Kind, int Len, string Msg)[] Normalize(IReadOnlyList<RecoveryDiagnostic> diags)
         => diags
-            .Select(d =>
-            {
-                var len = d.EndPos - d.StartPos;
-                if (d.Kind == RecoveryKind.Skipped)
-                    len -= shift;
-                return (d.Kind, len, System.Text.RegularExpressions.Regex.Replace(d.Message, @"\d+", "N"));
-            })
+            .Select(d => (d.Kind, d.EndPos - d.StartPos, System.Text.RegularExpressions.Regex.Replace(d.Message, @"\d+", "N")))
+            .ToArray();
+
+    // A5-3 (7.2.1): skip-диагностика больше не заканчивается в resync-позиции (её пролёт — первое слово
+    // региона) — resync-позиция читается из сообщения ("skip to resync point {pos}").
+    private static int[] ResyncPositions(IReadOnlyList<RecoveryDiagnostic> diags)
+        => diags
+            .Where(d => d.Message.StartsWith("skip to resync point"))
+            .Select(d => int.Parse(d.Message["skip to resync point ".Length..]))
             .ToArray();
 
     // Указанный тест: полный Stmt после мусора — e = первый `#`, Speculative вызывается на `x` и succeeds,
@@ -108,13 +110,13 @@ public sealed class S2IndexOfTests
 
         // (b) тот же исход: одинаковая нормализованная диагностика...
         CollectionAssert.AreEqual(
-            Normalize(p1.RecoveryDiagnostics, 0),
-            Normalize(p2.RecoveryDiagnostics, delta),
+            Normalize(p1.RecoveryDiagnostics),
+            Normalize(p2.RecoveryDiagnostics),
             $"recovery outcome differs:\nno-padding: {d1}\npadded:     {d2}");
 
         // ...и resync-позиции (T1 "skip to resync point") сдвинуты ровно на delta.
-        var resync1 = p1.RecoveryDiagnostics.Where(d => d.Message.StartsWith("skip to resync point")).Select(d => d.EndPos).ToArray();
-        var resync2 = p2.RecoveryDiagnostics.Where(d => d.Message.StartsWith("skip to resync point")).Select(d => d.EndPos).ToArray();
+        var resync1 = ResyncPositions(p1.RecoveryDiagnostics);
+        var resync2 = ResyncPositions(p2.RecoveryDiagnostics);
         Assert.IsTrue(resync1.Length > 0, $"no S2 T1 resync diagnostics:\nno-padding: {d1}\npadded:     {d2}");
         CollectionAssert.AreEqual(resync1.Select(x => x + delta).ToArray(), resync2,
             $"resync positions not shifted by delta:\nno-padding: {d1}\npadded:     {d2}");
@@ -153,13 +155,13 @@ public sealed class S2IndexOfTests
 
         // (b) тот же исход: одинаковая нормализованная диагностика...
         CollectionAssert.AreEqual(
-            Normalize(p1.RecoveryDiagnostics, 0),
-            Normalize(p2.RecoveryDiagnostics, delta),
+            Normalize(p1.RecoveryDiagnostics),
+            Normalize(p2.RecoveryDiagnostics),
             $"recovery outcome differs:\nno-padding: {d1}\npadded:     {d2}");
 
         // ...и resync-позиции (T1 "skip to resync point") сдвинуты ровно на delta.
-        var resync1 = p1.RecoveryDiagnostics.Where(d => d.Message.StartsWith("skip to resync point")).Select(d => d.EndPos).ToArray();
-        var resync2 = p2.RecoveryDiagnostics.Where(d => d.Message.StartsWith("skip to resync point")).Select(d => d.EndPos).ToArray();
+        var resync1 = ResyncPositions(p1.RecoveryDiagnostics);
+        var resync2 = ResyncPositions(p2.RecoveryDiagnostics);
         Assert.IsTrue(resync1.Length > 0, $"no S2 T1 resync diagnostics:\nno-padding: {d1}\npadded:     {d2}");
         CollectionAssert.AreEqual(resync1.Select(x => x + delta).ToArray(), resync2,
             $"resync positions not shifted by delta:\nno-padding: {d1}\npadded:     {d2}");
@@ -186,8 +188,8 @@ public sealed class S2IndexOfTests
             $"ident input: S2ScanPositions={p2.S2ScanPositions} (S2 scan not triggered), diags: {d2}");
 
         // mixed-First → jump отключён → T1 найден в обоих случаях (пошаговый проход).
-        var resync1 = p1.RecoveryDiagnostics.Where(d => d.Message.StartsWith("skip to resync point")).Select(d => d.EndPos).ToArray();
-        var resync2 = p2.RecoveryDiagnostics.Where(d => d.Message.StartsWith("skip to resync point")).Select(d => d.EndPos).ToArray();
+        var resync1 = ResyncPositions(p1.RecoveryDiagnostics);
+        var resync2 = ResyncPositions(p2.RecoveryDiagnostics);
         Assert.IsTrue(resync1.Length > 0, $"no S2 T1 resync for `let` input, diags: {d1}");
         Assert.IsTrue(resync2.Length > 0,
             $"no S2 T1 resync for `foo` (Ident) input — jump active and lost the regex match, diags: {d2}");

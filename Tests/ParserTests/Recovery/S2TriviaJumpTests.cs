@@ -48,25 +48,55 @@ public sealed class S2TriviaJumpTests
     private static string Describe(IReadOnlyList<RecoveryDiagnostic> diags)
         => string.Join("; ", diags.Select(d => $"{d.Kind} [{d.StartPos}..{d.EndPos}) {d.Message}"));
 
-    private static (Parser Parser, string Diags) Parse(string input)
+    private static (Parser Parser, ISyntaxNode? Root, string Diags) Parse(string input)
     {
         var parser = NewParser();
-        parser.Parse(input, "Module", out _);
-        return (parser, Describe(parser.RecoveryDiagnostics));
+        var result = parser.Parse(input, "Module", out _);
+        result.TryGetSuccess(out var node, out _);
+        return (parser, node, Describe(parser.RecoveryDiagnostics));
     }
 
-    // Нормализованная диагностика: (Kind, длина, сообщение без абсолютных позиций). S6 ("bottom skip")
-    // поглощает весь вход, поэтому его длина больше на delta (величину паддинга) — вычитаем.
-    private static (RecoveryKind Kind, int Len, string Msg)[] Normalize(IReadOnlyList<RecoveryDiagnostic> diags, int shift)
+    // Нормализованная диагностика: (Kind, длина, сообщение без абсолютных позиций). A5-3 (7.2.1):
+    // skip-диагностики пролегают первое СЛОВО региона (не весь регион) — длина слова не меняется от
+    // паддинга, поэтому сдвиг НЕ вычитается.
+    private static (RecoveryKind Kind, int Len, string Msg)[] Normalize(IReadOnlyList<RecoveryDiagnostic> diags)
         => diags
-            .Select(d =>
-            {
-                var len = d.EndPos - d.StartPos;
-                if (d.Message.StartsWith("bottom skip"))
-                    len -= shift;
-                return (d.Kind, len, System.Text.RegularExpressions.Regex.Replace(d.Message, @"\d+", "N"));
-            })
+            .Select(d => (d.Kind, d.EndPos - d.StartPos, System.Text.RegularExpressions.Regex.Replace(d.Message, @"\d+", "N")))
             .ToArray();
+
+    // A5-3 (7.2.1): skip-диагностика больше не заканчивается в resync-позиции (её пролёт — первое слово
+    // региона) — resync-позиция (конец региона) читается из абсорбер-узла финального дерева
+    // (дерево — единый источник правды для региона [E..S)).
+    private static int[] AbsorberEnds(ISyntaxNode? root)
+    {
+        var ends = new List<int>();
+        if (root is { } r)
+            Collect(r);
+        return [.. ends.OrderBy(x => x)];
+
+        void Collect(ISyntaxNode n)
+        {
+            switch (n)
+            {
+                case TerminalNode { IsAbsorber: true } t:
+                    ends.Add(t.EndPos);
+                    break;
+                case SeqNode s:
+                    foreach (var el in s.RawElements)
+                        Collect(el);
+                    break;
+                case ListNode l:
+                    foreach (var el in l.RawElements)
+                        Collect(el);
+                    foreach (var d in l.Delimiters)
+                        Collect(d);
+                    break;
+                case SomeNode so:
+                    Collect(so.Value);
+                    break;
+            }
+        }
+    }
 
     // (a) S2-скан срабатывает (доходит до Speculative на `b`); (b) trivia-паддинг НЕ меняет
     // результат восстановления (структура диагностики та же, resync-позиции сдвинуты на величину
@@ -78,8 +108,8 @@ public sealed class S2TriviaJumpTests
         const string padded = "{ a: 1+   ### b ; }";
         const int delta = 2; // 3 пробела вместо 1
 
-        var (p1, d1) = Parse(noPadding);
-        var (p2, d2) = Parse(padded);
+        var (p1, root1, d1) = Parse(noPadding);
+        var (p2, root2, d2) = Parse(padded);
 
         Assert.IsTrue(p1.S2ScanPositions > 0,
             $"no-padding: S2ScanPositions={p1.S2ScanPositions} (S2 scan not triggered), diags: {d1}");
@@ -88,13 +118,13 @@ public sealed class S2TriviaJumpTests
 
         // (b) тот же исход: одинаковая нормализованная диагностика...
         CollectionAssert.AreEqual(
-            Normalize(p1.RecoveryDiagnostics, 0),
-            Normalize(p2.RecoveryDiagnostics, delta),
+            Normalize(p1.RecoveryDiagnostics),
+            Normalize(p2.RecoveryDiagnostics),
             $"recovery outcome differs:\nno-padding: {d1}\npadded:     {d2}");
 
-        // ...и resync-позиции (S3 "skip to terminator") сдвинуты ровно на delta.
-        var resync1 = p1.RecoveryDiagnostics.Where(d => d.Kind == RecoveryKind.Skipped && d.Message.StartsWith("skip to terminator")).Select(d => d.EndPos).ToArray();
-        var resync2 = p2.RecoveryDiagnostics.Where(d => d.Kind == RecoveryKind.Skipped && d.Message.StartsWith("skip to terminator")).Select(d => d.EndPos).ToArray();
+        // ...и resync-позиции (конец региона S3 "skip to terminator") сдвинуты ровно на delta.
+        var resync1 = AbsorberEnds(root1);
+        var resync2 = AbsorberEnds(root2);
         Assert.IsTrue(resync1.Length > 0, $"no S3 resync diagnostics:\nno-padding: {d1}\npadded:     {d2}");
         CollectionAssert.AreEqual(resync1.Select(x => x + delta).ToArray(), resync2,
             $"resync positions not shifted by delta:\nno-padding: {d1}\npadded:     {d2}");
@@ -115,8 +145,8 @@ public sealed class S2TriviaJumpTests
         const string padded = "{ a: 1+ ###    b ; }"; // 4 пробела (величина паддинга 3) между ### и b
         const int delta = 3;
 
-        var (p1, d1) = Parse(noPadding);
-        var (p2, d2) = Parse(padded);
+        var (p1, root1, d1) = Parse(noPadding);
+        var (p2, root2, d2) = Parse(padded);
 
         Assert.IsTrue(p1.S2ScanPositions > 0,
             $"no-padding: S2ScanPositions={p1.S2ScanPositions} (S2 scan not triggered), diags: {d1}");
@@ -127,8 +157,8 @@ public sealed class S2TriviaJumpTests
         var term1 = p1.RecoveryDiagnostics.Where(d => d.Message.StartsWith("skip to terminator")).Select(d => d.Message).ToArray();
         var term2 = p2.RecoveryDiagnostics.Where(d => d.Message.StartsWith("skip to terminator")).Select(d => d.Message).ToArray();
         CollectionAssert.AreEqual(term1, term2, $"terminator sequence differs:\nno-padding: {d1}\npadded:     {d2}");
-        var resync1 = p1.RecoveryDiagnostics.Where(d => d.Message.StartsWith("skip to terminator")).Select(d => d.EndPos).ToArray();
-        var resync2 = p2.RecoveryDiagnostics.Where(d => d.Message.StartsWith("skip to terminator")).Select(d => d.EndPos).ToArray();
+        var resync1 = AbsorberEnds(root1);
+        var resync2 = AbsorberEnds(root2);
         CollectionAssert.AreEqual(resync1.Select(x => x + delta).ToArray(), resync2,
             $"resync positions not shifted by delta:\nno-padding: {d1}\npadded:     {d2}");
 

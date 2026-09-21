@@ -100,8 +100,10 @@ public sealed class AnchorResyncTests
         Assert.AreEqual(22, c.Pos);
         Assert.AreEqual(3, c.Cost);
         Assert.AreEqual(RecoveryKind.Skipped, c.Diagnostics[0].Kind);
+        // A5-3 (7.2.1): the diagnostic spans the first word of the region [18..22) ("### ") — "###" [18..21),
+        // not the whole region.
         Assert.AreEqual(e, c.Diagnostics[0].StartPos);
-        Assert.AreEqual(22, c.Diagnostics[0].EndPos);
+        Assert.AreEqual(21, c.Diagnostics[0].EndPos);
 
         c.Apply(parser);
         Assert.IsTrue(parser.Injections.TryGetValue((e, new Literal(";")), out var absorber));

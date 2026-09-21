@@ -46,11 +46,46 @@ public sealed class S3TriviaJumpTests
     private static string Describe(IReadOnlyList<RecoveryDiagnostic> diags)
         => string.Join("; ", diags.Select(d => $"{d.Kind} [{d.StartPos}..{d.EndPos}) {d.Message}"));
 
-    private static (Parser Parser, string Diags) Parse(string input)
+    private static (Parser Parser, ISyntaxNode? Root, string Diags) Parse(string input)
     {
         var parser = NewParser();
-        parser.Parse(input, "Module", out _);
-        return (parser, Describe(parser.RecoveryDiagnostics));
+        var result = parser.Parse(input, "Module", out _);
+        result.TryGetSuccess(out var node, out _);
+        return (parser, node, Describe(parser.RecoveryDiagnostics));
+    }
+
+    // A5-3 (7.2.1): skip-диагностика больше не заканчивается в resync-позиции (её пролёт — первое слово
+    // региона) — resync-позиция (конец региона) читается из абсорбер-узла финального дерева
+    // (дерево — единый источник правды для региона [E..S)).
+    private static int[] AbsorberEnds(ISyntaxNode? root)
+    {
+        var ends = new List<int>();
+        if (root is { } r)
+            Collect(r);
+        return [.. ends.OrderBy(x => x)];
+
+        void Collect(ISyntaxNode n)
+        {
+            switch (n)
+            {
+                case TerminalNode { IsAbsorber: true } t:
+                    ends.Add(t.EndPos);
+                    break;
+                case SeqNode s:
+                    foreach (var el in s.RawElements)
+                        Collect(el);
+                    break;
+                case ListNode l:
+                    foreach (var el in l.RawElements)
+                        Collect(el);
+                    foreach (var d in l.Delimiters)
+                        Collect(d);
+                    break;
+                case SomeNode so:
+                    Collect(so.Value);
+                    break;
+            }
+        }
     }
 
     // Nормализованная S3-диагностика: (Kind, сообщение без абсолютных позиций). Сравниваем только
@@ -70,8 +105,8 @@ public sealed class S3TriviaJumpTests
         const string noPadding = "{ a: 1+ ### ; }";
         const string padded = "{ a: 1+ ###    ; }"; // 3 пробела МЕЖДУ ### и ; (строго после e)
 
-        var (p1, d1) = Parse(noPadding);
-        var (p2, d2) = Parse(padded);
+        var (p1, _, d1) = Parse(noPadding);
+        var (p2, _, d2) = Parse(padded);
 
         Assert.IsTrue(p1.S3ScanPositions > 0,
             $"no-padding: S3ScanPositions={p1.S3ScanPositions} (S3 scan not triggered), diags: {d1}");
@@ -102,24 +137,18 @@ public sealed class S3TriviaJumpTests
         const string withComment = "{ a: 1+ ### /* } */ ; }";
         var delta = withComment.Length - noComment.Length; // длина вставленного " /* } */"
 
-        var (p1, d1) = Parse(noComment);
-        var (p2, d2) = Parse(withComment);
+        var (p1, root1, d1) = Parse(noComment);
+        var (p2, root2, d2) = Parse(withComment);
 
         Assert.IsTrue(p1.S3ScanPositions > 0,
             $"no-comment: S3ScanPositions={p1.S3ScanPositions} (S3 scan not triggered), diags: {d1}");
         Assert.IsTrue(p2.S3ScanPositions > 0,
             $"with-comment: S3ScanPositions={p2.S3ScanPositions} (S3 scan not triggered), diags: {d2}");
 
-        // Resync-позиции (S3 "skip to terminator" EndPos) совпадают с сдвигом на delta: S3 не
-        // остановился на } внутри комментария.
-        var resync1 = p1.RecoveryDiagnostics
-            .Where(d => d.Kind == RecoveryKind.Skipped && d.Message.StartsWith("skip to terminator"))
-            .Select(d => d.EndPos)
-            .ToArray();
-        var resync2 = p2.RecoveryDiagnostics
-            .Where(d => d.Kind == RecoveryKind.Skipped && d.Message.StartsWith("skip to terminator"))
-            .Select(d => d.EndPos)
-            .ToArray();
+        // Resync-позиции (конец региона S3 "skip to terminator" — из абсорбер-узла дерева, A5-3)
+        // совпадают с сдвигом на delta: S3 не остановился на } внутри комментария.
+        var resync1 = AbsorberEnds(root1);
+        var resync2 = AbsorberEnds(root2);
         Assert.IsTrue(resync1.Length > 0, $"no S3 resync diagnostics:\nno-comment: {d1}\nwith-comment: {d2}");
         Assert.IsTrue(resync1.Length == resync2.Length,
             $"S3 resync count differs:\nno-comment: {d1}\nwith-comment: {d2}");

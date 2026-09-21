@@ -228,8 +228,10 @@ public sealed class CandidateGenerationTests
         Assert.AreEqual(12, c.Pos);
         Assert.AreEqual(4, c.Cost);
         Assert.AreEqual(RecoveryKind.Skipped, c.Diagnostics[0].Kind);
+        // A5-3 (7.2.1): the diagnostic spans the first word of the region [4..12) ("x { y } ") — "x" [4..5),
+        // not the whole region.
         Assert.AreEqual(e, c.Diagnostics[0].StartPos);
-        Assert.AreEqual(12, c.Diagnostics[0].EndPos);
+        Assert.AreEqual(5, c.Diagnostics[0].EndPos);
 
         c.Apply(parser);
         Assert.IsTrue(parser.Injections.TryGetValue((e, new Literal("i")), out var inj));

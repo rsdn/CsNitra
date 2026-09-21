@@ -269,7 +269,10 @@ public static class RecoveryEngine
                     var t = failedElement as Terminal ?? snapshot.FailedTerminal;
                     insertions.Add((e, t, Injection.Absorb(t.Kind, resyncPos - e)));
                 }
-                diagnostics.Add(new RecoveryDiagnostic(e, resyncPos, RecoveryKind.Skipped, $"skip to resync point {resyncPos}", null, top.RuleName));
+                // A5-3 (7.2.1/R5): the diagnostic spans the first word of the skipped region [e..resyncPos),
+                // not the whole region (IDE squiggle quality) — the absorber node keeps the full span.
+                var (skipStart, skipEnd) = FirstWordSpan(input, parser.Trivia, e, resyncPos);
+                diagnostics.Add(new RecoveryDiagnostic(skipStart, skipEnd, RecoveryKind.Skipped, $"skip to resync point {resyncPos}", null, top.RuleName));
             }
             else
             {
@@ -675,7 +678,10 @@ public static class RecoveryEngine
             ? FindSeq(parser, top.RuleName, topIdx)?.Elements[topIdx]
             : null;
         var cost = CostCalculator.SkipCost(input, e, foundS);
-        var diagnostic = new RecoveryDiagnostic(e, foundS, RecoveryKind.Skipped, $"skip to terminator {foundT.Kind}", foundT, top.RuleName);
+        // A5-3 (7.2.1/R5): the diagnostic spans the first word of the skipped region [e..foundS),
+        // not the whole region (IDE squiggle quality) — the absorber node keeps the full span.
+        var (skipStart, skipEnd) = FirstWordSpan(input, parser.Trivia, e, foundS);
+        var diagnostic = new RecoveryDiagnostic(skipStart, skipEnd, RecoveryKind.Skipped, $"skip to terminator {foundT.Kind}", foundT, top.RuleName);
 
         // 3.0c: падение в НАЧАЛЕ итерации цикла (topIdx == 0), чьё правило — элемент ближайшего цикла,
         // И терминатор — истинный EOF (foundS == input.Length, хвостовой мусор) → абсорбер на уровне
@@ -836,6 +842,9 @@ public static class RecoveryEngine
         var injection = Injection.Absorb("Trailing", length);
         var key = (e, t);
         var hadOld = parser.Injections.TryGetValue(key, out var old);
+        // A5-3 (7.2.1/R5): the diagnostic spans the first word of the skipped region [e..EOF),
+        // not the whole region (IDE squiggle quality) — the absorber node keeps the full span.
+        var (skipStart, skipEnd) = FirstWordSpan(input, parser.Trivia, e, input.Length);
 
         candidates.Add(new RecoveryCandidate(
             Id: $"S5:{ruleName}:Trailing",
@@ -846,7 +855,7 @@ public static class RecoveryEngine
             TerminalKind: "Trailing",
             Apply: p => p.ApplyInjection(t, e, injection),
             Rollback: p => p.RollbackInjection(t, e, hadOld ? old : null),
-            Diagnostics: [new RecoveryDiagnostic(e, input.Length, RecoveryKind.Skipped, $"trailing garbage: {length} chars", t, ruleName)]));
+            Diagnostics: [new RecoveryDiagnostic(skipStart, skipEnd, RecoveryKind.Skipped, $"trailing garbage: {length} chars", t, ruleName)]));
     }
 
     // S6: гарантированное дно (A1/A5-7): абсорбер [e..S), где S — следующая позиция > e, на которой
@@ -910,7 +919,10 @@ public static class RecoveryEngine
         // Абсорбер покрывает текущий регион начиная с currentStartPos (не от нуля файла):
         // start = Math.Max(parseEnd, currentStartPos). В Failure-случае (parseEnd = 0) — это currentStartPos.
         var start = Math.Max(parseEnd, currentStartPos);
-        var diagnostic = new RecoveryDiagnostic(start, s, RecoveryKind.Skipped, $"bottom skip to {s}", foundT, startRule);
+        // A5-3 (7.2.1/R5): the diagnostic spans the first word of the skipped region [start..s),
+        // not the whole region (IDE squiggle quality) — the absorber node keeps the full span.
+        var (skipStart, skipEnd) = FirstWordSpan(input, parser.Trivia, start, s);
+        var diagnostic = new RecoveryDiagnostic(skipStart, skipEnd, RecoveryKind.Skipped, $"bottom skip to {s}", foundT, startRule);
 
         // Гарантированное дно: memo-патч start-правила на currentStartPos — Success@S,
         // обёртывающий реальный префикс + абсорбер [start..S). Ре-парс читает этот memo на первом
@@ -1027,6 +1039,26 @@ public static class RecoveryEngine
     private static string Preview(string input, int pos, int len = 5) => pos >= input.Length
         ? "«»"
         : $"«{input.AsSpan(pos, Math.Min(input.Length - pos, len)).Str()}»";
+
+    // A5-3 (7.2.1/R5): the diagnostic span of an absorber region [start..end) — the first non-trivia
+    // "word" inside the region (IDE squiggle quality: a short label on the first "guilty" word, not
+    // the whole skipped region — the absorber node keeps the full span). Reuses the S1b first-non-trivia
+    // mechanism (Trivia.TryMatch, GenerateS1b): the word starts after the leading trivia run and ends
+    // at the next trivia start. Fallback: an empty/all-trivia region has no word — the ORIGINAL region
+    // span is kept (it matches the absorber node exactly; a zero-width span would be misclassified as
+    // an insertion by the session-end shape match, MatchesRecoveryNode).
+    private static (int Start, int End) FirstWordSpan(string input, Terminal trivia, int start, int end)
+    {
+        if (start >= end)
+            return (start, end);
+        var wordStart = start + trivia.TryMatch(input, start);
+        if (wordStart >= end)
+            return (start, end);
+        var wordEnd = wordStart;
+        while (wordEnd < end && trivia.TryMatch(input, wordEnd) == 0)
+            wordEnd++;
+        return (wordStart, wordEnd);
+    }
 
     // Категория стоимости терминала для S3-скана (2.4): дешёвые первыми.
     // 0 — single-char Literal (StartsWith на 1 символ), 1 — остальные Literal, 2 — regex/остальные (DFA-match).

@@ -72,14 +72,36 @@ public static class DiagnosticDerivation
     {
         if (terminal.IsAbsorber)
         {
-            // Диагностика несёт текст узла (пропущенный регион) прямо в Message — единый источник правды.
-            var text = input.Substring(terminal.StartPos, terminal.EndPos - terminal.StartPos);
-            diagnostics.Add(new RecoveryDiagnostic(terminal.StartPos, terminal.EndPos, RecoveryKind.Skipped, text, null, null));
+            // A5-3 (7.2.1/R5): the diagnostic spans the first non-whitespace word of the skipped region
+            // (not the whole region — same span semantics as the engine's Skipped diagnostics). The pure
+            // derivation has no Trivia terminal, so "word" is a non-WHITESPACE run (the engine uses the
+            // grammar's Trivia, which also covers comments). The diagnostic carries the word text in
+            // Message — single source of truth. Fallback: an all-whitespace region keeps the full span.
+            var (start, end) = FirstWordSpan(input, terminal.StartPos, terminal.EndPos);
+            var text = input.Substring(start, end - start);
+            diagnostics.Add(new RecoveryDiagnostic(start, end, RecoveryKind.Skipped, text, null, null));
         }
         else if (terminal.EndPos == terminal.StartPos)
         {
             diagnostics.Add(new RecoveryDiagnostic(terminal.StartPos, terminal.EndPos, RecoveryKind.Inserted, $"inserted {terminal.Kind}", null, null));
         }
         // Иначе — реальное совпадение recovery-терминала: не дыра, диагностика не выдаётся.
+    }
+
+    // A5-3 (7.2.1/R5): first non-whitespace "word" inside [start..end); an empty/all-whitespace region
+    // keeps the original span (it matches the absorber node exactly).
+    private static (int Start, int End) FirstWordSpan(string input, int start, int end)
+    {
+        if (start >= end)
+            return (start, end);
+        var wordStart = start;
+        while (wordStart < end && char.IsWhiteSpace(input[wordStart]))
+            wordStart++;
+        if (wordStart >= end)
+            return (start, end);
+        var wordEnd = wordStart;
+        while (wordEnd < end && !char.IsWhiteSpace(input[wordEnd]))
+            wordEnd++;
+        return (wordStart, wordEnd);
     }
 }

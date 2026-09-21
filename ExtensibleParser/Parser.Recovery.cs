@@ -850,8 +850,9 @@ public partial class Parser
 
     // A5-2 (6.1.2b): корреляция узел↔диагностика по позиции+форме — надёжна для всех стратегий:
     //   • диагностика с регионом (StartPos < EndPos) — абсорбер (S1b/S2/S3/S5/S6): IsRecovery +
-    //     IsAbsorber узел с точным пролётом [StartPos..EndPos) (уникален: на точку восстановления
-    //     принимается один кандидат, точки строго возрастают);
+    //     IsAbsorber узел, содержащий пролёт диагностики [StartPos..EndPos) (A5-3: пролёт — первое
+    //     слово региона, узел несёт полный регион [E..S); уникален: на точку восстановления принимается
+    //     один кандидат, точки строго возрастают, регионы не пересекаются);
     //   • нулевая диагностика (StartPos == EndPos) — вставка (S1/S2/S4): нулевой IsRecovery узел в
     //     StartPos; если диагностика несёт Terminal — только узел с тем же Kind (инъекция создаёт
     //     узел с NodeKind == t.Kind, CreateInjectedResult);
@@ -907,7 +908,13 @@ public partial class Parser
         if (diag.Kind is RecoveryKind.Unrecovered)
             return false;
         if (diag.StartPos < diag.EndPos)
-            return node.IsAbsorber && node.StartPos == diag.StartPos && node.EndPos == diag.EndPos;
+        {
+            // A5-3 (7.2.1/R5): a region diagnostic spans the FIRST WORD of the absorber region
+            // (not the whole region — the absorber node keeps the full span), so match by containment.
+            // Unique: absorber regions are non-overlapping (one candidate per recovery point, points
+            // strictly increase and the next point is at/after the previous absorber's end).
+            return node.IsAbsorber && node.StartPos <= diag.StartPos && diag.EndPos <= node.EndPos;
+        }
         return !node.IsAbsorber
             && node.StartPos == diag.StartPos
             && node.EndPos == diag.StartPos
