@@ -39,6 +39,16 @@ public sealed record RecoveryProfile
     public int MaxParseDepthBase { get; init; } = 128;
     public int MaxParseDepthPerChar { get; init; } = 4;
 
+    // 7.1.1/R3: absolute cap on parse depth — a STACK-SAFETY constant, not a per-profile limit.
+    // The per-char limit above is unbounded, but a thread's stack budget is a FIXED number of
+    // ParseAlternative frames regardless of input length: measured on a 1.5MB .NET 8 thread the
+    // real stack overflows at ~575-615 frames (both the worst-case self-recursive grammar
+    // `Expr := "(" Expr ")" | Digits` — 295 nesting levels OK, 300 crash — and the C# grammar —
+    // ~80 nested types OK, ~85 crash). The cap (400) keeps ~30% margin below that threshold and
+    // stays above legitimate parse depths (CSharpGrammarTests max ~150 frames; 7.2 frames per
+    // nested-type level → ~55 levels of nesting still parse cleanly).
+    public const int MaxParseDepthCap = 400;
+
     // B4: wall-clock budget for the recovery session. When exceeded, DegradationLevel
     // is raised (see Parser). Test profile disables it (Infinite) for determinism.
     public TimeSpan TimeBudget { get; init; } = TimeSpan.FromMilliseconds(500);

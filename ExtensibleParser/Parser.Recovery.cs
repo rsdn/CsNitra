@@ -257,7 +257,17 @@ public partial class Parser
     private readonly List<StackFrame> _stackFrames = [];
     private readonly Dictionary<(int Pos, Terminal Terminal), Injection> _injections = new(TerminalComparer.KeyComparer);
     private int _parseDepth;
-    private int _maxParseDepth = 4096;
+    // Default for parsers that never go through Parse (e.g. the recovery engine's speculative scratch
+    // parser, which calls ParseRule directly): the same absolute cap SetMaxParseDepth applies
+    // (stack-safety constant). The old default (4096) was ~4x the real stack budget (~600 frames) —
+    // recalibrated in 7.1.1/R3.
+    private int _maxParseDepth = RecoveryProfile.MaxParseDepthCap;
+
+    // Хук для тестов (7.1.1/R3): максимальная глубина _parseDepth, достигнутая в последнем Parse
+    // (0 — ни одного кадра не начато). Сбрасывается в SetMaxParseDepth; используется для калибровки
+    // depth-guard и (7.1.2) для диагностики сработавшего guard'а.
+    private int _maxParseDepthReached;
+    public int MaxParseDepthReached => _maxParseDepthReached;
 
     // Хук для тестов/engine: инжекции в Фазе 0 никто не порождает, слой активен с Фазы 1.
     public void AddInjection(Terminal terminal, int pos, Injection injection) => _injections[(pos, terminal)] = injection;
@@ -380,14 +390,86 @@ public partial class Parser
     private partial void SetMaxParseDepth(int inputLength)
     {
         _parseDepth = 0;
-        _maxParseDepth = Profile.MaxParseDepthBase + inputLength * Profile.MaxParseDepthPerChar;
+        _maxParseDepthReached = 0;
+        // 7.1.1/R3: the per-char limit is unbounded, but the thread stack budget is a FIXED number of
+        // frames — the absolute cap keeps the guard firing before a stack overflow for long inputs
+        // (empirics: `Expr := "(" Expr ")" | Digits`, 350 nesting levels = crash under the old limit).
+        _maxParseDepth = Math.Min(Profile.MaxParseDepthBase + inputLength * Profile.MaxParseDepthPerChar,
+            RecoveryProfile.MaxParseDepthCap);
     }
     private partial void ClearInjections() => _injections.Clear();
 
+    // Roslyn StackGuard constant (Microsoft.CodeAnalysis.StackGuard.MaxUncheckedRecursionDepth):
+    // frames at or below this depth cannot exhaust the thread stack — skip the per-frame check there.
+    private const int MaxUncheckedRecursionDepth = 20;
+
+    private static readonly Action _ensureSufficientExecutionStack = CreateEnsureSufficientExecutionStack();
+
+    private static void EnsureSufficientExecutionStack() => _ensureSufficientExecutionStack();
+
+    // BCL RuntimeHelpers.EnsureSufficientExecutionStack() via a delegate: the local
+    // System.Runtime.CompilerServices.RuntimeHelpers (Shared/NetStandard2_0Support.cs) shadows the
+    // BCL type by name, so the BCL method is resolved by reflection once (same as ReferenceComparer,
+    // Parser.cs). Unresolvable → no-op (the depth cap still protects).
+    private static Action CreateEnsureSufficientExecutionStack()
+    {
+        var method = typeof(object)
+            .Assembly
+            .GetType("System.Runtime.CompilerServices.RuntimeHelpers")
+            ?.GetMethod("EnsureSufficientExecutionStack", Type.EmptyTypes);
+        return method is null
+            ? static () => { }
+            : (Action)Delegate.CreateDelegate(typeof(Action), method)!;
+    }
+
     private partial bool BeginParseFrame(int startPos)
     {
+        // 7.1.1/R3: the guard checks BEFORE incrementing, so a rejected frame leaves no dangling
+        // increment (ParseAlternative returns Failure on true without running EndParseFrame's
+        // finally). The old increment-then-check leaked +1 per rejected frame — invisible under the
+        // old unbounded limit, but under the calibrated cap the first firing inflated the counter
+        // and made every retried descent (memo re-descent, recovery re-parse) fire the guard at a
+        // shallower true depth than the calibration allows.
+        if (_parseDepth >= _maxParseDepth)
+            return GuardFired();
+        // 7.1.1/R3: preventive remaining-stack check at the hottest recursion point (every rule
+        // dispatch goes through ParseAlternative → BeginParseFrame). Roslyn StackGuard pattern:
+        // shallow frames skip the check (MaxUncheckedRecursionDepth). The BCL method throws a
+        // CATCHABLE InsufficientExecutionStackException when the thread has <60KB of stack left —
+        // unlike a real StackOverflowException — so catching it = the guard fired (Failure branch).
+        // Second line of defense under the depth cap: it is stack-size-agnostic (protects smaller
+        // stacks where the calibrated cap alone would be too high).
+        if (_parseDepth > MaxUncheckedRecursionDepth)
+            try
+            {
+                EnsureSufficientExecutionStack();
+            }
+            catch (InsufficientExecutionStackException)
+            {
+                return GuardFired();
+            }
         _parseDepth++;
-        return _parseDepth > _maxParseDepth;
+        if (_parseDepth > _maxParseDepthReached)
+            _maxParseDepthReached = _parseDepth;
+        return false;
+    }
+
+    // 7.1.1/R3 fix (recovery hang): every firing shrinks the effective limit by one. With the
+    // check-before-increment counter a rejected frame leaves no trace, so without the shrinkage
+    // every backtrack alternative / memo re-descent / recovery re-parse re-pays the full descent
+    // to the cap, and a recovery session (hundreds of re-parses, each firing the guard hundreds
+    // of times) explodes. The shrinkage bounds total accepted frames per parse session to
+    // O(cap²) — exactly the (accidental) total-work bound of the pre-7.1.1 increment-then-check
+    // leak (leak +1 per firing ⇒ descent k accepts up to depth cap-k-1, same as here), which the
+    // check-before-increment change removed. After enough firings the limit reaches 0 and every
+    // frame is rejected at frame 1, so the recovery loop's fail-safe (e <= ePrev) ends the
+    // session fast. The counter stays semantically clean (depth), and MaxParseDepthReached still
+    // records the first firing depth exactly (R3 calibration assertion).
+    private bool GuardFired()
+    {
+        if (_maxParseDepth > 0)
+            _maxParseDepth--;
+        return true;
     }
     private partial void EndParseFrame() => _parseDepth--;
 
