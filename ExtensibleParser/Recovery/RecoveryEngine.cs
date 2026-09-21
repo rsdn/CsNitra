@@ -972,11 +972,16 @@ public static class RecoveryEngine
     }
 
     // Первый Seq в альтернативах правила, у которого больше elementIndex элементов (упрощение 1.2).
-    private static Seq? FindSeq(Parser parser, string ruleName, int elementIndex)
+    // altIndex != null — только в указанной (активной) альтернативе (A4-7, 7.5.2: точный expected-набор
+    // не берёт терминалы из неактивных альтернатив). S2/S4 вызывают с altIndex = null (упрощённый путь).
+    private static Seq? FindSeq(Parser parser, string ruleName, int elementIndex, int? altIndex = null)
     {
         if (!parser.Rules.TryGetValue(ruleName, out var alternatives))
             return null;
-        foreach (var alt in alternatives)
+        var alts = altIndex is { } ai && ai >= 0 && ai < alternatives.Length
+            ? [alternatives[ai]]
+            : alternatives;
+        foreach (var alt in alts)
             foreach (var sub in alt.GetSubRules<Seq>())
                 if (sub is Seq seq && seq.Elements.Length > elementIndex)
                     return seq;
@@ -989,7 +994,10 @@ public static class RecoveryEngine
     // сохраняется: S4-диагностика несёт имя правила кадра (S2 игнорирует — `_`). Чистая функция:
     // только чтение Rules/FollowCalculator, без инъекций и мутаций. Фильтры Injectable/совпадения
     // в позиции — специфика вызывающего (S2/S4) и сюда не входят.
-    public static List<(Terminal T, string RuleName)> GetSuffixObligationFirsts(FailureSnapshot snapshot, Parser parser, int fromFrameIndex)
+    // respectAltIndex (A4-7, 7.5.2): Seq берётся из АКТИВНОЙ альтернативы кадра (AltIndex кадра ниже),
+    // а не из первой — иначе терминалы неактивных альтернатив утекают в expected-набор. Только
+    // BuildExpectedSet включает; S2/S4 оставляют false (упрощение 1.2).
+    public static List<(Terminal T, string RuleName)> GetSuffixObligationFirsts(FailureSnapshot snapshot, Parser parser, int fromFrameIndex, bool respectAltIndex = false)
     {
         var calculator = parser.FollowCalculator;
         var result = new List<(Terminal T, string RuleName)>();
@@ -998,7 +1006,8 @@ public static class RecoveryEngine
             var frame = snapshot.Stack[i];
             if (frame.Location is not SeqFrameLocation { ElementIndex: var idx })
                 continue;
-            var seq = FindSeq(parser, frame.RuleName, idx);
+            var altIndex = respectAltIndex ? ActiveAltIndex(snapshot, i, frame.RuleName) : null;
+            var seq = FindSeq(parser, frame.RuleName, idx, altIndex);
             if (seq is null)
                 continue;
             for (var j = idx + 1; j < seq.Elements.Length; j++)
@@ -1012,6 +1021,19 @@ public static class RecoveryEngine
             }
         }
         return result;
+    }
+
+    // A4-7 (7.5.2): AltIndex активного альтернативного Seq-кадра — на кадре непосредственно ниже
+    // (RuleFrameLocation с тем же RuleName; паттерн FollowSetCalculator.TailOf). null — активного
+    // альтернативного кадра нет (низ стека / другая структура) → FindSeq остаётся на упрощении 1.2.
+    private static int? ActiveAltIndex(FailureSnapshot snapshot, int frameIndex, string ruleName)
+    {
+        if (frameIndex < 1)
+            return null;
+        var below = snapshot.Stack[frameIndex - 1];
+        if (below.RuleName != ruleName || below.Location is not RuleFrameLocation { AltIndex: var ai })
+            return null;
+        return ai;
     }
 
     // A4-7 (7.5.1): объединённый expected-набор для финального сообщения.
@@ -1039,7 +1061,9 @@ public static class RecoveryEngine
             Add(t);
 
         // 3. First суффиксных обязательств (весь стек, включая верхний кадр — S4-семантика).
-        foreach (var (t, _) in GetSuffixObligationFirsts(snapshot, parser, snapshot.Stack.Length - 1))
+        // A4-7 (7.5.2): respectAltIndex — Seq из АКТИВНОЙ альтернативы кадра, не из первой,
+        // чтобы терминалы неактивных альтернатив не утекали в «expecting {...}».
+        foreach (var (t, _) in GetSuffixObligationFirsts(snapshot, parser, snapshot.Stack.Length - 1, respectAltIndex: true))
             Add(t);
 
         return result;

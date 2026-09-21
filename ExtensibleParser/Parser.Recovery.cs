@@ -584,7 +584,14 @@ public partial class Parser
         // дыры описаны RecoveryDiagnostics); иначе — невосстановлено: FatalError в последней точке e.
         var recovered = (result.TryGetSuccess(out _, out var successEnd) && successEnd == input.Length)
             || (result.TryGetPartial(out _, out var partialEnd) && partialEnd == input.Length);
-        ErrorInfo = recovered ? null : new FatalError(input, e, Location: input.PositionToLineCol(e), _expected.ToArray());
+        // A4-7 (7.5.2): expected в FatalError — полный контекстный набор (BuildExpectedSet: Expected
+        // верхнего кадра ∪ терминаторы ∪ First суффиксных обязательств), если снимок существует в точке
+        // e; иначе — старый _expected (самая дальняя терминальная точка) — no-snapshot fallback.
+        var snapshot = FailureSnapshotAt(e);
+        var expecteds = snapshot is null
+            ? _expected.ToArray()
+            : Recovery.RecoveryEngine.BuildExpectedSet(snapshot, this).ToArray();
+        ErrorInfo = recovered ? null : new FatalError(input, e, Location: input.PositionToLineCol(e), expecteds);
     }
 
     // Один parse (без fail-fast): setup recovery-состояния + цикл восстановления (S0 + ленивый Generate).
@@ -715,7 +722,15 @@ public partial class Parser
                 {
                     if (candidate.Rank != 6)
                         return;
-                    _recoveryDiagnostics.Add(new RecoveryDiagnostic(e, e, RecoveryKind.Unrecovered, $"error at {e} not recovered (absorbed to EOF)", null, startRule));
+                    // A4-7 (7.5.2): «expecting» — полный контекстный набор (BuildExpectedSet) при наличии
+                    // снимка в точке e; без снимка — старое сообщение без expected (fallback).
+                    var expected = snapshot is null
+                        ? null
+                        : string.Join(", ", Recovery.RecoveryEngine.BuildExpectedSet(snapshot, this).Select(t => t.Kind));
+                    var message = expected is null
+                        ? $"error at {e} not recovered (absorbed to EOF)"
+                        : $"error at {e} not recovered (absorbed to EOF), expecting: {expected}";
+                    _recoveryDiagnostics.Add(new RecoveryDiagnostic(e, e, RecoveryKind.Unrecovered, message, null, startRule));
                 }
 
                 // A4-6 (6.3.1): a recovery was accepted in the failing rule — record its distinct
