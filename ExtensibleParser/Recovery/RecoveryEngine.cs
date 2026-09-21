@@ -176,14 +176,25 @@ public static class RecoveryEngine
         var maxS = Math.Min(e + maxSkip, input.Length);
         var top = snapshot.Stack[^1];
 
-        // T1 якоря: авторские (ближайший кадр с записанным полем) + выводимые из циклов Loop-кадров.
+        // T1 якоря: авторские (ближайший кадр с записанным полем) первыми, затем выводимые предикаты зонда
+        // (A5-1, 5b.4.2/5b.4.2r): Ref-альтернативы верхнего кадра + Ref-тела Loop-кадров (DeriveProbePredicates, с фильтром),
+        // затем loop-якоря из Loop-кадров (DeriveLoopAnchors, без фильтра — до-5b.4.2 поведение).
+        // Порядок — по близости кадра top→bottom (A5-1, DoD 4): верхний кадр ближе, чем Loop-кадры под ним;
+        // первый совпавший якорь в списке — driving anchor S2-скана.
+        // Дедупликация по имени правила: более ранний источник побеждает.
         var anchors = new List<Ref>();
         var authorAnchors = NearestOptions(snapshot, f => f.Options?.Anchors);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
         if (authorAnchors is not null)
             foreach (var a in authorAnchors)
                 if (a is Ref r)
+                {
                     anchors.Add(r);
-        var seen = new HashSet<string>(StringComparer.Ordinal);
+                    seen.Add(r.RuleName);
+                }
+        foreach (var anchor in DeriveProbePredicates(parser, snapshot))
+            if (seen.Add(anchor.RuleName))
+                anchors.Add(anchor);
         for (var i = snapshot.Stack.Length - 1; i >= 0; i--)
         {
             var frame = snapshot.Stack[i];
@@ -194,13 +205,21 @@ public static class RecoveryEngine
                     anchors.Add(anchor);
         }
 
-        // T2 CanStart: только авторские (выводимые не существуют).
+        // T2 CanStart: авторские первыми, затем выводимые предикаты зонда (A5-1, 5b.4.2);
+        // имена авторских правил подавляют выводимые предикаты того же имени (дедупликация по имени правила).
         var canStart = new List<Ref>();
         var authorCanStart = NearestOptions(snapshot, f => f.Options?.CanStart);
+        var seenCanStart = new HashSet<string>(StringComparer.Ordinal);
         if (authorCanStart is not null)
             foreach (var p in authorCanStart)
                 if (p is Ref r)
+                {
                     canStart.Add(r);
+                    seenCanStart.Add(r.RuleName);
+                }
+        foreach (var p in DeriveProbePredicates(parser, snapshot))
+            if (seenCanStart.Add(p.RuleName))
+                canStart.Add(p);
 
         if (anchors.Count == 0 && canStart.Count == 0)
             return;
