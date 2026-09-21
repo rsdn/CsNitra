@@ -28,7 +28,7 @@ Status: `[ ]` not started · `[~]` in progress (exactly one) · `[✅]` done · 
 - [✅] 2.2 A2: budgets by tiers — per-TIER sub-budgets (S1=4/S2=2/S3-S6=2); "attempt" = tier; S0/S6 exempt (S6 guaranteed fallback). `MaxRecoveryAttemptsPerPosition` kept as legacy no-op. Regression: large FollowSet → S3 still tried. Param in `RecoveryProfile` deferred to 4.1. ParserTests 348/0/2. Commit 01e4356.
 
 ## Wave 3 — "nothing matched" class (R1)
-- [ ] 3.1 R1: garbage terminal (Roslyn `BadToken` analogue) — built-in `Garbage`, `TryMatch(p)` = "no terminal of the set matched at p", consumes to first position where someone matches or limit (64 chars / 16 tokens). Local absorber, not explosive S2/S3/S6.
+- [✅] 3.1 R1 — CLOSED: covered by author-driven `RecoveryTerminal` (`ErrorOperator`/`EmptyTerminal` in the grammar), see plan §Wave 3. Engine-driven `BadToken` not needed (no lexer token-stream obligation in CsNitra). Bottom safety net = S3/S6.
 
 ## Wave 4 — profiles and predictability (A3, B4 + A4-5)
 - [✅] 4.0 M: ParseSubRule — parse a rule without top-level recovery. DONE (27b4964). Test 2: 10k blocks 240s → 4.121s. `ParseExpressionLength` on 1000 blocks = 7 (constant, greedy raw-string — bug Q).
