@@ -341,6 +341,23 @@ public partial class Parser
     public Result ParseRuleOnce(string ruleName, int minPrecedence, int startPos, string input) =>
         ParseRule(ruleName, minPrecedence, startPos, input);
 
+    // A5-1 D3 (5b.4.3): one-shot probe parse with an explicit depth ceiling. The ceiling is a WORK
+    // limit, not an acceptance condition: when the guard cuts the parse, `CutPos` (the first guard
+    // firing — the deepest point reached, see the _guardFired/_guardFiredPos comment) reports how
+    // far the probe got; the consumer decides acceptance by the token count of the consumed span.
+    // Guard state is reset per call: SetMaxParseDepth is not on the ParseRule path, and the probe
+    // parser instance is reused across calls.
+    public (Result Result, bool CeilingCut, int CutPos) ParseRuleOnceProbed(string ruleName, int minPrecedence, int startPos, string input, int depthCeiling)
+    {
+        _parseDepth = 0;
+        _maxParseDepth = depthCeiling;
+        _maxParseDepthReached = 0;
+        _guardFired = false;
+        _guardFiredPos = 0;
+        var result = ParseRule(ruleName, minPrecedence, startPos, input);
+        return (result, _guardFired, _guardFiredPos);
+    }
+
     // Логи патчей текущего кандидата (memo и инъекции): заполняются хуками, пока активны, — основа отката.
     private List<MemoPatch>? _memoPatchLog;
     private List<InjectionPatch>? _injectionPatchLog;

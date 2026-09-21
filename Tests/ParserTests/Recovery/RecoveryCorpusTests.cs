@@ -185,8 +185,9 @@ public sealed class RecoveryCorpusTests
     private sealed record ScenarioResult(string Name, bool SuccessAtEof, int Passes, int GenCalls, int MemoCount, double MinTimeMs, int ResyncPos);
 
     // Минимум wall-time из K прогонов (снижает шум); счётчики берутся из последнего прогона (детерминированы).
-    // ResyncPos — точка, куда recovery пришёл после первого пропуска (первый Skipped-диагностик, EndPos);
-    // для D1.7 это старт битой конструкции (метрика волны 5), -1 если пропуска не было.
+    // ResyncPos — точка, куда recovery пришёл после первого пропуска: EndPos первого IsAbsorber-узла
+    // в дереве (полный span региона; display-диагностик A5-3 укорочен до первого слова и не годится);
+    // для D1.7 это старт битой конструкции (метрика волны 5), -1 если абсорбера не было.
     private static ScenarioResult Measure(string name, Func<Parser> newParser, string input, int runs = 5)
     {
         var minTime = double.MaxValue;
@@ -206,12 +207,50 @@ public sealed class RecoveryCorpusTests
             passes = parser.RecoveryPasses;
             memoCount = parser.Memo.Count;
             genCalls = parser.EngineGenerateCalls;
-            successAtEof = result.TryGetSuccess(out _, out var end) && end == input.Length;
-            resyncPos = parser.RecoveryDiagnostics
-                .FirstOrDefault(d => d.Kind == ExtensibleParser.Recovery.RecoveryKind.Skipped)?.EndPos ?? -1;
+            successAtEof = result.TryGetSuccess(out var tree, out var end) && end == input.Length;
+            resyncPos = FirstAbsorberEndPos(tree) ?? -1;
         }
 
         return new ScenarioResult(name, successAtEof, passes, genCalls, memoCount, minTime, resyncPos);
+    }
+
+    // Метрика resync (волна 5): EndPos ПЕРВОГО IsAbsorber-узла в дереве (документный порядок) —
+    // полный span пропущенного региона = точка, куда recovery пришёл. Display-диагностик (A5-3)
+    // показывает только первое слово региона и для метрики не годится (D1.7: [7,10) вместо [7,11)).
+    private static int? FirstAbsorberEndPos(ISyntaxNode? node)
+    {
+        if (node is null)
+            return null;
+        if (node is TerminalNode { IsAbsorber: true } absorber)
+            return absorber.EndPos;
+        foreach (var child in Children(node))
+        {
+            var found = FirstAbsorberEndPos(child);
+            if (found is { } f)
+                return f;
+        }
+        return null;
+
+        // Дети (как в S3TriviaJumpTests.AbsorberEnds): SeqNode/ListNode — RawElements
+        // (+ListNode.Delimiters), SomeNode — Value, TerminalNode — лист.
+        static IEnumerable<ISyntaxNode> Children(ISyntaxNode n)
+        {
+            switch (n)
+            {
+                case SeqNode s:
+                    return s.RawElements;
+                case ListNode l:
+                {
+                    var children = new List<ISyntaxNode>(l.RawElements);
+                    children.AddRange(l.Delimiters);
+                    return children;
+                }
+                case SomeNode so:
+                    return new ISyntaxNode[] { so.Value };
+                default:
+                    return Array.Empty<ISyntaxNode>();
+            }
+        }
     }
 
     private static string ReportLine(ScenarioResult m) =>
@@ -295,10 +334,12 @@ public sealed class RecoveryCorpusTests
         var m = Measure("D1.7", NewDoubleDamageParser, GenDoubleDamage());
         Trace.WriteLine(ReportLine(m));
 
-        // D1.7 — приёмочный тест волны 5 (A5-1): T1 не проходит (следующая конструкция битая), S3 останавливается слабо.
-        // В волне 0 это baseline: Success@EOF достижим через S2/S3 (assert); resync-позиция (старт битой
-        // конструкции) отчитана в ReportLine для сравнения после волны 5.
+        // D1.7 — приёмочный тест волны 5 (A5-1): двойное повреждение (мусор + битая следующая конструкция).
+        // T1/S2-зонд не проходит (конструкция битая — провал на "$"), S3 останавливается на First тела
+        // цикла ("int" @11), а не на слабом терминаторе (";" @20) → resync в старт битой конструкции.
         Assert.IsTrue(m.SuccessAtEof, $"D1.7 not recovered to EOF\n{ReportLine(m)}");
+        Assert.AreEqual(11, m.ResyncPos, $"D1.7 resync={m.ResyncPos} != 11 (старт битой конструкции, а не слабый терминатор @20)\n{ReportLine(m)}");
+        Assert.IsTrue(m.Passes <= 3, $"D1.7 passes={m.Passes} > 3 (baseline 3 — A5-1 не должен добавлять проходы)\n{ReportLine(m)}");
     }
 
     // ============ D2-ядро: отчёт по всему корпусу (7 строк) ============

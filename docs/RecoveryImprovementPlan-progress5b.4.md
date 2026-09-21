@@ -404,3 +404,170 @@ report of any NETSDK1022 / lock incident.
 tests the STALE DLL (false negative in the first-pass 5b.4.2r smoke: 5 regressions appeared
 unfixed). Subagent prompts must build the test project
 (`dotnet build Tests/ParserTests --no-incremental`) before any `--no-build` smoke run.
+
+### 5b.4.3.1 — D3 lever: ParseRuleOnceProbed on Parser
+
+One public method added right after `ParseRuleOnce` in `ExtensibleParser/Parser.Recovery.cs`:
+
+```csharp
+public (Result Result, bool CeilingCut, int CutPos) ParseRuleOnceProbed(string ruleName, int minPrecedence, int startPos, string input, int depthCeiling)
+{
+    _parseDepth = 0;
+    _maxParseDepth = depthCeiling;
+    _maxParseDepthReached = 0;
+    _guardFired = false;
+    _guardFiredPos = 0;
+    var result = ParseRule(ruleName, minPrecedence, startPos, input);
+    return (result, _guardFired, _guardFiredPos);
+}
+```
+
+Per-call guard-state reset is required: `SetMaxParseDepth` is not on the `ParseRule` path, and
+the probe parser instance is reused across calls. `CutPos` = first guard firing = the deepest
+point reached (existing `_guardFiredPos` semantics).
+
+The first subagent applied the method + test file but STOPPED before verification: F6 incident #3
+(14:02 — an external `<Compile Include="Recovery\ProbeDepthCeilingTests.cs" />` line appeared in
+`ParserTests.csproj` → NETSDK1022); the orchestrator rolled the `.csproj` back net-zero. First
+orchestrator verification run: 3/4 — test 4 (`Test_Repeated_Calls_Independent`) failed: a
+same-(rule, pos) repeat hits the memo → see the continuation section below.
+
+### 5b.4.3.1 (cont.) — test 4 refinement + results
+
+Test 4's same-(rule, pos) repeat hit the memo (intended: `ParseRule` checks the memo before pushing
+frames, so the depth guard never fired on the second call), refined to a different position (a
+different memo key) — the per-call reset is then proven by the fresh `CutPos` (a stale
+`_guardFiredPos` would report 2, not 6).
+
+Build + smoke: `dotnet build Tests/ParserTests --no-incremental` → **0 errors**. Smoke filter
+`dotnet test Tests/ParserTests --no-build --filter "FullyQualifiedName~ProbeDepthCeilingTests"` →
+**4 total, 4 passed, 0 failed, 0 skipped**. Per test: `Test_Deep_Chain_CeilingCut` PASS,
+`Test_Shallow_Success_NoCut` PASS, `Test_Shallow_Failure_NoCut` PASS,
+`Test_Repeated_Calls_Independent` PASS.
+
+Files changed (no commit): `Tests/ParserTests/Recovery/ProbeDepthCeilingTests.cs` (test 4 only);
+`docs/RecoveryImprovementPlan-progress5b.4.md` (this section). No `.csproj` modified. No commit
+(final gate after all 5b.4.* sub-points).
+
+### 5b.4.3.2 — D2+D3 wiring in GenerateS2
+
+`GenerateS2` (`ExtensibleParser/Recovery/RecoveryEngine.cs`) changed only:
+- `anchors`/`canStart` are now `List<(Ref Ref, bool Derived)>` — Derived=true ONLY for
+  `DeriveProbePredicates` entries; author anchors/canStart and the `DeriveLoopAnchors` loop
+  anchors keep their strict semantics (T1 `ok && endPos > s`, T2 `ok`).
+- `softDepth = NearestOptions(snapshot, f => f.Options)?.SoftDepth ?? 2` (D2's K).
+- Dedicated `probeScratch` (the author `scratch` keeps its default 400 ceiling); `Probe` local:
+  `ParseRuleOnceProbed(..., ProbeDepthCeiling)` → success `(true, end)`, ceiling cut
+  `(false, cutPos)`, plain failure `(false, -1)`; BYPASSES `SpecCache` (bounded-cheap parse; a
+  cut result must not poison the shared (rule, pos) author cache).
+- Derived acceptance in T1+T2: `endPos > s && CountWords(input, parser.Trivia, s, endPos) >=
+  softDepth` (D2 full success; D3 ceiling cut — cutPos span; plain failure rejected).
+- New: `public const int ProbeDepthCeiling = 8` (work ceiling, not acceptance — a different
+  dimension from SoftDepth; 8 frames ≈ 4 nesting levels, 2 frames per level) + `CountWords`
+  helper (FirstWordSpan pattern over the whole region).
+- Mechanical deviation (orchestrator prompt typo, semantics identical): `canStart.Add((r, false))`
+  uses the Ref pattern variable `r`, not `p` (the `Rule` from the foreach).
+
+The subagent applied all 10 change points; STOPPED before verification: F6 incident #4 (14:23 —
+external `<Compile Include="Recovery\ProbeAcceptanceTests.cs" />` line → NETSDK1022); the
+orchestrator rolled the `.csproj` back net-zero and ran the verification.
+
+Orchestrator verification (one-shot): `dotnet build Tests/ParserTests --no-incremental` →
+**0 errors**. Smoke filter (ProbeAcceptanceTests | DerivedProbePredicateTests | S2TriviaJumpTests
+| S2IndexOfTests | SpecCacheSharedTests | RecoveryMetricsTests) → **14 total, 14 passed, 0
+failed**. New `ProbeAcceptanceTests` (2): ceiling-cut with ≥K words accepted (T1 resync at 8,
+driving anchor `Item`, where the strict semantics rejected — plain failure); full success with
+<K words rejected (no resync at 4, where the strict semantics accepted the 1-word success).
+
+Files changed (no commit): `ExtensibleParser/Recovery/RecoveryEngine.cs` (GenerateS2 + const +
+CountWords); `Tests/ParserTests/Recovery/ProbeAcceptanceTests.cs` (new, 2 tests);
+`docs/RecoveryImprovementPlan-progress5b.4.md` (this section). No `.csproj` modified. No commit
+(final gate after all 5b.4.* sub-points).
+
+### 5b.4.3.2 (cont.) — probe routed through SpecCache under a mode key (B4.3 green)
+
+The B4.3 gating test (`DegradationGatingTests.Test_Generate_Speculation_Gated_By_SpeculationEnabled`) observes speculative parses via the SpeculativeCache counters (hits+misses > 0 at degradation level 0, == 0 at level 1). The first 5b.4.3.2 iteration made the `Probe` local bypass SpecCache — since the test grammar's S2 anchor is a derived loop-body Ref (`Item`), the counters stayed at 0 and the level-0 assertion failed ("Level 0 must perform speculative parsing, got 0"). Fix (already applied): the SpeculativeCache key is now `(rule, pos, mode)` — author parses are mode 0 (the existing 3-arg API delegates to mode 0, behavior unchanged), the derived probe is mode 1. No cross-mode contamination (a probe cut result `(false, cutPos)` cannot be read under the author's (rule, pos) entry by the author's strict semantics), and the B4.3 counters continue to observe probe parses. No test files modified.
+
+Verification (one-shot, fresh build): ParserTests 441/0/2, CSharpGrammarTests 1524/0/3, CsPreprocessorTests 128/0. Note: the implementation subagent's first smoke reported the B4.3 failure — that run hit a stale `bin\` copy (stale-DLL trap); the fresh-build one-shot verification is green.
+
+Files changed (no commit): `ExtensibleParser/Recovery/SpeculativeCache.cs` (mode key + 3-arg delegation); `ExtensibleParser/Recovery/RecoveryEngine.cs` (Probe local → SpecCache mode 1); `docs/RecoveryImprovementPlan-progress5b.4.md` (this section); `docs/RecoveryImprovementPlan-checklist.md` (5b.4.3.2 line). No `.csproj` modified. No commit (final gate after all 5b.4.* sub-points).
+
+### 5b.4.4 — D4: T2 collection cap
+
+`GenerateS2` changed only: per-call `t2Collected = new Dictionary<Ref, int>()` before the scan
+loop; T2 loop — a DERIVED predicate adds a T2 candidate only while its collected count is below
+`softDepth` (K) — first K accepted positions per predicate (ascending scan → earliest positions,
+determinism per A5-1 "кап коллекции T2 — первые K позиций на предикат (сортировка по Pos)");
+AUTHOR canStart not capped (pre-A5-1 behavior; the cap targets the derived predicate set that
+burns the S2 tier budget — A5-1 rationale).
+
+Orchestrator decision D4.1 recorded: the cap applies to DERIVED entries ONLY (`derived == true`);
+author canStart entries keep their pre-A5-1 uncapped behavior — the A5-1 rationale targets the
+derived predicate set ("щедрый T2 (множество предикатов) сжигает тир-бюджет"), and capping author
+CanStart would change author behavior with regression risk.
+
+Build + smoke: `dotnet build Tests/ParserTests --no-incremental` → **0 errors, 0 warnings**.
+Smoke filter (`dotnet test Tests/ParserTests --no-build --filter "FullyQualifiedName~S2TriviaJumpTests |
+FullyQualifiedName~S2IndexOfTests | FullyQualifiedName~SpecCacheSharedTests |
+FullyQualifiedName~RecoveryMetricsTests | FullyQualifiedName~DerivedProbePredicateTests |
+FullyQualifiedName~ProbeAcceptanceTests"`) → **14 total, 14 passed, 0 failed, 0 skipped**.
+
+Files changed (no commit): `ExtensibleParser/Recovery/RecoveryEngine.cs`;
+`docs/RecoveryImprovementPlan-progress5b.4.md` (this section);
+`docs/RecoveryImprovementPlan-checklist.md` (5b.4.4 line). No `.csproj` modified. No commit (final
+gate after all 5b.4.* sub-points).
+
+### 5b.4.4r2 — D4.2: cap extended to ALL canStart predicates (retracts D4.1)
+
+Orchestrator research 5b.4.4r established that derived T2 acceptance is unreachable: a derived
+predicate accepted at position s always fires T1 first — the same `DeriveProbePredicates` source
+feeds both the anchors and canStart lists, with identical First-sets and identical derived
+acceptance, and the scan ends at the first T1 acceptance. So the derived-only cap (D4.1) is dead
+code; the only live T2 collection path is author CanStart predicates not present in author
+Anchors. The A5-1 spec text ("кап коллекции T2 — первые K позиций на предикат") has no derived
+qualifier, and its rationale ("щедрый T2 (множество предикатов) сжигает тир-бюджет") targets the T2
+predicate set as a whole. Decision D4.2 (retracts D4.1): the cap applies to ALL canStart
+predicates.
+
+Research evidence: the test project contains exactly two author CanStart tests
+(`AnchorResyncTests.Test_T2_CanStart_Double_Error`,
+`T1AnchorReproTests.Test_T2_AuthorCanStart_DoubleError`), each with exactly 1 accepted position per
+predicate (< K=2) → cap-all breaks zero existing tests; no test observes derived T2 candidates
+(consistent with unreachability).
+
+Build + smoke: `dotnet build Tests/ParserTests --no-incremental` → **0 errors, 0 warnings**.
+Smoke filter (`dotnet test Tests/ParserTests --no-build --filter "FullyQualifiedName~S2TriviaJumpTests |
+FullyQualifiedName~S2IndexOfTests | FullyQualifiedName~SpecCacheSharedTests |
+FullyQualifiedName~RecoveryMetricsTests | FullyQualifiedName~DerivedProbePredicateTests |
+FullyQualifiedName~ProbeAcceptanceTests | FullyQualifiedName~AnchorResyncTests |
+FullyQualifiedName~T1AnchorReproTests"`) → **19 total, 19 passed, 0 failed, 0 skipped**, including
+AnchorResyncTests (3 passed) and T1AnchorReproTests (2 passed) green.
+
+Files changed (no commit): `ExtensibleParser/Recovery/RecoveryEngine.cs`;
+`docs/RecoveryImprovementPlan-progress5b.4.md` (this section);
+`docs/RecoveryImprovementPlan-checklist.md` (5b.4.4 line). No `.csproj` modified. No commit (final
+gate after all 5b.4.* sub-points).
+
+### 5b.4.4t — D4 tests: T2CollectionCapTests (grammar fix per 5b.4.4r3; stale-build incident)
+
+`Tests/ParserTests/Recovery/T2CollectionCapTests.cs` (2 tests): grammar `Start = "a" Body "b"`, `Body = "{" Loop "}"`, `Loop = [RecoveryRule(ZeroOrMany(Ref(Item)), CanStart=[ItemStart])]` (rule-alternative shape), `Item = "i" "c"`, `ItemStart = "i"`; the input never contains "c", so the T1 anchor Item never fires and T2 collection runs to the window end.
+
+- First iteration (RecoveryRule as a Seq element of Body) failed with 0 Rank-2 candidates: research 5b.4.4r3 — `RecoveryRule` options reach a snapshot frame ONLY in the rule-alternative shape (rule frame, Parser.cs:328-329); the Seq-element shape drops them (Seq frame gets null, the wrapper is unwrapped without a frame push, the loop frame is pushed with hardcoded null options) → `NearestOptions` found no author CanStart, and the only surviving canStart entry (derived Item) is never accepted (no "c" in the input). Fix: `Loop` as its own rule.
+- Test shapes: `Test_T2_Cap_Suppresses_Third_Accepted_Position` (input `a { i x i y i z i w } b`, e=6, ItemStart accepted at 8/12/16 → S2 candidates exactly {(8, ItemStart), (12, ItemStart)}, nothing at 16) and `Test_T2_Cap_Allows_UpTo_K_Positions` (input `a { x i y i z } b`, e=4 → exactly {(6, ItemStart), (10, ItemStart)} — cap is a no-op at exactly K).
+- Stale-build incident: after the grammar fix, `--no-build` runs (a subagent smoke and the orchestrator's one-shot full suite) still executed the stale compiled draft (0 Rank-2 candidates, the pre-fix failure signature); a fresh `dotnet build Tests/ParserTests --no-incremental` made both tests deterministically green (4/4 runs: filtered ×2, full ×2). Same incident class as the stale-DLL trap. F6 incident #5 (15:30:54 — external `<Compile Include="Recovery\T2CollectionCapTests.cs" />` line in `ParserTests.csproj` → NETSDK1022) rolled back net-zero by the orchestrator.
+
+Orchestrator verification (one-shot, fresh build): ParserTests 443/0/2, CSharpGrammarTests 1524/0/3, CsPreprocessorTests 128/0.
+
+Files changed (no commit): `Tests/ParserTests/Recovery/T2CollectionCapTests.cs` (new, 2 tests); `docs/RecoveryImprovementPlan-progress5b.4.md` (this section); `docs/RecoveryImprovementPlan-checklist.md` (5b.4.4 status). No `.csproj` modified. No commit (final gate after all 5b.4.* sub-points).
+
+### 5b.4.5 — D1.7 wave-5 acceptance: resync at the start of the broken construct
+
+`Test_D1_7_DoubleDamage` upgraded from baseline (SuccessAtEof only) to the wave-5 A5-1 acceptance: `ResyncPos == 11` (start of the broken construct, not the weak terminator ";" @20) + `Passes <= 3` (baseline 3 — A5-1 must not add recovery passes) + SuccessAtEof. Research 5b.4.5r: the resync is produced by S3 (per-site terminator set includes the loop body's First {"int"} @11; ";" @20 is not in the set — FollowSetCalculator.cs:234-256/283/313-326/368-372/452-453); S2 correctly produces no candidate (the broken construct fails the probe — double damage, T1 не проходит); passes=3/genCalls=3 as baseline.
+
+Metric fix: `ResyncPos` now reads EndPos of the first `IsAbsorber` node in the parse tree (full skipped-region span — the true resync point) instead of the first Skipped DIAGNOSTIC's EndPos, which committed A5-3 (7.2.1) shortened to the first word of the region ([7,10) instead of [7,11) → metric read 10, not 11). The absorber exists in the tree because S3's skip is applied via `Injection.Absorb` (IsSkip=true) → `CreateInjectedResult` (Parser.Recovery.cs:400-405) materializes `TerminalNode(..., IsRecovery: true, IsAbsorber: true)` with the full span. D1.1–D1.6 unaffected (no assertions on ResyncPos; report line values may shift).
+
+The "S3 not silenced" regression is covered by the pre-existing `TierBudgetTests.Test_S1ManyCandidates_S3StillTried_NotStarved`.
+
+Build + smoke results: `dotnet build Tests/ParserTests --no-incremental` — 0 errors. Smoke `--filter "FullyQualifiedName~RecoveryCorpusTests"` — 8/8 passed, 0 failed (full class: D1.1–D1.7 + Test_D1_Corpus_Report).
+
+Files changed (no commit): `Tests/ParserTests/Recovery/RecoveryCorpusTests.cs`; `docs/RecoveryImprovementPlan-progress5b.4.md` (this section); `docs/RecoveryImprovementPlan-checklist.md` (5b.4.5 line + 5b.4 parent line). No `.csproj` modified. No commit (final gate after all 5b.4.* sub-points — this is the last one).

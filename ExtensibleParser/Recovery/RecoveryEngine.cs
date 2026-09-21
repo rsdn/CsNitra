@@ -7,6 +7,13 @@ namespace ExtensibleParser.Recovery;
 /// </summary>
 public static class RecoveryEngine
 {
+    // A5-1 D3 (5b.4.3): потолок глубины derived-probe parse'а — лимит РАБОТЫ (насколько глубоко
+    // зонд может рекуррировать), а не условие приёма: приём = число потреблённых слов
+    // (RecoveryOptions.SoftDepth) — другое измерение, поэтому отдельная константа, а не SoftDepth.
+    // 8 кадров ≈ 4 уровня вложенности (2 кадра на уровень) — с запасом покрывает
+    // ClassMember→Field→Type→PredefinedType (4 кадра).
+    public const int ProbeDepthCeiling = 8;
+
     public static List<RecoveryCandidate> Generate(int e, FailureSnapshot? snapshot, string input, Parser parser, Result.Kind resultKind, string startRule, int currentStartPos, int parseEnd)
     {
         var candidates = new List<RecoveryCandidate>();
@@ -176,25 +183,28 @@ public static class RecoveryEngine
         var maxS = Math.Min(e + maxSkip, input.Length);
         var top = snapshot.Stack[^1];
 
+        // A5-1 D2 (5b.4.3): K для приёма derived-зонда — SoftDepth ближайшего не-strict кадра (default 2).
+        var softDepth = NearestOptions(snapshot, f => f.Options)?.SoftDepth ?? 2;
+
         // T1 якоря: авторские (ближайший кадр с записанным полем) первыми, затем выводимые предикаты зонда
         // (A5-1, 5b.4.2/5b.4.2r): Ref-альтернативы верхнего кадра + Ref-тела Loop-кадров (DeriveProbePredicates, с фильтром),
         // затем loop-якоря из Loop-кадров (DeriveLoopAnchors, без фильтра — до-5b.4.2 поведение).
         // Порядок — по близости кадра top→bottom (A5-1, DoD 4): верхний кадр ближе, чем Loop-кадры под ним;
         // первый совпавший якорь в списке — driving anchor S2-скана.
         // Дедупликация по имени правила: более ранний источник побеждает.
-        var anchors = new List<Ref>();
+        var anchors = new List<(Ref Ref, bool Derived)>();
         var authorAnchors = NearestOptions(snapshot, f => f.Options?.Anchors);
         var seen = new HashSet<string>(StringComparer.Ordinal);
         if (authorAnchors is not null)
             foreach (var a in authorAnchors)
                 if (a is Ref r)
                 {
-                    anchors.Add(r);
+                    anchors.Add((r, false));
                     seen.Add(r.RuleName);
                 }
         foreach (var anchor in DeriveProbePredicates(parser, snapshot))
             if (seen.Add(anchor.RuleName))
-                anchors.Add(anchor);
+                anchors.Add((anchor, true));
         for (var i = snapshot.Stack.Length - 1; i >= 0; i--)
         {
             var frame = snapshot.Stack[i];
@@ -202,29 +212,33 @@ public static class RecoveryEngine
                 continue;
             foreach (var anchor in DeriveLoopAnchors(parser, frame.RuleName))
                 if (seen.Add(anchor.RuleName))
-                    anchors.Add(anchor);
+                    anchors.Add((anchor, false));
         }
 
         // T2 CanStart: авторские первыми, затем выводимые предикаты зонда (A5-1, 5b.4.2);
         // имена авторских правил подавляют выводимые предикаты того же имени (дедупликация по имени правила).
-        var canStart = new List<Ref>();
+        var canStart = new List<(Ref Ref, bool Derived)>();
         var authorCanStart = NearestOptions(snapshot, f => f.Options?.CanStart);
         var seenCanStart = new HashSet<string>(StringComparer.Ordinal);
         if (authorCanStart is not null)
             foreach (var p in authorCanStart)
                 if (p is Ref r)
                 {
-                    canStart.Add(r);
+                    canStart.Add((r, false));
                     seenCanStart.Add(r.RuleName);
                 }
         foreach (var p in DeriveProbePredicates(parser, snapshot))
             if (seenCanStart.Add(p.RuleName))
-                canStart.Add(p);
+                canStart.Add((p, true));
 
         if (anchors.Count == 0 && canStart.Count == 0)
             return;
 
         var scratch = CreateScratchParser(parser);
+
+        // A5-1 D3 (5b.4.3): отдельный scratch для derived-зонда (авторский `scratch` сохраняет
+        // дефолтный потолок 400 — семантика author/loop-якорей не меняется).
+        var probeScratch = CreateScratchParser(parser);
 
         (bool Ok, int EndPos) Speculative(string ruleName, int pos)
         {
@@ -239,6 +253,27 @@ public static class RecoveryEngine
                 var specResult = scratch.ParseRuleOnce(ruleName, 0, pos, input);
                 var success = specResult.TryGetSuccess(out _, out var end);
                 return (success, success ? end : -1);
+            });
+        }
+
+        // A5-1 D2/D3 (5b.4.3): ограниченный зонд для DERIVED-предикатов. Потолок глубины
+        // ProbeDepthCeiling (D3: work ceiling, не условие приёма); при срезке guard'ом EndPos =
+        // позиция срезки (самая глубокая достигнутая точка), при обычном провале — -1.
+        // Общий SpecCache, но отдельный mode (1): зонд ограниченно-дёшев по потолку, а
+        // срезанный результат (false, cutPos) не должен попадать в авторские (rule, pos) записи
+        // (mode 0) — и B4.3-счётчик спекуляций продолжает наблюдать зондные parse'ы.
+        // B4-деградация (SpeculationEnabled == false): фейковый (true, pos + 1) содержит ≤ 1 слово
+        // < SoftDepth → derived-зонды отклоняются — осознанная деградация (author/loop-якоря
+        // сохраняют First-scan-приём).
+        (bool Ok, int EndPos) Probe(string ruleName, int pos)
+        {
+            if (!parser.SpeculationEnabled)
+                return (true, pos + 1);
+            return parser.SpecCache.Speculative(ruleName, pos, 1, () =>
+            {
+                var (probeResult, ceilingCut, cutPos) = probeScratch.ParseRuleOnceProbed(ruleName, 0, pos, input, ProbeDepthCeiling);
+                var success = probeResult.TryGetSuccess(out _, out var end);
+                return success ? (true, end) : ceilingCut ? (false, cutPos) : (false, -1);
             });
         }
 
@@ -361,7 +396,7 @@ public static class RecoveryEngine
         // (пустое множество → jump не выполняется).
         var jumpLiterals = new HashSet<string>(StringComparer.Ordinal);
         var jumpSafe = true;
-        foreach (var refRule in anchors)
+        foreach (var (refRule, _) in anchors)
             foreach (var t in FirstSets.Get(refRule, calculator))
             {
                 if (t is Literal { Value.Length: > 1 } l)
@@ -369,7 +404,7 @@ public static class RecoveryEngine
                 else
                     jumpSafe = false;
             }
-        foreach (var refRule in canStart)
+        foreach (var (refRule, _) in canStart)
             foreach (var t in FirstSets.Get(refRule, calculator))
             {
                 if (t is Literal { Value.Length: > 1 } l)
@@ -380,6 +415,13 @@ public static class RecoveryEngine
         if (!jumpSafe)
             jumpLiterals.Clear();
 
+        // A5-1 D4 (5b.4.4, D4.2 cap-all): T2-кап — первые K позиций на предикат (K = softDepth).
+        // Скан идёт по возрастанию Pos → первые K приёмов = самые ранние позиции (детерминизм).
+        // Применяется ко ВСЕМ canStart-предикатам: выведенные T2 недостижимы (тот же предикат
+        // всегда срабатывает раньше как T1-якорь — общий источник DeriveProbePredicates, те же
+        // First и приём), а авторские CanStart без Anchors — единственный живой путь T2-коллекции,
+        // и именно щедрое множество предикатов сжигает S2-тир-бюджет (обоснование A5-1).
+        var t2Collected = new Dictionary<Ref, int>();
         var foundT1 = false;
         for (var s = e; s <= maxS && !foundT1; s++)
         {
@@ -417,12 +459,19 @@ public static class RecoveryEngine
                 }
             }
 
-            foreach (var anchor in anchors)
+            foreach (var (anchor, derived) in anchors)
             {
                 if (!FirstMatchesAt(anchor, s))
                     continue;
-                var (ok, endPos) = Speculative(anchor.RuleName, s);
-                if (ok && endPos > s)
+                var (ok, endPos) = derived ? Probe(anchor.RuleName, s) : Speculative(anchor.RuleName, s);
+                // A5-1 D2/D3 (5b.4.3): derived — приём по числу слов в потреблённом span'е
+                // (>= softDepth): и для полного успеха (D2), и для срезанного потолком parse
+                // (D3, endPos = позиция срезки); обычный провал — endPos == -1 → отклонение.
+                // Авторские/loop-якоря — строгая семантика (полный parse), без изменений.
+                var accepted = derived
+                    ? endPos > s && CountWords(input, parser.Trivia, s, endPos) >= softDepth
+                    : ok && endPos > s;
+                if (accepted)
                 {
                     AddResyncCandidate(s, "T1", anchor.RuleName);
                     foundT1 = true;
@@ -433,13 +482,23 @@ public static class RecoveryEngine
             if (foundT1)
                 break;
 
-            foreach (var p in canStart)
+            foreach (var (p, derived) in canStart)
             {
                 if (!FirstMatchesAt(p, s))
                     continue;
-                var (ok, _) = Speculative(p.RuleName, s);
-                if (ok)
+                var (ok, endPos) = derived ? Probe(p.RuleName, s) : Speculative(p.RuleName, s);
+                var accepted = derived
+                    ? endPos > s && CountWords(input, parser.Trivia, s, endPos) >= softDepth
+                    : ok;
+                if (accepted)
+                {
+                    // A5-1 D4 (5b.4.4, D4.2 cap-all): первые K приёмов на предикат (см. t2Collected).
+                    var collected = t2Collected.TryGetValue(p, out var c) ? c : 0;
+                    if (collected >= softDepth)
+                        continue;
+                    t2Collected[p] = collected + 1;
                     AddResyncCandidate(s, "T2", p.RuleName);
+                }
             }
         }
     }
@@ -1133,6 +1192,27 @@ public static class RecoveryEngine
         while (wordEnd < end && trivia.TryMatch(input, wordEnd) == 0)
             wordEnd++;
         return (wordStart, wordEnd);
+    }
+
+    // A5-1 D2 (5b.4.3): число non-trivia «слов» в input[start..end) — единица приёма
+    // derived-зонда (SoftDepth). Тот же Trivia.TryMatch-скан, что в FirstWordSpan, но по
+    // всему региону.
+    private static int CountWords(string input, Terminal trivia, int start, int end)
+    {
+        if (start >= end)
+            return 0;
+        var count = 0;
+        var pos = start;
+        while (pos < end)
+        {
+            pos += trivia.TryMatch(input, pos);
+            if (pos >= end)
+                break;
+            while (pos < end && trivia.TryMatch(input, pos) == 0)
+                pos++;
+            count++;
+        }
+        return count;
     }
 
     // Категория стоимости терминала для S3-скана (2.4): дешёвые первыми.
