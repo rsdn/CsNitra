@@ -245,3 +245,11 @@ No `RecoveryEngine.cs` change, no `.csproj` change, no S0–S6 / recovery behavi
 (`HygieneCore`, `SpeculativeCache`, the D2-core counters untouched), no stop-if triggered.
 **Not committed.** (Note: `docs/RecoveryImprovementPlan-checklist.md` carried a pre-existing
 uncommitted working-tree edit from the 6.2.1 session — left as-is, not part of 6.2.2.)
+
+## Known limitation (carried forward)
+
+- **S1 and S1b share rank 1.** The per-strategy accept/rollback counters are keyed by the
+  candidate's `Rank` (0..6), and S1b is part of S1 (rank 1) — so an S1 accept/rollback and an S1b
+  accept/rollback roll into the SAME counter (rank 1). The metrics cannot distinguish them. This is a
+  known limitation (also noted in `RecoveryMetrics.cs:26`); resolving it would need S1b to carry its
+  own rank, which is out of scope for D2-full.

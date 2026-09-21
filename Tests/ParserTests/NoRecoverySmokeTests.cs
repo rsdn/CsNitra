@@ -7,9 +7,9 @@ using Tests.Extensions;
 
 namespace NoRecoverySmoke;
 
-// Additive smoke test for the pure single-pass (non-recovery) parser build
-// (-p:EnableRecovery=false). NOT gated with #if RECOVERY: compiles and must
-// pass in both modes, using only core rule types (Seq, Literal, Terminal).
+// Additive smoke test for the single-pass parser path: uses only core rule types
+// (Seq, Literal, Terminal) and must pass without relying on recovery. The old
+// #if RECOVERY / -p:EnableRecovery build split was removed in A4-5 (single build).
 [TestClass]
 public sealed class NoRecoverySmokeTests
 {

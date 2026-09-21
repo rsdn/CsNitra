@@ -9,6 +9,8 @@ public enum RecoveryMode { Ide, Compiler, Test }
 public enum RecoveryStrategy
 {
     None = 0,
+    // S0 (base re-parse) is always tried first; it is not gated by the StrategyMask (the
+    // mask is not read yet) - the bit is present for mask completeness, not as a runtime gate.
     S0 = 1 << 0,
     S1 = 1 << 1,
     S2 = 1 << 2,
