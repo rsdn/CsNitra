@@ -291,30 +291,16 @@ public static class RecoveryEngine
                     diagnostics.Add(new RecoveryDiagnostic(e, e, RecoveryKind.Inserted, $"insert at resync point {resyncPos}", null, top.RuleName));
             }
 
-            for (var fi = snapshot.Stack.Length - 2; fi >= 0; fi--)
+            // A4-7 (7.5.1): суффиксные обязательства внешних Seq-кадров (общая механика S2/S4).
+            // S2 — от второго с верху (Stack.Length - 2): сам падающий кадр обрабатывается выше
+            // (абсорбер/memo-патч). Фильтр Injectable/совпадения в resyncPos — специфика S2.
+            foreach (var (t, _) in GetSuffixObligationFirsts(snapshot, parser, snapshot.Stack.Length - 2))
             {
-                var f = snapshot.Stack[fi];
-                if (f.Location is not SeqFrameLocation { ElementIndex: var frameIdx })
+                if (!t.Injectable)
                     continue;
-                var seq = FindSeq(parser, f.RuleName, frameIdx);
-                if (seq is null)
+                if (t.TryMatch(input, resyncPos) >= 0)
                     continue;
-                for (var j = frameIdx + 1; j < seq.Elements.Length; j++)
-                {
-                    var element = seq.Elements[j];
-                    if (FirstSets.IsNullable(element, calculator))
-                        continue;
-                    foreach (var t in FirstSets.Get(element, calculator))
-                    {
-                        if (t is EofTerminal or EpsilonTerminal)
-                            continue;
-                        if (!t.Injectable)
-                            continue;
-                        if (t.TryMatch(input, resyncPos) >= 0)
-                            continue;
-                        insertions.Add((resyncPos, t, Injection.Insert(t.Kind)));
-                    }
-                }
+                insertions.Add((resyncPos, t, Injection.Insert(t.Kind)));
             }
 
             var injOlds = CaptureInjections(parser, insertions);
@@ -774,34 +760,18 @@ public static class RecoveryEngine
     private static void GenerateS4(int e, FailureSnapshot snapshot, string input, Parser parser, List<RecoveryCandidate> candidates)
     {
         var s = input.Length;
-        var calculator = parser.FollowCalculator;
         var insertions = new List<(int Pos, Terminal T, Injection Injection)>();
         var diagnostics = new List<RecoveryDiagnostic>();
 
-        for (var i = snapshot.Stack.Length - 1; i >= 0; i--)
+        // A4-7 (7.5.1): суффиксные обязательства Seq-кадров (общая механика S2/S4). S4 — от верхнего
+        // кадра (Stack.Length - 1): достраивание до EOF удовлетворяет и хвост падающего правила.
+        // RuleName кадра сохраняется для диагностики; фильтр совпадения в s (EOF) — специфика S4.
+        foreach (var (t, ruleName) in GetSuffixObligationFirsts(snapshot, parser, snapshot.Stack.Length - 1))
         {
-            var frame = snapshot.Stack[i];
-            if (frame.Location is not SeqFrameLocation { ElementIndex: var idx })
+            if (t.TryMatch(input, s) >= 0)
                 continue;
-            var seq = FindSeq(parser, frame.RuleName, idx);
-            if (seq is null)
-                continue;
-
-            for (var j = idx + 1; j < seq.Elements.Length; j++)
-            {
-                var element = seq.Elements[j];
-                if (FirstSets.IsNullable(element, calculator))
-                    continue;
-                foreach (var t in FirstSets.Get(element, calculator))
-                {
-                    if (t is EofTerminal or EpsilonTerminal)
-                        continue;
-                    if (t.TryMatch(input, s) >= 0)
-                        continue;
-                    insertions.Add((s, t, Injection.Insert(t.Kind)));
-                    diagnostics.Add(new RecoveryDiagnostic(s, s, RecoveryKind.Inserted, $"insert {t.Kind} at EOF", t, frame.RuleName));
-                }
-            }
+            insertions.Add((s, t, Injection.Insert(t.Kind)));
+            diagnostics.Add(new RecoveryDiagnostic(s, s, RecoveryKind.Inserted, $"insert {t.Kind} at EOF", t, ruleName));
         }
 
         if (insertions.Count == 0)
@@ -1011,6 +981,68 @@ public static class RecoveryEngine
                 if (sub is Seq seq && seq.Elements.Length > elementIndex)
                     return seq;
         return null;
+    }
+
+    // A4-7 (7.5.1): First-терминалы суффиксных обязательств Seq-кадров — общая механика S2/S4.
+    // Обход кадров от fromFrameIndex вниз: для каждого Seq-кадра берём First всех элементов ПОСЛЕ
+    // текущего (idx+1..), пропуская nullable-элементы и EOF/ε. Кадровая ассоциация (RuleName)
+    // сохраняется: S4-диагностика несёт имя правила кадра (S2 игнорирует — `_`). Чистая функция:
+    // только чтение Rules/FollowCalculator, без инъекций и мутаций. Фильтры Injectable/совпадения
+    // в позиции — специфика вызывающего (S2/S4) и сюда не входят.
+    public static List<(Terminal T, string RuleName)> GetSuffixObligationFirsts(FailureSnapshot snapshot, Parser parser, int fromFrameIndex)
+    {
+        var calculator = parser.FollowCalculator;
+        var result = new List<(Terminal T, string RuleName)>();
+        for (var i = fromFrameIndex; i >= 0; i--)
+        {
+            var frame = snapshot.Stack[i];
+            if (frame.Location is not SeqFrameLocation { ElementIndex: var idx })
+                continue;
+            var seq = FindSeq(parser, frame.RuleName, idx);
+            if (seq is null)
+                continue;
+            for (var j = idx + 1; j < seq.Elements.Length; j++)
+            {
+                var element = seq.Elements[j];
+                if (FirstSets.IsNullable(element, calculator))
+                    continue;
+                foreach (var t in FirstSets.Get(element, calculator))
+                    if (t is not EofTerminal and not EpsilonTerminal)
+                        result.Add((t, frame.RuleName));
+            }
+        }
+        return result;
+    }
+
+    // A4-7 (7.5.1): объединённый expected-набор для финального сообщения.
+    // = Expected верхнего кадра ∪ GetTerminators(стек) ∪ First суффиксных обязательств.
+    // Соответствует ANTLR4 ATN.getExpectedTokens (FIRST текущего состояния + подъём FOLLOW + EOF):
+    // «FIRST текущего состояния» — суффиксные обязательства верхнего кадра (S4-семантика, весь стек),
+    // «подъём FOLLOW» — GetTerminators (per-site, A5-6, с EOF в конце). Чистая функция (без побочных
+    // эффектов) — тестируется в изоляции. Применение к FatalError/Unrecovered — 7.5.2.
+    public static List<Terminal> BuildExpectedSet(FailureSnapshot snapshot, Parser parser)
+    {
+        var result = new List<Terminal>();
+        void Add(Terminal t)
+        {
+            if (!result.Contains(t, TerminalComparer.Instance))
+                result.Add(t);
+        }
+
+        // 1. Expected верхнего кадра.
+        if (snapshot.Stack.Length > 0)
+            foreach (var t in snapshot.Stack[^1].Expected ?? [])
+                Add(t);
+
+        // 2. Терминаторы (per-site, A5-6; EOF добавляется самими GetTerminators).
+        foreach (var t in parser.GetTerminators(snapshot.Stack))
+            Add(t);
+
+        // 3. First суффиксных обязательств (весь стек, включая верхний кадр — S4-семантика).
+        foreach (var (t, _) in GetSuffixObligationFirsts(snapshot, parser, snapshot.Stack.Length - 1))
+            Add(t);
+
+        return result;
     }
 
     private static void ApplyInjections(Parser parser, List<(int Pos, Terminal T, Injection Injection)> insertions)
