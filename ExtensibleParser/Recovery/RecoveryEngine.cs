@@ -5,6 +5,18 @@ namespace ExtensibleParser.Recovery;
 /// порождает детерминированный отсортированный список патчей (S1..S5).
 /// Интеграция в цикл (apply/rollback при ре-парсинге) — 1.3.
 /// </summary>
+/// <remarks>
+/// Инварианты (структурно под кодогенерацию — сохранять при рефакторинге):
+/// <list type="number">
+/// <item><see cref="Generate"/> чистый: читает <see cref="Parser"/>, <see cref="Parser.Rules"/>,
+/// <see cref="Parser.FollowCalculator"/> — не мутирует их. Все изменения состояния — только через
+/// Apply/Rollback кандидата.</item>
+/// <item><see cref="Injection"/> + <see cref="MemoPatch"/> — единственные единицы патча. Третьи не вводить.</item>
+/// <item>«Re-pass префикса дёшев»: ре-парс не пересчитывает неизменённый префикс — опора на
+/// memo-проверку до <c>PushRuleFrame</c> (Parser.cs:299-310, кадр пушится на :329). Сохранять при рефакторинге.</item>
+/// <item>Глобальный чарт/fixpoint по ценам не вводить: recovery итеративный, кандидат валидируется re-парсом.</item>
+/// </list>
+/// </remarks>
 public static class RecoveryEngine
 {
     // A5-1 D3 (5b.4.3): потолок глубины derived-probe parse'а — лимит РАБОТЫ (насколько глубоко
