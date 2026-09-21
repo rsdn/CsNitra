@@ -138,3 +138,125 @@ whole region, and the Unrecovered marker (at `e=6`) still equals the diagnostic 
 No `.csproj` change (an auto-registered `<Compile Include>` for the new test file was
 reverted — the SDK default glob picks the file up; verified green after the revert). No
 recovery-strategy (S0–S6) behavior or depth-guard (7.1) change. Not committed.
+
+---
+
+# 7.2.2 (A5-3 / R5) — S2 insertion first-token + end-of-previous-line for missing on a new line
+
+Sub-point 7.2.2 handles the two remaining R5 squiggle-placement refinements:
+(1) S2 insertion with a region → one of the two diagnostics (Inserted/Skipped) at the first
+token of the region; (2) "end of previous line" for a missing node detected at the start of
+a new line (R5, `RecoveryImprovementProposal.md` §R5: "Missing-токен, ожидавшийся на новой
+строке → нулевая диагностика в конце предыдущей строки", Roslyn SyntaxParser.cs:622-635).
+
+## S2 first-token placement (A5-3: "для вставок с областью (S2) — одна из двух диагностик (Inserted/Skipped) на первом токене")
+
+**What S2 actually produces** (stop-if check): an S2 candidate produces **exactly ONE
+diagnostic**, never two simultaneously:
+
+- **region case** (`resyncPos > e`): one `Skipped` diagnostic, spanning the **first word of
+  the region `[e..resyncPos)`** — set in 7.2.1 (`RecoveryEngine.cs:274-275`,
+  `FirstWordSpan`). The tree may additionally contain zero-width insertion nodes at the
+  resync point (the suffix obligations, `RecoveryEngine.cs:294-318`), but they carry **no
+  diagnostic of their own** (the candidate's `Diagnostics` list holds only the Skipped one).
+- **zero-width case** (`resyncPos == e`): one `Inserted` diagnostic at `(e, e)`
+  (`RecoveryEngine.cs:291`) — a pure insertion, no region.
+
+So the spec's "two diagnostics (Inserted/Skipped)" is the conceptual pair of an S2 resync
+with a region (the absorber node + the insertion nodes in the tree); the one that MUST sit
+at the first token of the region is the **Skipped** one — and it does (since 7.2.1). The
+`Inserted` part (if present) sits at the resync point, which is the true insertion position,
+not the region start. **No code change was needed** for this item — 7.2.1 already places the
+Skipped diagnostic at the first token; 7.2.2 adds the full-parse test that pins it (see
+Tests below) and this clarification. The absorber NODE keeps the full region (unchanged).
+
+`RecoveryEngine.cs` was NOT modified in 7.2.2.
+
+## End-of-previous-line mechanism (R5)
+
+**File:line** — `Parser.Recovery.cs`:
+
+- `PlaceMissingNodeDiagnostic` (`Parser.Recovery.cs:879-890`) — the shift itself: a
+  zero-width `Inserted` diagnostic at position `p` where `input[p-1]` is `'\n'` (line start)
+  is moved to the **end of the previous line**: `p-1` walked back over the trailing
+  whitespace — the position AFTER the last non-whitespace char of the previous line
+  ("just before the newline" when the line has no trailing whitespace). `p == 0` (first
+  line — no previous line) and non-line-start positions are returned unchanged (same
+  instance). Only zero-width `Inserted` diagnostics shift: `Unrecovered`/`InsufficientStack`
+  are not missing nodes, and a non-zero-width span is not a missing node.
+- `FinalizeRecoveryDiagnostics(node, input)` (`Parser.Recovery.cs:837`) — the single
+  application point: the shift is applied to the DERIVED (tree) part of the public list
+  **AFTER** the session-end node match (`AttachDiagnosticsToTree`). Rationale: the tree node
+  (the missing token) stays at the recovery point, so `MatchesRecoveryNode`
+  (`Parser.Recovery.cs:958`) is unaffected — the shift is display-level, on the public
+  artifact only. Shifting at candidate-creation time (the engine) would break the
+  position+shape match (the node is at `e`, the shifted span is elsewhere) and would require
+  a new `RecoveryDiagnostic` field (out of the allowed edit set).
+  - If any diagnostic was shifted, the derived part is re-sorted (stable `OrderBy` by
+    `(StartPos, EndPos)`) to keep it in position order; if none was shifted, the list is left
+    untouched (byte-for-byte the previous order — preserves the pinned 6.1.2c contract:
+    public == derived (in position order) + `Unrecovered`/`InsufficientStack` appended LAST;
+    a global re-sort had broken `PublicDerivedListTests`/`SideTableEngineTests` which pin the
+    appended-Last order).
+- `FinishRecovery(result, input)` (`Parser.Recovery.cs:808`) + the 3 `Recover` call sites —
+  thread `input` through (the finalization point is the single place where the final tree +
+  result are available; `input` is needed for the newline/whitespace walk).
+
+**R5 interpretation.** R5 ("конец предыдущей строки" for a missing token expected on a new
+line, Roslyn SyntaxParser.cs:622-635) is implemented as: when a missing node (zero-width
+`Inserted`) would be placed at the start of a new line, the public diagnostic points to the
+**end of the previous line's content** — the position after its last non-whitespace char
+(equivalently "just before the newline" when there is no trailing whitespace) — instead of
+the start of the new line. Line start = the char before the position is `'\n'` (covers both
+LF and CRLF). The choice "after the last non-whitespace char" (over "just before the
+newline") makes the squiggle sit at the visible end of the previous line when the line has
+trailing whitespace. Whitespace walk is `char.IsWhiteSpace` (char-level, like Roslyn's
+token-position logic; a trailing comment is NOT walked back over — the squiggle lands after
+it, which is still the line's end). The shift applies to all strategies' zero-width
+`Inserted` diagnostics (S1/S2/S4) since they all funnel through `FinalizeRecoveryDiagnostics`.
+
+## Tests
+
+**New focused tests — `Tests/ParserTests/Recovery/FirstWordSpanTests.cs`** (3 added, 6 total):
+
+4. `Test_S2_RegionWithInsertion_DiagnosticOnFirstToken` — MiniC (the AnchorResyncTests
+   fixture), input `"int foo() { int x\n### int bar() { int y; }"`: the Stmt `"int x"` is
+   missing its `;` (e=18), S2 resyncs to the T1 anchor at 22 with BOTH an absorber
+   `[18..22)` (the region) AND a zero-width `}` insertion at 22 (the Block's suffix
+   obligation) — a full "insertion with a region". Asserts: the tree has the absorber with
+   the FULL region `[18..22)` + the zero-width insertion node at 22; exactly ONE Skipped
+   diagnostic, placed at the FIRST TOKEN of the region — `"###" [18..21)` — not the whole
+   region and not at the resync point.
+5. `Test_MissingNodeAtLineStart_DiagnosticAtEndOfPreviousLine` —
+   `Module := '{' ZeroOrMany(Stmt) '}'`, `Stmt := Ident ':' Number ';'`, input
+   `"{\na: \n; }"`: the Number is missing at e=6 (a LINE START — `input[5]` is `'\n'`); S1
+   inserts it (zero-width node stays at 6) → Success@EOF. Asserts: the Inserted diagnostic
+   is at **(4, 4)** — the end of the previous line `"a: "` (after the last non-whitespace
+   `:` at 3; the trailing space is walked back over) — NOT at the line start 6; the tree
+   node stays at 6.
+6. `Test_MissingNodeNotAtLineStart_DiagnosticStaysPut` (control) — same grammar, single-line
+   input `"{ a: ; }"`: the Number is missing at e=5 (`input[4]` is a space, not a newline) →
+   the Inserted diagnostic stays at **(5, 5)** (no shift).
+
+New helper `HasZeroWidthRecoveryNode(node, pos)` (zero-width IsRecovery non-absorber node at
+a position) in the same file. No existing test was changed or weakened.
+
+## Results
+
+- `dotnet test Tests/ParserTests` — **Passed: 424, Failed: 0**, Skipped: 2 (pre-existing WIP;
+  426 total = 423 baseline + 3 new).
+- `dotnet test Tests/CSharpGrammarTests` — **Passed: 1524, Failed: 0**, Skipped: 3
+  (pre-existing). Identical to the 7.2.1 baseline — no regression.
+- `dotnet test Tests/CsPreprocessorTests` — **Passed: 128, Failed: 0**.
+
+## Files changed (7.2.2)
+
+- `ExtensibleParser/Parser.Recovery.cs` — `PlaceMissingNodeDiagnostic` (:879-890) + the shift
+  in `FinalizeRecoveryDiagnostics` (:837-870) + `FinishRecovery`/call sites threading `input`
+  (:639, :792, :798, :808).
+- `Tests/ParserTests/Recovery/FirstWordSpanTests.cs` — 3 new tests + `HasZeroWidthRecoveryNode`
+  helper.
+
+`RecoveryEngine.cs` NOT modified (the S2 first-word span is 7.2.1's; 7.2.2 only clarifies +
+pins it). No `.csproj` change, no recovery-strategy (S0–S6) behavior or depth-guard change.
+Not committed.

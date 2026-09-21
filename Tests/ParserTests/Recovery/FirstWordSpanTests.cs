@@ -113,7 +113,144 @@ public sealed class FirstWordSpanTests
         Assert.AreEqual(input.Substring(3, 3), skipped[0].Message, "the diagnostic must carry the region text");
     }
 
+    // ============ 4. S2 insertion with a region: the first-token diagnostic is the Skipped one ============
+    // MiniC (the AnchorResyncTests fixture): "int foo() { int x\n### int bar() { int y; }" — the Stmt
+    // "int x" is missing its ';' (e = 18, the first '#'). S2 resyncs to the T1 anchor Function at 22:
+    // the candidate carries BOTH an absorber [18..22) (the region — the Absorb injection standing in
+    // for the missing ';') AND a zero-width insertion of '}' at 22 (the Block's suffix obligation) —
+    // an "insertion with a region". Per A5-3, ONE of the two diagnostics (Inserted/Skipped) is placed
+    // at the FIRST TOKEN of the region: the Skipped one spans the first word "###" [18..21) — the
+    // insertion at the resync point carries no diagnostic of its own (it is the resync point, not the
+    // region). The absorber node keeps the full region.
+    [TestMethod]
+    public void Test_S2_RegionWithInsertion_DiagnosticOnFirstToken()
+    {
+        var parser = new Parser(AnchorTerminals.Trivia());
+        parser.Rules["Module"] = [new ZeroOrMany(new Ref("Function"), "ModuleFunctions")];
+        parser.Rules["Function"] =
+        [
+            new Seq([new Literal("int"), AnchorTerminals.Ident(), new Literal("("), new Literal(")"), new Ref("Block")], "FunctionDecl"),
+        ];
+        parser.Rules["Block"] =
+        [
+            new Seq([new Literal("{"), new ZeroOrMany(new Ref("Statement")), new Literal("}")], "MultiBlock"),
+        ];
+        parser.Rules["Statement"] =
+        [
+            new Seq([new Literal("int"), AnchorTerminals.Ident(), new Literal(";")], "VarDecl"),
+        ];
+        parser.BuildTdoppRules();
+
+        var input = "int foo() { int x\n### int bar() { int y; }";
+        var result = parser.Parse(input, "Module", out _);
+
+        Assert.IsTrue(result.TryGetSuccess(out var node, out var end) && end == input.Length,
+            $"expected Success@EOF, got {result.ResultKind}@{result.NewPos}/{result.MaxFailPos}");
+
+        var e = input.IndexOf('#');
+        var resyncPos = input.IndexOf("int bar");
+
+        // The tree carries both parts of the "insertion with a region": the absorber [e..resyncPos)
+        // (full region) and the zero-width insertion node at the resync point.
+        var absorber = FindAbsorber(node!);
+        Assert.IsNotNull(absorber, $"no absorber node in the tree, diags: {Describe(parser.RecoveryDiagnostics)}");
+        Assert.AreEqual(e, absorber!.StartPos, "the absorber must keep the full region start (e)");
+        Assert.AreEqual(resyncPos, absorber.EndPos, "the absorber must keep the full region end (the resync point)");
+        Assert.IsTrue(HasZeroWidthRecoveryNode(node!, resyncPos),
+            $"expected the zero-width insertion node at the resync point {resyncPos}, diags: {Describe(parser.RecoveryDiagnostics)}");
+
+        // A5-3: the S2 region diagnostic is the Skipped one, placed at the FIRST TOKEN of the region —
+        // "###" [e..e+3) — not the whole region and not at the resync point.
+        var skipped = parser.RecoveryDiagnostics.Where(d => d.Kind == RecoveryKind.Skipped).ToList();
+        Assert.AreEqual(1, skipped.Count, $"expected exactly 1 Skipped (the S2 region), got: {Describe(parser.RecoveryDiagnostics)}");
+        Assert.AreEqual(e, skipped[0].StartPos, $"the Skipped diagnostic must start at the first token (e), got: {Describe(parser.RecoveryDiagnostics)}");
+        Assert.AreEqual(e + 3, skipped[0].EndPos, $"the Skipped diagnostic must end after the first word, got: {Describe(parser.RecoveryDiagnostics)}");
+        Assert.AreEqual("###", input.Substring(skipped[0].StartPos, skipped[0].EndPos - skipped[0].StartPos));
+        Assert.AreNotEqual(resyncPos, skipped[0].StartPos, "the first-token diagnostic must NOT be at the resync point");
+    }
+
+    // ============ 5. R5: missing node at the start of a new line → diagnostic at the end of the previous line ============
+    // Module := '{' ZeroOrMany(Stmt) '}', Stmt := Ident ':' Number ';'. "{\na: \n; }" — the Number of
+    // the first Stmt is missing: the failure is at e = 6 (the ';' on line 3 — a LINE START: input[5]
+    // is '\n'). S1 inserts the missing Number at 6 (the zero-width node stays at 6) → Success@EOF.
+    // Per R5, the Inserted diagnostic is NOT at the start of the new line (6) — it is at the END of
+    // the PREVIOUS line: "a: " (line 2) — the position after the last non-whitespace ':' at 3, i.e.
+    // (4, 4) (the trailing space is walked back over; "just before the newline" would be 5).
+    [TestMethod]
+    public void Test_MissingNodeAtLineStart_DiagnosticAtEndOfPreviousLine()
+    {
+        var parser = new Parser(RecoveryTerminals.Trivia());
+        parser.Rules["Stmt"] = [new Seq([RecoveryTerminals.Ident(), new Literal(":"), RecoveryTerminals.Number(), new Literal(";")], "Stmt")];
+        parser.Rules["Module"] = [new Seq([new Literal("{"), new ZeroOrMany(new Ref("Stmt"), "Stmts"), new Literal("}")], "Module")];
+        parser.BuildTdoppRules();
+
+        var input = "{\na: \n; }";
+        var result = parser.Parse(input, "Module", out _);
+
+        Assert.IsTrue(result.TryGetSuccess(out var node, out var end) && end == input.Length,
+            $"expected Success@EOF, got {result.ResultKind}@{result.NewPos}/{result.MaxFailPos}");
+
+        var e = input.IndexOf(';');
+        Assert.AreEqual('\n', input[e - 1], "fixture precondition: the missing node is at a line start");
+
+        var inserted = parser.RecoveryDiagnostics.Where(d => d.Kind == RecoveryKind.Inserted).ToList();
+        Assert.AreEqual(1, inserted.Count, $"expected exactly 1 Inserted (the missing Number), got: {Describe(parser.RecoveryDiagnostics)}");
+        Assert.AreEqual(4, inserted[0].StartPos,
+            $"R5: the diagnostic must be at the end of the previous line (after ':' at 3), not at the line start {e}, got: {Describe(parser.RecoveryDiagnostics)}");
+        Assert.AreEqual(4, inserted[0].EndPos, "R5: the diagnostic must stay zero-width");
+        Assert.AreNotEqual(e, inserted[0].StartPos, "the diagnostic must NOT be at the start of the new line");
+
+        // The tree node (the missing token) stays at the recovery point — only the diagnostic moved.
+        Assert.IsTrue(HasZeroWidthRecoveryNode(node!, e),
+            $"the missing-token node must stay at the recovery point {e}, diags: {Describe(parser.RecoveryDiagnostics)}");
+    }
+
+    // ============ 6. R5 control: a missing node NOT at a line start → the diagnostic stays put ============
+    // Same grammar, single-line input "{ a: ; }" — the Number is missing at e = 5 (input[4] is a
+    // space, not a newline): no end-of-previous-line shift; the Inserted diagnostic stays at (5, 5).
+    [TestMethod]
+    public void Test_MissingNodeNotAtLineStart_DiagnosticStaysPut()
+    {
+        var parser = new Parser(RecoveryTerminals.Trivia());
+        parser.Rules["Stmt"] = [new Seq([RecoveryTerminals.Ident(), new Literal(":"), RecoveryTerminals.Number(), new Literal(";")], "Stmt")];
+        parser.Rules["Module"] = [new Seq([new Literal("{"), new ZeroOrMany(new Ref("Stmt"), "Stmts"), new Literal("}")], "Module")];
+        parser.BuildTdoppRules();
+
+        var input = "{ a: ; }";
+        var result = parser.Parse(input, "Module", out _);
+
+        Assert.IsTrue(result.TryGetSuccess(out var node, out var end) && end == input.Length,
+            $"expected Success@EOF, got {result.ResultKind}@{result.NewPos}/{result.MaxFailPos}");
+
+        var e = input.IndexOf(';');
+        Assert.AreNotEqual('\n', input[e - 1], "fixture precondition: the missing node is NOT at a line start");
+
+        var inserted = parser.RecoveryDiagnostics.Where(d => d.Kind == RecoveryKind.Inserted).ToList();
+        Assert.AreEqual(1, inserted.Count, $"expected exactly 1 Inserted (the missing Number), got: {Describe(parser.RecoveryDiagnostics)}");
+        Assert.AreEqual(e, inserted[0].StartPos, $"the diagnostic must stay at the recovery point {e}, got: {Describe(parser.RecoveryDiagnostics)}");
+        Assert.AreEqual(e, inserted[0].EndPos, "the diagnostic must stay zero-width");
+    }
+
     // ============ Хелперы ============
+
+    // A zero-width IsRecovery (non-absorber) node at the given position (a missing-token insertion).
+    private static bool HasZeroWidthRecoveryNode(ISyntaxNode node, int pos)
+    {
+        switch (node)
+        {
+            case TerminalNode t:
+                return t.IsRecovery && !t.IsAbsorber && t.StartPos == pos && t.EndPos == pos;
+            case SeqNode s:
+                return s.RawElements.Any(el => HasZeroWidthRecoveryNode(el, pos));
+            case ListNode l:
+                return l.RawElements.Any(el => HasZeroWidthRecoveryNode(el, pos))
+                    || l.Delimiters.Any(d => HasZeroWidthRecoveryNode(d, pos));
+            case SomeNode so:
+                return HasZeroWidthRecoveryNode(so.Value, pos);
+            default:
+                return false;
+        }
+    }
 
     // The absorber node in the final tree (the single source of truth for the full region [E..S)).
     private static TerminalNode? FindAbsorber(ISyntaxNode node)

@@ -24,8 +24,10 @@ public partial class Parser
     // A5-2 (6.1.2c): the PUBLIC diagnostic list, DERIVED from the final tree at finalization:
     // DeriveRecoveryDiagnostics(finalTree) (the node-attached diagnostics — the exact accumulated
     // instances — in tree position order) plus the Unrecovered marker(s) from the _recoveryDiagnostics
-    // cache (Unrecovered is not a tree node — A4-2 — so it is appended, not tree-derived). Rebuilt once
-    // per Parse in FinishRecovery (the single point where the final tree + result are available).
+    // cache (Unrecovered is not a tree node — A4-2 — so it is appended, not tree-derived). Zero-width
+    // Inserted diagnostics at a line start are placed at the end of the previous line (R5, 7.2.2).
+    // Rebuilt once per Parse in FinishRecovery (the single point where the final tree + result are
+    // available).
     private List<RecoveryDiagnostic> _finalRecoveryDiagnostics = [];
     public IReadOnlyList<RecoveryDiagnostic> RecoveryDiagnostics => _finalRecoveryDiagnostics;
 
@@ -634,7 +636,7 @@ public partial class Parser
                 metrics.NoteReparse(passSw.Elapsed); // (c) iterative re-parse after the previous candidate was accepted
 
             if (result.TryGetSuccess(out _, out var end) && end == input.Length)
-                return FinishRecovery(result); // чистый успех
+                return FinishRecovery(result, input); // чистый успех
 
             // A4-5.2: Compiler profile — bail on first failure, no recovery attempts.
             if (Profile.Mode == RecoveryMode.Compiler)
@@ -787,13 +789,13 @@ public partial class Parser
             }
 
             if (result.TryGetSuccess(out _, out var endAfter) && endAfter == input.Length)
-                return FinishRecovery(result); // полностью восстановлено
+                return FinishRecovery(result, input); // полностью восстановлено
 
             if (!recoveredThisIteration)
                 break; // кандидаты исчерпаны — ошибка неотвратима
         }
 
-        return FinishRecovery(result);
+        return FinishRecovery(result, input);
     }
 
     // A5-2 (6.1.2b): завершение recovery-сессии (механизм B): каждая накопленная диагностика
@@ -801,8 +803,9 @@ public partial class Parser
     // воспроизводит kind (D1: S1b → Extraneous, а не Skipped) и метаданные Terminal/RuleName (D4)
     // накопленного списка. Точка — КОНЕЦ сессии (не момент акцепта кандидата): итеративный re-парс
     // пересоздаёт инъекционные узлы как новые инстанции (а memo-патченные узлы S2/S3/S6 живут через
-    // memo) — единый матч по финальному дереву покрывает оба вида одинаково.
-    private Result FinishRecovery(Result result)
+    // memo) — единый матч по финальному дереву покрывает оба вида одинаково. `input` — для R5-размещения
+    // (7.2.2) zero-width Inserted-диагностик на начале строки.
+    private Result FinishRecovery(Result result, string input)
     {
         // D2-full (6.2.2): record the per-session hygiene removals (the single live counter — post-B1
         // exact hygiene; HygieneCore increments HygieneRemovals, reset per Recover). Single session
@@ -811,16 +814,16 @@ public partial class Parser
         if (result.TryGetSuccess(out var node, out _))
         {
             AttachDiagnosticsToTree(node);
-            FinalizeRecoveryDiagnostics(node);
+            FinalizeRecoveryDiagnostics(node, input);
             return result;
         }
         if (result.TryGetPartial(out var pnode, out _))
         {
             AttachDiagnosticsToTree(pnode);
-            FinalizeRecoveryDiagnostics(pnode);
+            FinalizeRecoveryDiagnostics(pnode, input);
             return result;
         }
-        FinalizeRecoveryDiagnostics(null);
+        FinalizeRecoveryDiagnostics(null, input);
         return result;
     }
 
@@ -831,11 +834,29 @@ public partial class Parser
     // position order and append cleanly after the derived part). node == null (a Failure result) → no
     // tree; in practice the cache holds no Unrecovered then (a Failure means no candidate was ever
     // accepted), so the list is empty.
-    private void FinalizeRecoveryDiagnostics(ISyntaxNode? node)
+    private void FinalizeRecoveryDiagnostics(ISyntaxNode? node, string input)
     {
-        var derived = node is null
+        var treePart = node is null
             ? new List<RecoveryDiagnostic>()
             : DeriveRecoveryDiagnostics(node).ToList();
+        // R5 (7.2.2): a missing node (zero-width Inserted) expected at the START of a new line gets its
+        // diagnostic at the END of the PREVIOUS line, not at the start of the new line (IDE squiggle
+        // quality — the marker sits where the missing token was expected). Applied to the DERIVED (tree)
+        // part AFTER the session-end node match: the tree node stays at the recovery point, so
+        // MatchesRecoveryNode is unaffected (the shift is display-level, on the public artifact only).
+        var shifted = false;
+        for (var i = 0; i < treePart.Count; i++)
+        {
+            var placed = PlaceMissingNodeDiagnostic(treePart[i], input);
+            if (!ReferenceEquals(placed, treePart[i]))
+                shifted = true;
+            treePart[i] = placed;
+        }
+        // The shift moves a diagnostic EARLIER — re-sort the derived part only (stable), keeping it in
+        // position order. The pinned contract (6.1.2c) is preserved: public == derived (in position
+        // order) + Unrecovered/InsufficientStack appended LAST. Without a shift the list is left
+        // untouched (its existing order, byte-for-byte, is kept).
+        var derived = shifted ? treePart.OrderBy(d => d.StartPos).ThenBy(d => d.EndPos).ToList() : treePart;
         derived.AddRange(_recoveryDiagnostics.Where(d => d.Kind == RecoveryKind.Unrecovered));
         // 7.1.2/R3: guard-fired result = A5-4 bottom contract + ONE InsufficientStack diagnostic.
         // The bottom contract (Success<T> with a tree covering the input) already holds via
@@ -846,6 +867,26 @@ public partial class Parser
         if (_guardFired)
             derived.Add(new RecoveryDiagnostic(_guardFiredPos, _guardFiredPos, RecoveryKind.InsufficientStack, $"insufficient execution stack (depth guard fired at pos {_guardFiredPos})", null, null));
         _finalRecoveryDiagnostics = derived;
+    }
+
+    // R5 (7.2.2): end-of-previous-line placement for a missing node at a line start. A zero-width
+    // Inserted diagnostic at position p where input[p-1] is a newline is moved to the end of the
+    // previous line: p-1 walked back over the trailing whitespace — the position AFTER the last
+    // non-whitespace char of the previous line ("just before the newline" when the line has no
+    // trailing whitespace). p == 0 (the first line — no previous line) and non-line-start positions
+    // are returned unchanged. Only zero-width Inserted diagnostics shift: Unrecovered/InsufficientStack
+    // are not missing nodes, and a non-zero-width span is not a missing node either.
+    private static RecoveryDiagnostic PlaceMissingNodeDiagnostic(RecoveryDiagnostic diag, string input)
+    {
+        if (diag.Kind is not RecoveryKind.Inserted || diag.StartPos != diag.EndPos)
+            return diag;
+        var p = diag.StartPos;
+        if (p == 0 || p > input.Length || input[p - 1] is not '\n')
+            return diag;
+        var end = p - 1;
+        while (end > 0 && char.IsWhiteSpace(input[end - 1]))
+            end--;
+        return diag with { StartPos = end, EndPos = end };
     }
 
     // A5-2 (6.1.2b): корреляция узел↔диагностика по позиции+форме — надёжна для всех стратегий:
