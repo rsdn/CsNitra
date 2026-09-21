@@ -750,3 +750,31 @@ cold-start.
 ### F3+. F3 — тестовый сценарий
 
 К текущему описанию F3 (`ActiveAltIndex` возвращает `null`, когда `RuleFrame` не прямо под `SeqFrame`; `FindSeq`/`GetSuffixObligationFirsts` идут упрощённым путём и могут подмешать терминалы неактивной альтернативы) добавить конкретный вход: грамматика с двумя альтернативами правила, разные суффиксы; проверить, что R2 (S3/S6-стоп-набор) и 7.5.2 (`FatalError`/`Unrecovered` expected) не подмешивают терминалы неактивной альтернативы. **R2 повысил приоритет F3**: теперь F3 влияет не только на финальное сообщение, но и на стоп-набор S3/S6. Вынести как отдельную подзадачу Wave 7+ (не смешивать с A6/A7).
+
+## Волна 9 — масштабная валидация (V1, V2)
+
+Эмпирическая проверка «100% до EOF» и производительности на реальных данных. Не правки кода — измерение и отчёт. После Wave 7 и A8.
+
+### V1. Прогон C#-грамматики на валидных .cs из Roslyn
+
+**Цель.** Узнать реальные пределы C#-грамматики CsNitra: успевает ли распарсить, время, память, доходит ли до EOF. Отчёт — сырые числа, без ассертов на тайминги. Не часть обычного suite.
+
+**Путь к Roslyn.** Env var `CSNITRA_ROSLYN_ROOT`. Если не задан — от `AppContext.BaseDirectory` вверх до каталога с `Directory.Build.props`, взять соседний каталог `roslyn` (то есть `c:\RSDN\roslyn` при `c:\RSDN\CsNitra`). Если не найден — Trace «Roslyn root not found, skipping V1», выход без падения.
+
+**Корпус.** Топ-10 крупнейших `.cs` из Roslyn (6.44 MB `NullableReferenceTypesTests.cs` … 1.27 MB `ExtensionIndexersTests.cs`; полный список путей — в `docs/RecoveryImprovementPlan-progress5b.4.md`-стиле или в самом тесте). Отсутствующие файлы — пропускать с Trace.
+
+**Что логировать** по каждому файлу: имя, размер, время парсинга (Stopwatch, один прогон), `Success@EOF`, `RecoveryPasses`, `EngineGenerateCalls`, `Memo.Count`, `GC.GetTotalMemory(true)` до/после. Если парсинг > 60s — прервать по этому файлу, залогировать, идти дальше.
+
+**Форма.** `Tests/ParserTests/Recovery/CSharpCorpusProbeTests.cs`, один `[TestMethod]`, `[TestCategory("Probe")]`, `[Ignore("Manual diagnostic: require CSNITRA_ROSLYN_ROOT; not part of the normal suite")]`. Парсер C# — скопировать создание из существующих `CSharpGrammarTests`. Ассертов нет, только `Trace.WriteLine`.
+
+**Что не делать.** Не оптимизировать по результатам в этой же подзадаче. Только числа.
+
+### V2. Проверка A8 на дефолтном профиле (N > 1000 ошибок)
+
+**Цель.** Проверить, что A8 работает на дефолтном IDE-профиле (`MaxIterations = 1000`) при N ошибок, превышающем лимит. `A8IterationLimitTests` проверяет механизм с малым лимитом (N=5, лимит 2); V2 — на реальном масштабе.
+
+**Корпус.** MiniC (грамматика `RecoveryCorpusTests`): `Module = ZeroOrMany(Function)`, `Function = "int" Ident "(" ")" Block`, `Block = "{" Statement* "}"`, `Statement = "int" Ident ";"` — без `OftenMissed` для `;`. Вход: N=1200 функций, в каждой пропущена `;` между двумя `int`. Профиль Ide, `MaxRecoveryIterations` = дефолт (1000).
+
+**Ассерты.** `Success@EOF`; `ErrorInfo == null`; `RecoveryDiagnostics` содержит `Unrecovered`. Логировать: время парсинга, `RecoveryPasses`, `EngineGenerateCalls`.
+
+**Форма.** `Tests/ParserTests/Recovery/V2IterationLimitScaleTests.cs`, один `[TestMethod]`, `[TestCategory("Probe")]`, `[Ignore("Manual diagnostic: heavy; not part of the normal suite")]`.
