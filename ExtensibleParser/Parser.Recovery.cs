@@ -671,7 +671,26 @@ public partial class Parser
                 break; // глобальный предохранитель (fail-safe)
             ePrev = e;
             if (iter >= MaxRecoveryIterations)
-                break;
+            {
+                // A8: исчерпание лимита итераций — форсированное дно: абсорбер до EOF + Unrecovered
+                // (аналог super-literal в Roslyn). Compiler-профиль выходит раньше и не затрагивается.
+                var parseEnd = result.TryGetSuccess(out _, out var p1) ? p1 : result.TryGetPartial(out _, out var p2) ? p2 : 0;
+                var start = Math.Max(parseEnd, currentStartPos);
+                var absorber = new TerminalNode("Skipped", start, input.Length, input.Length - start, IsRecovery: true, IsAbsorber: true);
+                var prefixNode = Memo.TryGetValue((currentStartPos, startRule, 0), out var prefixResult)
+                    && prefixResult.TryGetSuccess(out var pn, out _)
+                        ? pn
+                        : null;
+                ISyntaxNode node = prefixNode switch
+                {
+                    SeqNode seq => new SeqNode(seq.Kind, [.. seq.RawElements, absorber], currentStartPos, input.Length),
+                    ListNode list => new ListNode(list.Kind, [.. list.RawElements, absorber], list.Delimiters, currentStartPos, input.Length, list.HasTrailingSeparator, list.IsRecovery),
+                    TerminalNode terminal => new SomeNode(terminal.Kind, terminal, currentStartPos, input.Length),
+                    _ => absorber
+                };
+                _recoveryDiagnostics.Add(new RecoveryDiagnostic(e, e, RecoveryKind.Unrecovered, $"iteration limit reached ({MaxRecoveryIterations}), absorbed to EOF", null, startRule));
+                return FinishRecovery(Result.Success(node, input.Length, 0), input);
+            }
 
             var snapshot = FailureSnapshotAt(e);
             Log($"S0 reparse at recovery point {e}, snapshot: {(snapshot?.Pos.ToString() ?? "n/a")}", LogImportance.High);

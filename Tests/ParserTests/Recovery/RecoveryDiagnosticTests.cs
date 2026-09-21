@@ -30,13 +30,19 @@ public sealed class RecoveryDiagnosticTests
     }
 
     [TestMethod]
-    public void Test_RecoveryDiagnostics_Empty_AfterFailure()
+    public void Test_RecoveryDiagnostics_Unrecovered_AfterIterationLimit()
     {
         var parser = NewParser();
         var result = parser.Parse("ax", "Start", out _);
 
-        Assert.IsFalse(result.IsSuccess);
+        // A8: исчерпание лимита (limit 0) — форс-дно до EOF + ровно один Unrecovered.
+        Assert.IsTrue(result.TryGetSuccess(out _, out var end) && end == 2,
+            $"A8 limit-exhaustion must reach EOF, got {result.ResultKind}@{result.NewPos}");
+        Assert.IsNull(parser.ErrorInfo, "recovered to EOF → ErrorInfo = null (A8)");
         Assert.IsNotNull(parser.RecoveryDiagnostics);
-        Assert.AreEqual(0, parser.RecoveryDiagnostics.Count);
+        var unrecovered = parser.RecoveryDiagnostics.Where(d => d.Kind == RecoveryKind.Unrecovered).ToList();
+        Assert.AreEqual(1, unrecovered.Count, $"expected exactly 1 Unrecovered, got {parser.RecoveryDiagnostics.Count} total");
+        Assert.AreEqual(1, unrecovered[0].StartPos, "Unrecovered must be at the recovery point e=1");
+        Assert.AreEqual("iteration limit reached (0), absorbed to EOF", unrecovered[0].Message, "A8 limit-exhaustion message");
     }
 }
