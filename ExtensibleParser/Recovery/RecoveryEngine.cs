@@ -1110,7 +1110,7 @@ public static class RecoveryEngine
         {
             SeqNode seq => new SeqNode(seq.Kind, [.. seq.RawElements, absorber], currentStartPos, s),
             ListNode list => new ListNode(list.Kind, [.. list.RawElements, absorber], list.Delimiters, currentStartPos, s, list.HasTrailingSeparator, list.IsRecovery),
-            TerminalNode terminal => new SomeNode(terminal.Kind, terminal, currentStartPos, s),
+            TerminalNode terminal => new SeqNode(terminal.Kind, [terminal, absorber], currentStartPos, s),
             _ => absorber
         };
         // MaxFailPos = 0: чтобы IsRecoveryPosition(MaxFailPos) == false при e == S (иначе memo отклоняется).

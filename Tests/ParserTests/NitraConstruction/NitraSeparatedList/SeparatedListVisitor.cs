@@ -59,6 +59,13 @@ public partial class SeparatedListTests
                     (Identifier)children[0]!,
                     new Args(getCallArguments(children))
                 ),
+                // Синтетический wrapper S6-recovery: GenerateS6 оборачивает префикс-терминал + абсорбер
+                // в SeqNode(Kind=Kind префикса, [prefix, absorber]) (фикс инварианта I4 — absorber в дереве).
+                // Прокидываем AST префикса: абсорбер уже отфильтрован из Elements.
+                _ when node.RawElements.Count == 2 && node.RawElements[1] is TerminalNode { IsAbsorber: true }
+                    => children.Length == 1
+                        ? children[0]!
+                        : throw new InvalidOperationException($"Recovery wrapper without a single prefix child: {node}: «{node.AsSpan(Input)}»"),
                 _ => throw new InvalidOperationException($"Unknown sequence: {node}: «{node.AsSpan(Input)}»")
             };
 

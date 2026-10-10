@@ -86,7 +86,7 @@ public sealed class CSharpCorpusHealthProbeTests
 
             var result = task.Result;
             var success = result.TryGetSuccess(out var node, out var end) && end == input.Length;
-            var health = ParseHealth.Analyze(success ? node : null, input.Length, success);
+            var health = ParseHealth.Analyze(success ? node : null, input, success, parser.Parser.Trivia);
 
             processed++;
             switch (health.Verdict)
@@ -108,7 +108,7 @@ public sealed class CSharpCorpusHealthProbeTests
                     break;
             }
 
-            Trace.WriteLine($"{name} size={input.Length} elapsedMs={sw.ElapsedMilliseconds} verdict={health.Verdict} coversInput={health.CoversInput} absorberFraction={health.AbsorberFraction}% absorberBytes={health.AbsorberBytes} recoveryNodes={health.RecoveryNodes} success={health.SuccessAtEof} passes={parser.Parser.RecoveryPasses} memo={parser.Parser.Memo.Count}");
+            Trace.WriteLine($"{name} size={input.Length} elapsedMs={sw.ElapsedMilliseconds} verdict={health.Verdict} coversInput={health.CoversInput} absorberFraction={health.AbsorberFraction}% absorberBytes={health.AbsorberBytes} unionCoverage={health.UnionCoverage} recoveryNodes={health.RecoveryNodes} success={health.SuccessAtEof} passes={parser.Parser.RecoveryPasses} memo={parser.Parser.Memo.Count}");
         }
 
         Trace.WriteLine($"processed={processed} clean={clean} recovered={recovered} falseGreen={falseGreen} uncovered={uncovered} failed={failed}");
