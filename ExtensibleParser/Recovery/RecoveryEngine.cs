@@ -70,6 +70,33 @@ public static class RecoveryEngine
         return Sort(candidates);
     }
 
+    internal static RecoveryCandidate? LocalGarbage(int e, FailureSnapshot? snapshot, string input, Parser parser)
+    {
+        if (!parser.Profile.EnableLocalGarbageRecovery || snapshot is null || snapshot.Stack.Length == 0 ||
+            snapshot.Stack.Any(f => f.Options is { Recoverable: false } ||
+                f.Options?.Anchors is not null || f.Options?.CanStart is not null) ||
+            !parser.EffectiveStrategyMask.HasFlag(RecoveryStrategy.S2))
+            return null;
+        var top = snapshot.Stack[^1];
+        if (top.Location is not SeqFrameLocation { ElementIndex: 0 })
+            return null;
+        var loop = snapshot.Stack.LastOrDefault(f => f.Location is LoopFrameLocation);
+        if (loop.Location is not LoopFrameLocation { Element: Ref item } || item.RuleName != top.RuleName)
+            return null;
+        var vocabulary = FirstSets.Get(item, parser.FollowCalculator);
+        var end = GarbageScanner.FindEnd(parser, input, e, vocabulary);
+        if (end <= e)
+            return null;
+        var absorber = new TerminalNode("Skipped", e, end, end - e, IsRecovery: true, IsAbsorber: true);
+        var value = Result.Success(absorber, end, end);
+        var olds = CaptureMemo(parser, item.RuleName, e);
+        var (diagnosticStart, diagnosticEnd) = FirstWordSpan(input, parser.Trivia, e, end);
+        return new RecoveryCandidate($"R1:{item.RuleName}:{end}", 2, end,
+            CostCalculator.SkipCost(input, e, end), item.RuleName, null,
+            p => p.PatchMemo(item.RuleName, e, value), p => RollbackMemo(p, item.RuleName, e, olds),
+            [new RecoveryDiagnostic(diagnosticStart, diagnosticEnd, RecoveryKind.Skipped, "unrecognized input", null, item.RuleName)]);
+    }
+
     // S1: вставка ожидаемого терминала в точке e (аналог Roslyn EatToken → CreateMissingToken).
     private static void GenerateS1(int e, FailureSnapshot snapshot, string input, Parser parser, List<RecoveryCandidate> candidates)
     {
@@ -250,7 +277,9 @@ public static class RecoveryEngine
                 return (true, pos + 1);
             return parser.SpecCache.Speculative(ruleName, pos, () =>
             {
+                var oldFirings = scratch.Metrics.GuardFirings;
                 var specResult = scratch.ParseRuleOnce(ruleName, 0, pos, input);
+                parser.Metrics.NoteProbe(scratch.MaxParseDepthReached, scratch.Metrics.GuardFirings - oldFirings);
                 var success = specResult.TryGetSuccess(out _, out var end);
                 return (success, success ? end : -1);
             });
@@ -272,6 +301,7 @@ public static class RecoveryEngine
             return parser.SpecCache.Speculative(ruleName, pos, 1, () =>
             {
                 var (probeResult, ceilingCut, cutPos) = probeScratch.ParseRuleOnceProbed(ruleName, 0, pos, input, ProbeDepthCeiling);
+                parser.Metrics.NoteProbe(probeScratch.MaxParseDepthReached, probeScratch.Metrics.GuardFirings);
                 var success = probeResult.TryGetSuccess(out _, out var end);
                 return success ? (true, end) : ceilingCut ? (false, cutPos) : (false, -1);
             });
@@ -642,8 +672,9 @@ public static class RecoveryEngine
     {
         if (snapshot is null)
             return;
+        var seen = new HashSet<Terminal>(stopSet, TerminalComparer.Instance);
         foreach (var (t, _) in GetSuffixObligationFirsts(snapshot, parser, snapshot.Stack.Length - 1, respectAltIndex: true))
-            if (t is not EofTerminal and not EpsilonTerminal && !stopSet.Contains(t, TerminalComparer.Instance))
+            if (t is not EofTerminal and not EpsilonTerminal && seen.Add(t))
                 stopSet.Add(t);
     }
 
@@ -657,18 +688,6 @@ public static class RecoveryEngine
         AddSuffixObligations(snapshot, parser, stopSet);
         var maxSkip = GetMaxSkip(snapshot) ?? parser.EffectiveMaxSkip;
         var maxS = Math.Min(e + maxSkip, input.Length);
-        var matchCache = new Dictionary<(int Pos, Terminal Terminal), int>(TerminalComparer.KeyComparer);
-
-        int Match(Terminal term, int pos)
-        {
-            var cacheKey = (pos, term);
-            if (matchCache.TryGetValue(cacheKey, out var len))
-                return len;
-            len = term.TryMatch(input, pos);
-            matchCache[cacheKey] = len;
-            return len;
-        }
-
         // Оптимизация (2.4): дешёвые терминаторы первыми. Детерминированный порядок:
         // стабильная сортировка по (категория стоимости, позиция в исходном агрегате GetTerminators):
         //   0 — single-char Literal (StartsWith на 1 символ), 1 — остальные Literal, 2 — regex/остальные (DFA).
@@ -688,67 +707,10 @@ public static class RecoveryEngine
         }
         ordered.Sort((a, b) => a.Cost != b.Cost ? a.Cost.CompareTo(b.Cost) : a.OrigIdx.CompareTo(b.OrigIdx));
 
-        var curly = 0;
-        var paren = 0;
-        var bracket = 0;
-        var foundS = -1;
-        Terminal foundT = EofTerminal.Instance;
-
-        for (var s = e + 1; s <= maxS; s++)
-        {
-            parser.NoteS3ScanPosition();
-
-            switch (input[s - 1])
-            {
-                case '{': curly++; break;
-                case '}': if (curly > 0) curly--; break;
-                case '(': paren++; break;
-                case ')': if (paren > 0) paren--; break;
-                case '[': bracket++; break;
-                case ']': if (bracket > 0) bracket--; break;
-            }
-
-            var triviaLen = parser.Trivia.TryMatch(input, s);
-            if (triviaLen > 0)
-            {
-                // 5a.2.3 (решение (б)): trivia-бег [s..s+triviaLen) (включая // и /* */) не содержит
-                // терминаторов — пропуск. Прыжок ПОСЛЕ switch: input[s-1] (могла быть скобка) уже
-                // учтена в curly/paren/bracket. Скобки внутри бег'а (напр. в /* ... */) больше не
-                // учитываются — парсер сам их игнорирует. Инкремент цикла s++ после s += triviaLen - 1
-                // ставит скан ровно на s + triviaLen (первую non-trivia позицию).
-                s += triviaLen - 1;
-                continue;
-            }
-
-            foreach (var (t, _, _) in ordered)
-            {
-                if (Match(t, s) < 0)
-                    continue;
-
-                var depth = t switch
-                {
-                    Literal { Value: "}" } => curly,
-                    Literal { Value: ")" } => paren,
-                    Literal { Value: "]" } => bracket,
-                    _ => 0
-                };
-                if (depth > 0)
-                    continue; // чужая закрывающая — скан продолжается
-
-                foundS = s;
-                foundT = t;
-                break;
-            }
-
-            if (foundS < 0 && hasEof && s == input.Length)
-            {
-                foundS = s;
-                foundT = EofTerminal.Instance;
-            }
-
-            if (foundS >= 0)
-                break;
-        }
+        var scanStops = ordered.Select(x => x.T).ToList();
+        if (hasEof)
+            scanStops.Add(EofTerminal.Instance);
+        var (foundS, foundT) = new RecoveryScan(parser, input).Find(e, maxS, scanStops, parser.NoteS3ScanPosition);
 
         if (foundS < 0)
             return;
@@ -935,6 +897,7 @@ public static class RecoveryEngine
 
         // стоп-набор = anchor-First (First-терминалы якорей из Loop-кадров снимка) ∪ терминаторы ∪ суффиксные обязательства (R2).
         var stopSet = new List<Terminal>();
+        var seen = new HashSet<Terminal>(TerminalComparer.Instance);
         if (snapshot is not null)
         {
             for (var i = snapshot.Stack.Length - 1; i >= 0; i--)
@@ -944,12 +907,12 @@ public static class RecoveryEngine
                     continue;
                 foreach (var anchor in DeriveLoopAnchors(parser, frame.RuleName))
                     foreach (var t in FirstSets.Get(anchor, calculator))
-                        if (t is not EofTerminal and not EpsilonTerminal && !stopSet.Contains(t, TerminalComparer.Instance))
+                        if (t is not EofTerminal and not EpsilonTerminal && seen.Add(t))
                             stopSet.Add(t);
             }
         }
         foreach (var t in terminators)
-            if (!stopSet.Contains(t, TerminalComparer.Instance))
+            if (seen.Add(t))
                 stopSet.Add(t);
         // R2 (5b.5): + First-терминалы суффиксных обязательств (no-op при snapshot == null).
         AddSuffixObligations(snapshot, parser, stopSet);
@@ -957,29 +920,11 @@ public static class RecoveryEngine
         // скан от e+1 до EOF (без MaxSkip): S — следующая позиция > e, где совпадает стоп-набор, либо EOF.
         var s = input.Length;
         Terminal foundT = EofTerminal.Instance;
-        for (var pos = e + 1; pos <= input.Length; pos++)
+        var scanned = new RecoveryScan(parser, input).Find(e, input.Length, stopSet);
+        if (scanned.Position >= 0)
         {
-            Terminal? matched = null;
-            foreach (var t in stopSet)
-            {
-                if (t is EofTerminal)
-                {
-                    if (pos == input.Length)
-                        matched = t;
-                    continue;
-                }
-                if (t.TryMatch(input, pos) >= 0)
-                {
-                    matched = t;
-                    break;
-                }
-            }
-            if (matched is { } m)
-            {
-                s = pos;
-                foundT = m;
-                break;
-            }
+            s = scanned.Position;
+            foundT = scanned.Terminal;
         }
 
         var cost = CostCalculator.SkipCost(input, e, s);
@@ -1104,7 +1049,9 @@ public static class RecoveryEngine
             if (frame.Location is not SeqFrameLocation { ElementIndex: var idx })
                 continue;
             var altIndex = respectAltIndex ? ActiveAltIndex(snapshot, i, frame.RuleName) : null;
-            var seq = FindSeq(parser, frame.RuleName, idx, altIndex);
+            var seq = respectAltIndex && frame.Location is SeqFrameLocation { Sequence: { } occurrence }
+                ? occurrence
+                : FindSeq(parser, frame.RuleName, idx, altIndex);
             if (seq is null)
                 continue;
             for (var j = idx + 1; j < seq.Elements.Length; j++)
@@ -1142,9 +1089,10 @@ public static class RecoveryEngine
     public static List<Terminal> BuildExpectedSet(FailureSnapshot snapshot, Parser parser)
     {
         var result = new List<Terminal>();
+        var seen = new HashSet<Terminal>(TerminalComparer.Instance);
         void Add(Terminal t)
         {
-            if (!result.Contains(t, TerminalComparer.Instance))
+            if (seen.Add(t))
                 result.Add(t);
         }
 

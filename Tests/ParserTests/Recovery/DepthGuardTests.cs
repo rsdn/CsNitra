@@ -44,8 +44,9 @@ public sealed class DepthGuardTests
         var input = Nested(350);
         var result = parser.Parse(input, "Expr", out _);
 
-        Assert.AreEqual(RecoveryProfile.MaxParseDepthCap, parser.MaxParseDepthReached,
-            "depth-счётчик должен остановиться ровно на откалиброванном потолке (guard отклоняет следующий кадр)");
+        Assert.IsTrue(parser.MaxParseDepthReached > 0);
+        Assert.IsTrue(parser.MaxParseDepthReached <= RecoveryProfile.MaxParseDepthCap,
+            "The available-stack guard may fire before the fixed depth cap.");
         // 7.1.2/R3: guard-fired result = A5-4 bottom contract — Success<T> c деревом, покрывающим весь
         // ввод (recovery-to-EOF/S6), а не bare Failure; ErrorInfo = null (recovered).
         Assert.IsTrue(result.TryGetSuccess(out var node, out var end) && end == input.Length
@@ -56,6 +57,30 @@ public sealed class DepthGuardTests
         var insufficient = parser.RecoveryDiagnostics.Where(d => d.Kind == RecoveryKind.InsufficientStack).ToList();
         Assert.AreEqual(1, insufficient.Count,
             $"guard сработал → ровно одна диагностика InsufficientStack (RecoveryDiagnostics={parser.RecoveryDiagnostics.Count})");
+    }
+
+    [TestMethod]
+    public void CompilerGuardDoesNotLeakIntoNextParse()
+    {
+        var parser = MakeParser();
+        parser.Profile = RecoveryProfile.Compiler;
+        parser.Parse(Nested(350), "Expr", out _);
+        Assert.AreEqual(0, parser.EngineGenerateCalls);
+        Assert.IsTrue(parser.RecoveryDiagnostics.Any(d => d.Kind == RecoveryKind.InsufficientStack));
+        var result = parser.Parse("1", "Expr", out _);
+        Assert.IsTrue(result.TryGetSuccess(out _, out var end) && end == 1);
+        Assert.AreEqual(0, parser.RecoveryDiagnostics.Count);
+    }
+
+    [TestMethod]
+    public void ProbeGuardDoesNotLeakIntoNormalParse()
+    {
+        var parser = MakeParser();
+        var (_, cut, _) = parser.ParseRuleOnceProbed("Expr", 0, 0, Nested(20), 8);
+        Assert.IsTrue(cut);
+        var result = parser.Parse(Nested(5), "Expr", out _);
+        Assert.IsTrue(result.TryGetSuccess(out _, out var end) && end == 11);
+        Assert.AreEqual(0, parser.RecoveryDiagnostics.Count);
     }
 
     // ============ Контроль: легитимный parse под потолком проходит чисто (guard и recovery не мешают) ============

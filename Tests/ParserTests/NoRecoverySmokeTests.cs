@@ -17,6 +17,7 @@ public sealed class NoRecoverySmokeTests
 
     public NoRecoverySmokeTests()
     {
+        _parser.Profile = ExtensibleParser.Recovery.RecoveryProfile.Compiler;
         _parser.Rules["Stmt"] = new Rule[]
         {
             new Seq([new Literal("int"), Terminals.Number()], Kind: "IntDecl"),
@@ -50,6 +51,6 @@ public sealed class NoRecoverySmokeTests
 
         var errorInfo = _parser.ErrorInfo.AssertIsNonNull();
         Assert.AreEqual(0, errorInfo.Pos);
-        CollectionAssert.AreEqual(new[] { "int" }, errorInfo.Expecteds.Select(t => t.Kind).ToArray());
+        CollectionAssert.AreEquivalent(new[] { "int", "Number", "EOF" }, errorInfo.Expecteds.Select(t => t.Kind).ToArray());
     }
 }

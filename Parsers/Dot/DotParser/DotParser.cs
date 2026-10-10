@@ -10,7 +10,8 @@ public class DotParser
 
     public DotParser()
     {
-        _parser = new Parser(DotTerminals.Trivia());
+        // This API returns an AST without recovery diagnostics; admit only clean syntax.
+        _parser = new Parser(DotTerminals.Trivia()) { Profile = ExtensibleParser.Recovery.RecoveryProfile.Compiler };
 
         _parser.Rules["Graph"] =
         [

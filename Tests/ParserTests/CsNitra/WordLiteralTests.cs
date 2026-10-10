@@ -134,6 +134,7 @@ public sealed class WordLiteralTests
             "Grammar = Stmt*;\nStmt = \"using\" Identifier \";\";",
             [CsNitraTerminals.Identifier()]);
 
+        parser.Profile = ExtensibleParser.Recovery.RecoveryProfile.Compiler;
         var bad = parser.Parse("usingx;", "Grammar", out _);
 
         Assert.IsFalse(bad.TryGetSuccess(out _, out _), "'usingx;' must not parse as 'using x;'");

@@ -240,10 +240,25 @@ public partial class Parser(Terminal trivia, Log? log = null)
 
     public Result Parse(string input, string startRule, out int triviaLength, int startPos = 0)
     {
+        var savedPhase = _phase;
+        _phase = ParsePhase.Normal;
+        try
+        {
+            return ParseCore(input, startRule, out triviaLength, startPos);
+        }
+        finally
+        {
+            _phase = savedPhase;
+        }
+    }
+
+    private Result ParseCore(string input, string startRule, out int triviaLength, int startPos)
+    {
         _debugInput = input;
         ErrorInfo = null;
         triviaLength = 0;
         ErrorPos = startPos;
+        _expected.Clear();
         var currentStartPos = startPos;
         _memo.Clear();
         _memoByPos.Clear();
@@ -275,6 +290,20 @@ public partial class Parser(Terminal trivia, Log? log = null)
     // recovery to EOF is neither wanted nor correct (e.g. measuring a string literal's extent).
     public Result ParseSubRule(string input, string rule, int startPos)
     {
+        var savedPhase = _phase;
+        _phase = ParsePhase.Normal;
+        try
+        {
+            return ParseSubRuleCore(input, rule, startPos);
+        }
+        finally
+        {
+            _phase = savedPhase;
+        }
+    }
+
+    private Result ParseSubRuleCore(string input, string rule, int startPos)
+    {
         _debugInput = input;
         ErrorInfo = null;
         ErrorPos = startPos;
@@ -284,6 +313,14 @@ public partial class Parser(Terminal trivia, Log? log = null)
         _firstCache.Clear();
         ClearInjections();
         SetMaxParseDepth(input.Length);
+        Metrics.Reset();
+        Metrics.InitialDepthLimit = InitialMaxParseDepth;
+        _lastSnapshot = null;
+        _lastPartial = null;
+        _recoveryPoint = -1;
+        _quietZoneEnd = -1;
+        _expected.Clear();
+        _suppressSideEffects = false;
         return ParseRule(rule, minPrecedence: 0, startPos, input);
     }
 
@@ -632,7 +669,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
         var elements = new List<ISyntaxNode>();
 
         // Parse at least one element
-        var firstResult = WithFrame(new LoopFrameLocation("OneOrMany", 0), ExpectedFor(oneOrMany.Element), oneOrMany.Kind ?? "OneOrMany",
+        var firstResult = WithFrame(new LoopFrameLocation("OneOrMany", 0) { Element = oneOrMany.Element }, ExpectedFor(oneOrMany.Element), oneOrMany.Kind ?? "OneOrMany",
             null, () => ParseAlternative(oneOrMany.Element, currentPos, input));
 
         // Try success first, then partial
@@ -653,7 +690,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
         int iteration = 1;
         while (true)
         {
-            var result = WithFrame(new LoopFrameLocation("OneOrMany", iteration), ExpectedFor(oneOrMany.Element), oneOrMany.Kind ?? "OneOrMany",
+            var result = WithFrame(new LoopFrameLocation("OneOrMany", iteration) { Element = oneOrMany.Element }, ExpectedFor(oneOrMany.Element), oneOrMany.Kind ?? "OneOrMany",
                 null, () => ParseAlternative(oneOrMany.Element, currentPos, input));
 
             if (result.MaxFailPos > maxFailPos)
@@ -681,7 +718,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
 
         var loopCtx = isPartial ? new ParseContext(
                 oneOrMany.Kind ?? "OneOrMany",
-                new LoopFrameLocation("OneOrMany", iteration),
+                new LoopFrameLocation("OneOrMany", iteration) { Element = oneOrMany.Element },
                 ExpectedFor(oneOrMany.Element),
                 null)
             : null;
@@ -702,7 +739,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
         int iteration = 0;
         while (true)
         {
-            var result = WithFrame(new LoopFrameLocation("ZeroOrMany", iteration), ExpectedFor(zeroOrMany.Element), zeroOrMany.Kind ?? "ZeroOrMany",
+            var result = WithFrame(new LoopFrameLocation("ZeroOrMany", iteration) { Element = zeroOrMany.Element }, ExpectedFor(zeroOrMany.Element), zeroOrMany.Kind ?? "ZeroOrMany",
                 null, () => ParseAlternative(zeroOrMany.Element, currentPos, input));
 
             if (result.MaxFailPos > maxFailPos)
@@ -730,7 +767,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
 
         var loopCtx = isPartial ? new ParseContext(
                 zeroOrMany.Kind ?? "ZeroOrMany",
-                new LoopFrameLocation("ZeroOrMany", iteration),
+                new LoopFrameLocation("ZeroOrMany", iteration) { Element = zeroOrMany.Element },
                 ExpectedFor(zeroOrMany.Element),
                 null)
             : null;
@@ -756,7 +793,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
 
         for (var i = 0; i < count; i++)
         {
-            var result = WithFrame(new LoopFrameLocation("Repeat", i), ExpectedFor(repeat.Element), repeat.Kind ?? "Repeat",
+            var result = WithFrame(new LoopFrameLocation("Repeat", i) { Element = repeat.Element }, ExpectedFor(repeat.Element), repeat.Kind ?? "Repeat",
                 null, () => ParseAlternative(repeat.Element, currentPos, input));
             if (result.MaxFailPos > maxFailPos)
                 maxFailPos = result.MaxFailPos;
@@ -866,8 +903,10 @@ public partial class Parser(Terminal trivia, Log? log = null)
             {
                 _expected.Clear();
                 ErrorPos = pos;
-                OnMismatch(terminal, pos);
             }
+            // The first mismatch can be at the entry position (including empty input).
+            if (_lastSnapshot is null || pos > _lastSnapshot.Pos)
+                OnMismatch(terminal, pos);
             _expected.Add(terminal);
         }
     }
@@ -887,7 +926,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
         for (int elemIdx = 0; elemIdx < seq.Elements.Length; elemIdx++)
         {
             var element = seq.Elements[elemIdx];
-            var result = WithFrame(new SeqFrameLocation(elemIdx), ExpectedFor(element), seq.Kind ?? "Seq",
+            var result = WithFrame(new SeqFrameLocation(elemIdx) { Sequence = seq }, ExpectedFor(element), seq.Kind ?? "Seq",
                 OftenMissedOptionsFor(element), () => ParseAlternative(element, newPos, input));
 
             if (result.MaxFailPos > maxFailPos)

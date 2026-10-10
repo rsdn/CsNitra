@@ -63,6 +63,7 @@ public sealed class DerivedProbePredicateTests
     public void Test_S2_Resync_Driven_By_Derived_TopFrameRef_Alternative()
     {
         var parser = NewParser();
+        parser.Profile = parser.Profile with { EnableLocalGarbageRecovery = false };
         var input = "var a; ### var b;";
         var result = parser.Parse(input, "Module", out _);
 

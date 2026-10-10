@@ -8,7 +8,8 @@ public class JsonParser
 
     public JsonParser()
     {
-        _parser = new Parser(JsonTerminals.Whitespace());
+        // This API returns an AST without recovery diagnostics; admit only clean syntax.
+        _parser = new Parser(JsonTerminals.Whitespace()) { Profile = ExtensibleParser.Recovery.RecoveryProfile.Compiler };
 
         _parser.Rules["Json"] = [new Ref("Value")];
 

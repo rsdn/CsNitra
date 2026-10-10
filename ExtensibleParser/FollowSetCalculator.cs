@@ -241,12 +241,13 @@ public class FollowSetCalculator
         {
             var (terms, nullable) = TailOf(stack, i - 1);
             var cur = new List<Terminal>();
+            var seen = new HashSet<Terminal>(TerminalComparer.Instance);
             foreach (var t in terms)
-                if (t is not EofTerminal && !cur.Contains(t, TerminalComparer.Instance))
+                if (t is not EofTerminal && seen.Add(t))
                     cur.Add(t);
             if (nullable)
                 foreach (var t in outer)
-                    if (t is not EofTerminal && !cur.Contains(t, TerminalComparer.Instance))
+                    if (t is not EofTerminal && seen.Add(t))
                         cur.Add(t);
             outer = cur;
         }
@@ -264,6 +265,10 @@ public class FollowSetCalculator
             return (SafeFollow(parent.RuleName), true);
         if (parent.Options?.Terminators is not null)
             return (parent.Options.Terminators, false);
+        if (parent.Location is SeqFrameLocation { ElementIndex: var exactIndex, Sequence: { } exact })
+            return exactIndex >= exact.Elements.Length - 1
+                ? (Array.Empty<Terminal>(), true)
+                : ComputeFirstForSequence(exact.Elements[(exactIndex + 1)..].ToList());
         if (parent.Location is SeqFrameLocation { ElementIndex: var ei } && parentIndex >= 1)
         {
             var below = stack[parentIndex - 1];
@@ -300,11 +305,12 @@ public class FollowSetCalculator
                     var (bodyFirst, _) = ComputeFirstForSequence(new List<Rule> { loopBody });
                     var (remFirst, remNullable) = ComputeFirstForSequence(remaining.ToList());
                     var combined = new List<Terminal>();
+                    var seen = new HashSet<Terminal>(TerminalComparer.Instance);
                     foreach (var t in bodyFirst)
-                        if (t is not EpsilonTerminal && !combined.Contains(t, TerminalComparer.Instance))
+                        if (t is not EpsilonTerminal && seen.Add(t))
                             combined.Add(t);
                     foreach (var t in remFirst)
-                        if (t is not EpsilonTerminal && !combined.Contains(t, TerminalComparer.Instance))
+                        if (t is not EpsilonTerminal && seen.Add(t))
                             combined.Add(t);
                     return (combined, remNullable);
                 }

@@ -47,6 +47,17 @@ public sealed class ProbeDepthCeilingTests
     }
 
     [TestMethod]
+    public void ProbeOwnsItsDebugInputOnAReusedTestThread()
+    {
+        MakeShallowParser().ParseSubRule("x", "S", 0);
+        var parser = MakeShallowParser();
+        var (result, cut, _) = parser.ParseRuleOnceProbed("S", 0, 0, "ab", 8);
+        Assert.IsTrue(result.TryGetSuccess(out _, out var end));
+        Assert.AreEqual(2, end);
+        Assert.IsFalse(cut);
+    }
+
+    [TestMethod]
     public void Test_Deep_Chain_CeilingCut()
     {
         var parser = MakeDeepParser();
