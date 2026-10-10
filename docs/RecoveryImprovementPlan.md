@@ -751,6 +751,61 @@ cold-start.
 
 К текущему описанию F3 (`ActiveAltIndex` возвращает `null`, когда `RuleFrame` не прямо под `SeqFrame`; `FindSeq`/`GetSuffixObligationFirsts` идут упрощённым путём и могут подмешать терминалы неактивной альтернативы) добавить конкретный вход: грамматика с двумя альтернативами правила, разные суффиксы; проверить, что R2 (S3/S6-стоп-набор) и 7.5.2 (`FatalError`/`Unrecovered` expected) не подмешивают терминалы неактивной альтернативы. **R2 повысил приоритет F3**: теперь F3 влияет не только на финальное сообщение, но и на стоп-набор S3/S6. Вынести как отдельную подзадачу Wave 7+ (не смешивать с A6/A7).
 
+---
+
+### A10. Token-wise scan для S3/S6
+
+Проблема: S3/S6 скан идёт по одному символу. На позиции внутри `using` (`using static ...`) `Identifier [_\l]\w*` матчит `sing`, и скан останавливается mid-word вместо того, чтобы пройти дальше и остановиться на `namespace` (позиция 845 вместо 767). На V1/9.1c даёт absorberFraction=100%.
+
+Форма: скан идёт токенами, не символами.
+
+```
+pos = e + 1
+while pos <= maxS:
+    // 1. trivia
+    k = trivia.TryMatch(input, pos)
+    if k > 0: pos += k; continue
+
+    // 2. найти начало следующего токена
+    while pos <= maxS && !AnyTokenStartsAt(input, pos): pos++
+    if pos > maxS: break
+
+    // 3. на границе токена
+    t = FirstTokenAt(input, pos)
+    if t in stopSet: return pos
+    pos += t.MatchLength(input, pos)   // прыжок через весь токен
+```
+
+`AnyTokenStartsAt`/`FirstTokenAt` — по всем терминалам грамматики (можно кэшировать как множество стартовых символов для быстрой проверки, полный `TryMatch` только при попадании).
+
+Не путать с 5a.2.3 trivia-jump: там прыжок через trivia, здесь — прыжок через токен.
+
+Связь с A11: A10 без A11 не отличим от старого поведения на тестовом входе (Identifier ловит любое слово). A11 без A10 даёт стоп на 845, но mid-word остановки остаются в другом месте. Делать вместе.
+
+Тест: `### garbage ### using static Foo.Bar; namespace N; class C {}` с грамматикой Cs1-подобной. Ожидание: absorberFraction < 50%, структурный узел NamespaceDeclaration в дереве. Падает без правки (absorberFraction=100%).
+
+Место: после A11 или вместе.
+
+---
+
+### A11. Фильтр catch-all regex из stop-set S3/S6
+
+Проблема: в stop-set попадает `Identifier [_\l]\w*` — через R2 suffix `First(TypeName)` (alias-name в ExternAliasDirective). Любой Identifier матчится, скан останавливается на первом же слове. Правильный стоп — `namespace` (Literal), а не `static` (Identifier).
+
+Форма: при построении stop-set в `GenerateS3`/`GenerateS6` (и в `AddSuffixObligations`) фильтровать терминалы, чей `TryMatch` — catch-all regex (матчит почти любое слово: `Identifier`, `InterpolatedText`, подобные). Оставить только `Literal`-терминалы и узкие regex (числа, строки, пунктуация).
+
+Критерий «catch-all» — конкретный список, зафиксировать до реализации. Кандидаты: `Identifier [_\l]\w*`. Не фильтровать: `DecimalIntegerLiteral`, `StringLiteral`, `CharLiteral`, `Literal("namespace")` и т.д.
+
+Не фильтровать `Literal` даже если он короткий и матчит часть слова (`Literal("=")` — 1 символ). Это граница: regex — фильтруем, Literal — нет.
+
+Риск: R2/A5-6 могут давать и другие regex в stop-set. Пройти все пути формирования и убедиться, что не ломаем `S6BottomTests`, `A42AcceptanceTests`, `R2ExpectedStopTests`, `V2IterationLimitScaleTests`.
+
+Связь с A10: делать вместе.
+
+Тест: тот же вход, что в A10. Ожидание то же. Плюс регресс-прогон трёх сюит.
+
+Место: после A10.
+
 ## Волна 9 — масштабная валидация (V1, V2)
 
 Эмпирическая проверка «100% до EOF» и производительности на реальных данных. Не правки кода — измерение и отчёт. После Wave 7 и A8.
@@ -778,3 +833,12 @@ cold-start.
 **Ассерты.** `Success@EOF`; `ErrorInfo == null`; `RecoveryDiagnostics` содержит `Unrecovered`. Логировать: время парсинга, `RecoveryPasses`, `EngineGenerateCalls`.
 
 **Форма.** `Tests/ParserTests/Recovery/V2IterationLimitScaleTests.cs`, один `[TestMethod]`, `[TestCategory("Probe")]`, `[Ignore("Manual diagnostic: heavy; not part of the normal suite")]`.
+
+**Итог Wave 9.** V1 (10 самых больших Roslyn .cs) показал absorberFraction=100% на всех файлах: recovery корректно работает по своему контракту (Success@EOF, Unrecovered, absorber-coverage честно измеряется после 9.1d), но C#-грамматика Cs1..Cs14 не покрывает реальные Roslyn .cs (starting с `using static`, `#pragma`, многих CS8–14 конструкций). Триггер первого absorber'а — отсутствие `using static` в грамматике; дальше recovery не находит resync-точку (S2 отвергается, потому что anchor-конструкция тоже не полностью в грамматике), S3/S6 дают absorber до EOF. Это ограничение грамматики, не дефект recovery.
+
+Побочные находки: F7 (S6 при e==0 не принимается), F8 (S6 — skip-to-good, не resync), A10 (token-wise scan), A11 (фильтр catch-all regex из stop-set). Реальный recovery-корпус надо строить в грамматике, которая покрывает вход; измерение на сырых Roslyn .cs требует полной C#-грамматики — отдельный трек, не часть Wave 9.
+
+## Follow-ups / tech-debt
+
+- **F7. S6 при e==0 не принимается.** `GenerateS6` патчит memo с `MaxFailPos = 0` (комментарий «чтобы IsRecoveryPosition(MaxFailPos) == false при e == S»). При `e == 0` это `0 == 0` — `IsRecoveryPosition(cached.MaxFailPos)` возвращает true, `ParseRule` (Parser.cs:299-309) отбрасывает патч как «stale memo in recovery mode», re-parse падает идентично, S6-кандидат отвергается. Recovery не вытягивает файлы, начинающиеся с мусора (position 0). Триггер: любой вход с непонятной конструкцией в самом начале. Фикс: отличать «maxFailPos=0 потому что не было падения» от «maxFailPos=0 потому что e==0» — например, отдельный sentinel или доп. флаг в `Result`.
+- **F8. S6 — skip-to-known-good, не resync.** Принятый S6 кандидат memo-патчит start-rule `Success@S`, re-parse читает этот memo и останавливается на S. Следующая итерация S6 сканирует с S+1 — ключевое слово в S никогда не парсится, поглощается следующим absorber'ом. Цепочка absorber'ов до EOF, absorberFraction=100%. Единственный настоящий resync — S2 (skip-to-anchor + continuation). При неполной грамматике S2 отвергается (спекулятивный парс anchor'а падает), absorberFraction не падает. Фикс: S6 должен после absorber'а возвращать управление в разбор с S (не только патчить memo, а позволять re-parse входить в содержимое с S). Это архитектурное изменение `Recover`/`Apply`.

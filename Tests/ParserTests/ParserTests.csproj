@@ -21,6 +21,8 @@
     <Compile Include="..\..\Shared\GlobalUsings.cs" Link="Shared\GlobalUsings.cs" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\Parsers\CSharp\CSharpGrammar\CSharpGrammar.csproj" />
+    <ProjectReference Include="..\..\Parsers\CSharp\CsPreprocessor\CsPreprocessor.csproj" />
     <ProjectReference Include="..\..\Parsers\Cpp\CppSimplifiedParser\CppSimplifiedParser.csproj" />
     <ProjectReference Include="..\..\Parsers\CsNitra\CsNitraGrammar\CsNitraGrammar.csproj" />
     <ProjectReference Include="..\..\Parsers\Dot\DotParser\DotParser.csproj" />
