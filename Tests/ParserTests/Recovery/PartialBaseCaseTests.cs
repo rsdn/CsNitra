@@ -56,7 +56,15 @@ public sealed class PartialBaseCaseTests
         parser.Rules["Start"] = [new ZeroOrMany(new EpsilonCounter(counter))];
         parser.BuildTdoppRules();
         parser.Parse("abc", "Start", out _);
-        Assert.IsTrue(counter[0] <= 2);
+        // A10 contract change (precedent: checklist 1.7d — collateral test updated when the contract
+        // legitimately changed): the S3/S6 scans now probe ALL grammar terminals at every position where
+        // the stop-set does not match (token-jump), so EpsilonCounter.TryMatch is called more often than
+        // at HEAD (the old bound 2 encoded HEAD's probe set = stop-set only). Exact bounded count for
+        // "abc" (len 3), measured: 1 main-parse call at pos 0 + 2 S6-scan probe calls at pos 1..len-1
+        // (pos 3 is the EOF stop, not probed) = 3; the re-parse after the S6 memo patch adds 0 (the memo
+        // hit short-circuits the rule). Bound stays finite and tied to input length: 1 + (len - 1).
+        // Intent preserved: a finite bound proves the ε-loop does not hang.
+        Assert.IsTrue(counter[0] <= 3);
     }
 
     // ============ 3. Тай-брейк: Success бьёт Partial при равной длине ============
