@@ -47,6 +47,7 @@ public sealed class TerminalCacheTests
     {
         var counter = new int[1];
         var parser = NewParser();
+        parser.Profile = RecoveryProfile.Compiler;
         var t = new MismatchCounter(counter);
         parser.Rules["Start"] =
         [

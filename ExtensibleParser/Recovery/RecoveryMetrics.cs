@@ -1,6 +1,6 @@
 ﻿namespace ExtensibleParser.Recovery;
 
-// D2-full (6.2.1): observation-only metrics for the last recovery session (one Parse).
+// D2-full (6.2.1): metrics for the last recovery session (one Parse).
 //
 // Counters are incremented in the recovery loop (accept/rollback per strategy, keyed by the
 // candidate's Rank == strategy index S0..S6) and the specCache hits/misses read through the
@@ -17,10 +17,27 @@
 // HygieneCore). It is recorded in HygieneRemovalsAfter; HygieneRemovalsBefore stays 0 (the pre-B1
 // baseline has no runtime referent).
 //
-// Everything here is observation-only: no recovery behavior depends on it.
+// Opt-in clustering uses candidate attempts and probe misses as deterministic work counters.
+// Other metrics are observations and do not affect recovery policy.
 public sealed class RecoveryMetrics(SpeculativeCache specCache)
 {
     private readonly SpeculativeCache _specCache = specCache;
+
+    public int ClusteredPoints { get; internal set; }
+    public int ClusterResets { get; internal set; }
+    public int LocalGarbageRepairs { get; internal set; }
+    public int MaxObservedParseDepth { get; internal set; }
+    public int GuardFirings { get; internal set; }
+    public int MaxObservedProbeDepth { get; internal set; }
+    public int ProbeGuardFirings { get; internal set; }
+    public int InitialDepthLimit { get; internal set; }
+    public int EffectiveDepthLimit { get; internal set; }
+
+    internal void NoteProbe(int depth, int firings)
+    {
+        MaxObservedProbeDepth = Math.Max(MaxObservedProbeDepth, depth);
+        ProbeGuardFirings += firings;
+    }
 
     // accept/rollback per strategy, indexed by rank 0..6 (S0..S6). A candidate's Rank IS its
     // strategy rank (RecoveryCandidate: "рангом стратегии (S0..S5)"); S1b is part of S1 (rank 1).
@@ -79,6 +96,15 @@ public sealed class RecoveryMetrics(SpeculativeCache specCache)
             _accept[i] = 0;
             _rollback[i] = 0;
         }
+        ClusteredPoints = 0;
+        ClusterResets = 0;
+        LocalGarbageRepairs = 0;
+        MaxObservedParseDepth = 0;
+        GuardFirings = 0;
+        MaxObservedProbeDepth = 0;
+        ProbeGuardFirings = 0;
+        InitialDepthLimit = 0;
+        EffectiveDepthLimit = 0;
         HygieneRemovalsBefore = 0;
         HygieneRemovalsAfter = 0;
         MainParseTime = TimeSpan.Zero;

@@ -8,7 +8,8 @@ public class CppParser
 
     public CppParser()
     {
-        _parser = new Parser(CppTerminals.Trivia());
+        // This API returns an AST without recovery diagnostics; admit only clean syntax.
+        _parser = new Parser(CppTerminals.Trivia()) { Profile = ExtensibleParser.Recovery.RecoveryProfile.Compiler };
 
         var closingBrace = new Literal("}");
 

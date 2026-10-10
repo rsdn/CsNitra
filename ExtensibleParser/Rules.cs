@@ -327,7 +327,7 @@ public sealed record RecoveryOptions
     /// Soft "can start" predicates (S2, T2) — declarative analog of Roslyn IsPossibleStatement/CanStartMember.
     /// Allowed to be coarser than the full rule: answers "can a construct start here" without requiring a full
     /// parse. Critical when the code after the break also contains errors and the full rule (T1) fails.
-    /// Never derived automatically — author-only.
+    /// Explicit hints supplement context-derived soft-start predicates.
     public Rule[]? CanStart { get; init; }
 
     /// Terminals the engine may insert on failure of this rule.
@@ -337,11 +337,10 @@ public sealed record RecoveryOptions
     public int? MaxSkip { get; init; }
 
     /// Bounded speculative probe accept depth (A5-1): a probe is accepted when the speculative
-    /// parse consumes at least this many tokens (K, default 2). Declaration only — the probe is
-    /// not yet wired into S2 candidate generation (5b.4.2/5b.4.3).
+    /// parse consumes at least this many tokens (K, default 2). Used by soft S2 acceptance.
     public int SoftDepth { get; init; } = 2;
 
-    /// Opt-out: the rule is not recovered (strict contexts).
+    /// Strict region: ordinary repairs are suppressed; IDE mode still allows coarse S6 fallback.
     public bool Recoverable { get; init; } = true;
 }
 

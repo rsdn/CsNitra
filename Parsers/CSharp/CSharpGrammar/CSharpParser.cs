@@ -23,6 +23,8 @@ public sealed class CSharpParser
         var parser = new Parser(trivia);
         parser.BuildFromTexts(grammars, terminals);
         parser.BuildTdoppRules();
+        parser.AddRecoveryOpaqueTerminal(new RecoveryStringTerminal(parser));
+        parser.AddRecoveryOpaqueTerminal(CSharpTerminals.CharLiteral());
         Parser = parser;
     }
 
@@ -41,6 +43,8 @@ public sealed class CSharpParser
         var parser = new Parser(trivia);
         parser.BuildFromAst(grammar, new SourceText(grammarText, sourcePath), terminals);
         parser.BuildTdoppRules();
+        parser.AddRecoveryOpaqueTerminal(new RecoveryStringTerminal(parser));
+        parser.AddRecoveryOpaqueTerminal(CSharpTerminals.CharLiteral());
         return parser;
     }
 }

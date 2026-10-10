@@ -13,7 +13,8 @@ public partial class CsNitraParser
 
     public CsNitraParser()
     {
-        _parser = new Parser(CsNitraTerminals.Trivia());
+        // This API returns an AST without recovery diagnostics; admit only clean syntax.
+        _parser = new Parser(CsNitraTerminals.Trivia()) { Profile = ExtensibleParser.Recovery.RecoveryProfile.Compiler };
 
         // Grammar = Using* Statement*;
         _parser.Rules["Grammar"] = [

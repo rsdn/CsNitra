@@ -4,13 +4,12 @@ namespace ExtensibleParser.Recovery;
 
 public enum RecoveryMode { Ide, Compiler, Test }
 
-// A4-5/B4: маска стратегий S0..S6 (сейчас все включены). StrategyMask пока не читается.
+// Strategy mask gates S1–S5. S0 remains first and S6 is the guaranteed bottom tier.
 [Flags]
 public enum RecoveryStrategy
 {
     None = 0,
-    // S0 (base re-parse) is always tried first; it is not gated by the StrategyMask (the
-    // mask is not read yet) - the bit is present for mask completeness, not as a runtime gate.
+    // S0 (base re-parse) is always tried first; its bit is descriptive, not a runtime gate.
     S0 = 1 << 0,
     S1 = 1 << 1,
     S2 = 1 << 2,
@@ -34,6 +33,12 @@ public sealed record RecoveryProfile
     public int S2TierBudget { get; init; } = 2;
     public int S3S6TierBudget { get; init; } = 2;
 
+    public bool EnableRecoveryClustering { get; init; }
+    public int ClusterDistance { get; init; } = 32;
+    public int ClusterWorkThreshold { get; init; } = 16;
+
+    public bool EnableLocalGarbageRecovery { get; init; } = true;
+
     // MaxSkip для S2/S3 (был RecoveryEngine.DefaultMaxSkip = 1000).
     public int MaxSkip { get; init; } = 1000;
 
@@ -55,7 +60,7 @@ public sealed record RecoveryProfile
     // is raised (see Parser). Test profile disables it (Infinite) for determinism.
     public TimeSpan TimeBudget { get; init; } = TimeSpan.FromMilliseconds(500);
 
-    // TODO(A4-5/B4): маска стратегий — поле пока не читается.
+    // Intersected with the current degradation mask; S0/S6 remain exempt.
     public RecoveryStrategy StrategyMask { get; init; } = RecoveryStrategy.All;
 
     // Профили по умолчанию.

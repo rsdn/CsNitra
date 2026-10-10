@@ -63,7 +63,7 @@ public sealed class ExpectedSetApplicationTests
     // ============ 2. Контроль: снимка в E нет — старое поведение _expected (один терминал) ============
 
     [TestMethod]
-    public void Test_FatalError_NoSnapshotAtE_OldExpectedBehavior()
+    public void Test_FatalError_EntryMismatchHasCompleteSnapshot()
     {
         var parser = new Parser(new SpaceTrivia("Trivia"));
         parser.Rules["Start"] = [new Literal("a")];
@@ -75,9 +75,8 @@ public sealed class ExpectedSetApplicationTests
         var error = parser.ErrorInfo;
         Assert.IsNotNull(error, "expected FatalError");
         Assert.AreEqual(0, error.Pos);
-        // Mismatch в pos 0 == ErrorPos (не дальше) → снимка нет (FailureSnapshotAt(0) == null) —
-        // fallback: старый _expected = {a} (одна самая дальняя терминальная точка).
-        CollectionAssert.AreEqual(new[] { "a" }, error.Expecteds.Select(t => t.Kind).ToArray());
+        Assert.IsNotNull(parser.LastSnapshot, "The first mismatch must retain context even at entry.");
+        CollectionAssert.AreEquivalent(new[] { "a", "EOF" }, error.Expecteds.Select(t => t.Kind).ToArray());
     }
 
     // ============ 3. Unrecovered (A4-2): полный контекстный набор в сообщении (снимок в E) ============

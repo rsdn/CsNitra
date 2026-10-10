@@ -12,6 +12,9 @@ public partial class Parser
 {
     private int _recoveryPoint = -1;
     private int _quietZoneEnd = -1;
+    private enum ParsePhase { Normal, Recovery }
+    private ParsePhase _phase;
+
     private FailureSnapshot? _lastSnapshot;
     private bool _suppressSideEffects;
     public FailureSnapshot? LastSnapshot => _lastSnapshot;
@@ -66,9 +69,7 @@ public partial class Parser
     {
         var result = new List<RecoveryDiagnostic>();
         CollectAttached(root, result);
-        result.Sort((a, b) =>
-            a.StartPos == b.StartPos ? a.EndPos.CompareTo(b.EndPos) : a.StartPos.CompareTo(b.StartPos));
-        return result;
+        return result.OrderBy(d => d.StartPos).ThenBy(d => d.EndPos).ToList();
     }
 
     // Обход полного дерева (RawElements — включая абсорберы, а не «чистых» Elements); на каждом
@@ -199,12 +200,14 @@ public partial class Parser
 
     // B4: level-aware effective properties, derived from DegradationLevel via the Degradation table.
     public RecoveryStrategy EffectiveStrategyMask =>
-        Profile.StrategyMask & Degradation.Get(DegradationLevel).Mask;
+        Profile.StrategyMask & Degradation.Get(DegradationLevel).Mask & (_clusterActive
+            ? RecoveryStrategy.S1 | RecoveryStrategy.S3 | RecoveryStrategy.S6
+            : RecoveryStrategy.All);
 
     public int EffectiveMaxSkip =>
         (int)(Profile.MaxSkip * Degradation.Get(DegradationLevel).MaxSkipMultiplier);
 
-    public bool SpeculationEnabled => Degradation.Get(DegradationLevel).Speculation;
+    public bool SpeculationEnabled => Degradation.Get(DegradationLevel).Speculation && !_clusterActive;
 
     public bool ForceS6 => Degradation.Get(DegradationLevel).ForceS6;
 
@@ -270,6 +273,9 @@ public partial class Parser
     // depth-guard и (7.1.2) для диагностики сработавшего guard'а.
     private int _maxParseDepthReached;
     public int MaxParseDepthReached => _maxParseDepthReached;
+    public int InitialMaxParseDepth { get; private set; }
+    // Explicit shrinking-depth degradation: each guard firing reduces this limit by one.
+    public int EffectiveMaxParseDepth => _maxParseDepth;
 
     // 7.1.2/R3: сработал ли depth-guard за последний Parse (любой кадр отклонён GuardFired).
     // Сбрасывается в SetMaxParseDepth (как _maxParseDepthReached). Позиция ПЕРВОГО срабатывания —
@@ -338,8 +344,11 @@ public partial class Parser
     public IReadOnlyList<StackFrame> CurrentStackFrames => _stackFrames;
 
     // Одноразовый parse правила без recovery-цикла (спекулятивная валидация engine'а, §3.4 S2).
-    public Result ParseRuleOnce(string ruleName, int minPrecedence, int startPos, string input) =>
-        ParseRule(ruleName, minPrecedence, startPos, input);
+    public Result ParseRuleOnce(string ruleName, int minPrecedence, int startPos, string input)
+    {
+        _debugInput = input;
+        return ParseRule(ruleName, minPrecedence, startPos, input);
+    }
 
     // A5-1 D3 (5b.4.3): one-shot probe parse with an explicit depth ceiling. The ceiling is a WORK
     // limit, not an acceptance condition: when the guard cuts the parse, `CutPos` (the first guard
@@ -349,12 +358,16 @@ public partial class Parser
     // parser instance is reused across calls.
     public (Result Result, bool CeilingCut, int CutPos) ParseRuleOnceProbed(string ruleName, int minPrecedence, int startPos, string input, int depthCeiling)
     {
+        Metrics.Reset();
+        Metrics.InitialDepthLimit = depthCeiling;
+        _debugInput = input;
         _parseDepth = 0;
         _maxParseDepth = depthCeiling;
         _maxParseDepthReached = 0;
         _guardFired = false;
         _guardFiredPos = 0;
         var result = ParseRule(ruleName, minPrecedence, startPos, input);
+        Metrics.EffectiveDepthLimit = _maxParseDepth;
         return (result, _guardFired, _guardFiredPos);
     }
 
@@ -378,7 +391,7 @@ public partial class Parser
     }
     private partial void OnInjectionApplied((int Pos, Terminal Terminal) key) => RecordInjection(key);
     private partial void OnPartialCaptured(Result partialResult) => _lastPartial = partialResult;
-    private partial bool IsRecoveryPosition(int pos) => pos == _recoveryPoint;
+    private partial bool IsRecoveryPosition(int pos) => _phase == ParsePhase.Recovery && pos == _recoveryPoint;
     private partial bool InQuietZone(int pos) => _quietZoneEnd >= 0 && pos <= _quietZoneEnd;
     private partial bool SuppressSideEffects => _suppressSideEffects;
     private partial void ResetRecoveryPoint() => _recoveryPoint = -1;
@@ -425,6 +438,7 @@ public partial class Parser
         // (empirics: `Expr := "(" Expr ")" | Digits`, 350 nesting levels = crash under the old limit).
         _maxParseDepth = Math.Min(Profile.MaxParseDepthBase + inputLength * Profile.MaxParseDepthPerChar,
             RecoveryProfile.MaxParseDepthCap);
+        InitialMaxParseDepth = _maxParseDepth;
     }
     private partial void ClearInjections() => _injections.Clear();
 
@@ -478,6 +492,7 @@ public partial class Parser
                 return GuardFired(startPos);
             }
         _parseDepth++;
+        Metrics.MaxObservedParseDepth = Math.Max(Metrics.MaxObservedParseDepth, _parseDepth);
         if (_parseDepth > _maxParseDepthReached)
             _maxParseDepthReached = _parseDepth;
         return false;
@@ -496,6 +511,7 @@ public partial class Parser
     // records the first firing depth exactly (R3 calibration assertion).
     private bool GuardFired(int firedAtPos)
     {
+        Metrics.GuardFirings++;
         // 7.1.2/R3: record the FIRST firing (deepest reached position) for the InsufficientStack
         // diagnostic — see the _guardFired/_guardFiredPos field comment for why the first firing is
         // the farthest point (GuardFired shrinks the limit, so later firings are shallower).
@@ -600,7 +616,8 @@ public partial class Parser
         // Финальные состояния §3.6: Success@EOF / Partial@EOF — восстановлено (ErrorInfo = null,
         // дыры описаны RecoveryDiagnostics); иначе — невосстановлено: FatalError в последней точке e.
         var recovered = (result.TryGetSuccess(out _, out var successEnd) && successEnd == input.Length)
-            || (result.TryGetPartial(out _, out var partialEnd) && partialEnd == input.Length);
+            || (Profile.Mode != RecoveryMode.Compiler &&
+                result.TryGetPartial(out _, out var partialEnd) && partialEnd == input.Length);
         // A4-7 (7.5.2): expected в FatalError — полный контекстный набор (BuildExpectedSet: Expected
         // верхнего кадра ∪ терминаторы ∪ First суффиксных обязательств), если снимок существует в точке
         // e; иначе — старый _expected (самая дальняя терминальная точка) — no-snapshot fallback.
@@ -624,6 +641,8 @@ public partial class Parser
         _specCache.Reset();
         var metrics = _metrics ??= new(_specCache);
         metrics.Reset();
+        metrics.InitialDepthLimit = InitialMaxParseDepth;
+        ResetCluster();
         _recoveryPoint = -1;
         _quietZoneEnd = -1;
         _lastSnapshot = null;
@@ -675,6 +694,7 @@ public partial class Parser
 
             var snapshot = FailureSnapshotAt(e);
             Log($"S0 reparse at recovery point {e}, snapshot: {(snapshot?.Pos.ToString() ?? "n/a")}", LogImportance.High);
+            _phase = ParsePhase.Recovery;
             _recoveryPoint = e;
 
             if (!_attempts.TryGetValue(e, out var attempts))
@@ -724,9 +744,24 @@ public partial class Parser
                 var log = ApplyPatches(candidate, e, snapshot, startRule, currentStartPos); // патчи + Hygiene атомарно, всё в лог
                 var savedErrorPos = ErrorPos;
                 var savedExpected = _expected.ToArray();
+                var savedSnapshot = _lastSnapshot;
+                var savedPartial = _lastPartial;
                 _recoveryPoint = e;
                 var reparseSw = Stopwatch.StartNew(); // D2-full (6.2.2): (c) candidate re-parse
-                var next = ParseRule(startRule, minPrecedence: 0, startPos: currentStartPos, input);
+                Result next;
+                try
+                {
+                    next = ParseRule(startRule, minPrecedence: 0, startPos: currentStartPos, input);
+                }
+                catch
+                {
+                    RollbackPatches(log);
+                    ErrorPos = savedErrorPos;
+                    _expected = new HashSet<Terminal>(savedExpected);
+                    _lastSnapshot = savedSnapshot;
+                    _lastPartial = savedPartial;
+                    throw;
+                }
                 metrics.NoteReparse(reparseSw.Elapsed);
                 var e2 = RecoveryPointOf(next, input);
 
@@ -756,6 +791,7 @@ public partial class Parser
                 // a null/empty snapshot (e.g. S6 with no snapshot) has no rule to attribute.
                 void NoteRecoveryPoint()
                 {
+                    AcceptClusterSkip(e, snapshot, candidate);
                     if (snapshot is { Stack.Length: > 0 })
                     {
                         var top = snapshot.Stack[^1];
@@ -771,6 +807,8 @@ public partial class Parser
                     result = next;
                     _quietZoneEnd = e;
                     recoveredThisIteration = true;
+                    if (candidate.Id.StartsWith("R1:", StringComparison.Ordinal))
+                        metrics.LocalGarbageRepairs++;
                     metrics.NoteAccept(candidate.Rank); // D2-full (6.2.1): кандидат стратегии принят
                     return true; // полностью восстановлено
                 }
@@ -782,6 +820,8 @@ public partial class Parser
                     result = next;
                     _quietZoneEnd = e;
                     recoveredThisIteration = true;
+                    if (candidate.Id.StartsWith("R1:", StringComparison.Ordinal))
+                        metrics.LocalGarbageRepairs++;
                     metrics.NoteAccept(candidate.Rank); // D2-full (6.2.1): кандидат стратегии дал прогресс
                     return true; // I1: прогресс — к следующему итеративному проходу
                 }
@@ -789,10 +829,20 @@ public partial class Parser
                 RollbackPatches(log); // нет прогресса — откат (включая Hygiene), следующий кандидат
                 ErrorPos = savedErrorPos;
                 _expected = new HashSet<Terminal>(savedExpected);
+                _lastSnapshot = savedSnapshot;
+                _lastPartial = savedPartial;
                 return false;
             }
 
-            if (!TryCandidate(CandidateS0(e, snapshot, startRule)))
+            bool TryLocalRepair()
+            {
+                // S0 may parse an intact item and move to a later error. Decide clustering only
+                // after that cheap pass fails, using the successful items it has established.
+                BeginClusterPoint(e, input);
+                return RecoveryEngine.LocalGarbage(e, snapshot, input, this) is { } local && TryCandidate(local);
+            }
+
+            if (!TryCandidate(CandidateS0(e, snapshot, startRule)) && !TryLocalRepair())
             {
                 // B4.4: hard limit — force the S6 floor (absorber) and stop. Coarse recovery, not FatalError.
                 if (ForceS6)
@@ -843,15 +893,16 @@ public partial class Parser
         // exact hygiene; HygieneCore increments HygieneRemovals, reset per Recover). Single session
         // exit point: every Recover return goes through here.
         Metrics.HygieneRemovalsAfter = HygieneRemovals;
+        Metrics.EffectiveDepthLimit = _maxParseDepth;
         if (result.TryGetSuccess(out var node, out _))
         {
-            AttachDiagnosticsToTree(node);
+            AttachDiagnosticsToTree(node, input);
             FinalizeRecoveryDiagnostics(node, input);
             return result;
         }
         if (result.TryGetPartial(out var pnode, out _))
         {
-            AttachDiagnosticsToTree(pnode);
+            AttachDiagnosticsToTree(pnode, input);
             FinalizeRecoveryDiagnostics(pnode, input);
             return result;
         }
@@ -871,24 +922,7 @@ public partial class Parser
         var treePart = node is null
             ? new List<RecoveryDiagnostic>()
             : DeriveRecoveryDiagnostics(node).ToList();
-        // R5 (7.2.2): a missing node (zero-width Inserted) expected at the START of a new line gets its
-        // diagnostic at the END of the PREVIOUS line, not at the start of the new line (IDE squiggle
-        // quality — the marker sits where the missing token was expected). Applied to the DERIVED (tree)
-        // part AFTER the session-end node match: the tree node stays at the recovery point, so
-        // MatchesRecoveryNode is unaffected (the shift is display-level, on the public artifact only).
-        var shifted = false;
-        for (var i = 0; i < treePart.Count; i++)
-        {
-            var placed = PlaceMissingNodeDiagnostic(treePart[i], input);
-            if (!ReferenceEquals(placed, treePart[i]))
-                shifted = true;
-            treePart[i] = placed;
-        }
-        // The shift moves a diagnostic EARLIER — re-sort the derived part only (stable), keeping it in
-        // position order. The pinned contract (6.1.2c) is preserved: public == derived (in position
-        // order) + Unrecovered/InsufficientStack appended LAST. Without a shift the list is left
-        // untouched (its existing order, byte-for-byte, is kept).
-        var derived = shifted ? treePart.OrderBy(d => d.StartPos).ThenBy(d => d.EndPos).ToList() : treePart;
+        var derived = treePart;
         derived.AddRange(_recoveryDiagnostics.Where(d => d.Kind == RecoveryKind.Unrecovered));
         // 7.1.2/R3: guard-fired result = A5-4 bottom contract + ONE InsufficientStack diagnostic.
         // The bottom contract (Success<T> with a tree covering the input) already holds via
@@ -931,11 +965,8 @@ public partial class Parser
     //     узел с NodeKind == t.Kind, CreateInjectedResult);
     //   • Unrecovered — не узел дерева (нулевой маркер в точке восстановления, A4-2) — не матчится.
     // Мягкий разделитель (D2) вне матча — его узел обычный терминал (6.1.2b2).
-    private void AttachDiagnosticsToTree(ISyntaxNode root)
+    private void AttachDiagnosticsToTree(ISyntaxNode root, string input)
     {
-        if (_recoveryDiagnostics.Count == 0)
-            return;
-
         var nodes = new List<TerminalNode>();
         CollectRecoveryNodes(root, nodes);
 
@@ -945,11 +976,18 @@ public partial class Parser
             {
                 if (MatchesRecoveryNode(nodes[i], diag))
                 {
-                    AttachDiagnostic(nodes[i], diag);
+                    AttachDiagnostic(nodes[i], PlaceMissingNodeDiagnostic(diag, input));
                     break;
                 }
             }
         }
+        // S0 can activate OftenMissed without an engine diagnostic. Every missing token in the
+        // final tree must still be visible; never label a tree containing repairs as clean.
+        foreach (var missing in nodes.Where(n => !n.IsAbsorber && n.StartPos == n.EndPos))
+            if (!_diagSideTable.ContainsKey(new WeakReference<ISyntaxNode>(missing)))
+                AttachDiagnostic(missing, PlaceMissingNodeDiagnostic(new RecoveryDiagnostic(
+                    missing.StartPos, missing.EndPos, RecoveryKind.Inserted,
+                    $"inserted {missing.Kind}", null, missing.Kind), input));
     }
 
     // Обход полного дерева (RawElements — включая абсорберы): собирает IsRecovery-терминалы.
@@ -1000,6 +1038,8 @@ public partial class Parser
         var savedErrorPos = ErrorPos;
         var savedExpected = _expected.ToArray();
         var savedSnapshot = _lastSnapshot;
+        var savedSuppression = _suppressSideEffects;
+        var savedPhase = _phase;
         _suppressSideEffects = true;
         try
         {
@@ -1007,7 +1047,8 @@ public partial class Parser
         }
         finally
         {
-            _suppressSideEffects = false;
+            _suppressSideEffects = savedSuppression;
+            _phase = savedPhase;
             ErrorPos = savedErrorPos;
             _expected = new HashSet<Terminal>(savedExpected);
             _lastSnapshot = savedSnapshot;
@@ -1148,6 +1189,11 @@ public partial class Parser
         if (stack.Length > 0)
         {
             var topExpected = stack[stack.Length - 1].Expected;
+            if (topExpected is null || topExpected.Length == 0)
+            {
+                topExpected = [failedTerminal];
+                stack[stack.Length - 1] = stack[stack.Length - 1] with { Expected = topExpected };
+            }
             if (topExpected is not null)
                 expected.AddRange(topExpected);
         }
