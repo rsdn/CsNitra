@@ -54,6 +54,10 @@ CsNitra's parser is, without exaggeration, the most advanced parsing engine avai
 - **No Runtime Regex Compilation**: All patterns are pre-compiled for maximum performance
 
 ### **Error Recovery & Diagnostics**
+See the [grammar author guide](docs/RecoveryAuthorGuide.md) and
+[recovery implementation and validation report](docs/RecoveryCompletionReport-2026-10-10.md).
+Recovered EOF results can contain errors; semantic consumers must check diagnostics or use compiler mode.
+
 - **Intelligent Error Recovery**: Automatically skips to recoverable points
 - **Rich Error Messages**: Context-aware error highlighting with expected tokens
 - **Fault-Tolerant Parsing**: Continue parsing after errors for IDE scenarios

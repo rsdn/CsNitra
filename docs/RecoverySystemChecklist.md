@@ -1,5 +1,12 @@
 # Recovery System v2 — Implementation Checklist
 
+**Current status (2026-10-10):** the dated [completion report](RecoveryCompletionReport-2026-10-10.md)
+and [author guide](RecoveryAuthorGuide.md) supersede historical API/status notes below. Sequential work
+adds exact sequence context, shared nesting/opaque scans, canonical diagnostics, depth metrics,
+phase/rollback isolation, bounded local garbage recovery and opt-in clustering. Compiler-facing wrappers
+reject incomplete syntax. Linux/Windows acceptance and the exact historical F2 reproduction remain open.
+Historical per-step results are retained. Commit/publication was separately authorized during PR preparation.
+
 **План:** `docs/RecoverySystemPlan.v2.md` (v1 — в `docs/Old/`, superseded).
 **Тестирование:** на MiniC (грамматика `Tests/ParserTests/MiniC/`).
 **Процесс:** каждый пункт — отдельный коммит. Субагент реализует один пункт, доводит до компилируемости, пишет тест к пункту, отлаживает, и дописывает в «Заметки» что сделал, с какими проблемами столкнулся и какие решения принял. Основной агент проверяет качество, помечает пункт `[x]` и коммитит.

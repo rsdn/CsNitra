@@ -1,126 +1,119 @@
-# Гайд автора грамматики: восстановление после ошибок
+# Grammar author guide: error recovery
 
-Краткое руководство по аннотациям `RecoveryOptions` (на `RecoveryRule`), семантике восстановленного дерева/диагностики и известным ограничениям. Полный план — `RecoverySystemPlan.v2.md` (§3.4, §3.6, §3.7, §3.8, §3.9, §5); статус — `RecoverySystemChecklist.md`.
+Current contracts for `Parser.Parse` and `RecoveryOptions`. The architectural history is in
+`RecoverySystemPlan.v2.md`; current implementation evidence and remaining acceptance work are in
+[the October 2026 report](RecoveryCompletionReport-2026-10-10.md).
 
-## (а) Гайд автора грамматики — когда что аннотировать
-
-Аннотации живут в `RecoveryOptions` и навешиваются на правило обёрткой `RecoveryRule(inner, options)` (`Rules.cs`). Поведение парсинга обёртки в точности равно `Inner`; опции читает только recovery-движок из кадра снимка (`StackFrame.Options`). Приоритет — **ближайший** кадр к упавшему элементу: поле, заданное в ближайшем кадре, переопределяет вычисленное (follow-set — только fallback); авторские цели либо используются, либо нет (без «комбинируем неконфликтующие»).
-
-```csharp
-Rules["Statement"] =
-[
-    new RecoveryRule(
-        new Seq([new Literal("int"), Terminals.Ident(), new Literal(";")], "VarDecl"),
-        new RecoveryOptions(
-            TryInsert: [new Literal(";")],
-            Terminators: [new Literal("}"), new Literal("else")])),
-];
-```
-
-### `Terminators` — явные цели skip/completion
-- **Что:** переопределяют вычисленный follow-set; цели S3 (panic-скан до терминатора) и S4 (достроение).
-- **Когда:** вычисленный follow-set неточен/слишком широк — типично для **regex-терминалов** (First терминала = он сам, а regex матчит множество форм). Задайте короткие literals, до которых можно безопасно пропускать/достраивать.
-- **Когда нет:** follow-set корректен (короткие literal-терминаторы) — не аннотируйте, движок возьмёт follow.
-- **Пример:** `Terminators: [new Literal("}"), new Literal("else")]` на `Statement`.
-
-### `Anchors` — структурные resync-якоря (S2, T1)
-- **Что:** правила, позиция успешного полного спекулятивного parse которых = known-good точка продолжения (грамматика *доказывает* валидность, а не угадывает).
-- **Когда:** нужно resync к известной валидной конструкции (следующий `Statement`/`Member`/`Function`).
-- **Выводится:** если НЕ заданы — движок выводит якоря из элементов циклов в кадрах снимка (`ZeroOrMany(Ref("Statement"))` → `Statement`). Авторские расширяют/переопределяют выведенные.
-- **Когда нет:** цикл уже даёт якорь (например top-level `Module`/`ZeroOrMany(Ref("Member"))` → `Member` выводится) — аннотация не нужна.
-- **Пример:** `Anchors: [new Ref("Statement")]` на `Block`.
-
-### `CanStart` — мягкие предикаты «может начаться» (S2, T2)
-- **Что:** декларативный аналог Roslyn `IsPossibleStatement`/`CanStartMember`/`IsNamespaceMemberStartOrStop`. Допустимо грубее полного правила: отвечает «может ли здесь начаться конструкция» без требования разобрать её целиком.
-- **Когда:** код после разлома **сам может быть бит** — полное правило (T1) на следующей конструкции не сработает, а мягкий предикат всё же найдёт точку продолжения.
-- **Только авторские:** никогда не выводятся автоматически (их семантика не выводима из грамматики).
-- **Пример:** `CanStart: [new Ref("MemberStart")]` на `Module` (мягкое: тип + ident, без требования к телу).
-
-### `TryInsert` — терминалы для вставки (S1, ранг 0)
-- **Что:** терминалы, которые движок может вставить при сбое этого правила (кандидаты ранга 0 — выше остальных источников S1).
-- **Когда:** известный часто-пропускаемый токен (`;`, `}`, `)`).
-- **Сахар:** `OftenMissed(t)` = `RecoveryRule(t, new RecoveryOptions(TryInsert: [t]))` (для `Terminal`).
-- **Пример:** `TryInsert: [new Literal(";")]`.
-
-### `MaxSkip` — лимит resync-скана (символы)
-- **Что:** ограничение скана S2/S3 в символах (default 1000).
-- **Когда:** узкий контекст, где resync далеко не имеет смысла / дорого.
-- **Пример:** `MaxSkip: 5`.
-
-### `Recoverable` — opt-out
-- **Что:** `false` = правило не восстанавливается (строгие контексты). Движок игнорирует опции кадра с `Recoverable=false`; ε-принятие обёрнутой альтернативы отключается.
-- **Когда:** конструкция, которую не стоит «чинить» (синтаксически критичный фрагмент).
-- **Пример:** `new RecoveryOptions(Recoverable: false)`.
-
-### Таблица: hand-written флаги Roslyn → декларативные `RecoveryOptions`
-
-| Roslyn (hand-written) | `RecoveryOptions` (декларативно) |
-|---|---|
-| `TerminatorState` — 29-флаговая маска условий остановки, ~100 ручных save/restore `_termState` | `Terminators` (+ вычисленный follow-set как fallback) |
-| hand-written предикаты `IsPossibleStatement` / `CanStartMember` / `IsNamespaceMemberStartOrStop` | `CanStart` (мягкие авторские правила) |
-| правила-якоря / «следующая валидная конструкция» | `Anchors` (S2, T1; выводятся из циклов, если не заданы) |
-
-## (б) Семантика восстановления — как выглядят дерево и диагностика
-
-### Дерево
-- Recovery-узлы помечены `IsRecovery = true` на самом узле (`Node`/`TerminalNode`, `SyntaxTree.cs`): **вставленный токен** = пустой `TerminalNode(…, ContentLength: 0, IsRecovery: true)`; **пропущенный текст (абсорбер)** = `TerminalNode("Skipped", e, S, S-e, IsRecovery: true)`. Текст абсорбера читается visitor'ом из `input` по позициям (дерево хранит только позиции).
-- **I4 — ничего не теряется:** каждый символ входа входит ровно в один терминальный узел (обычный, вставленный или абсорбер). Тайлинг по `[StartPos, EndPos)`: хвостовой trivia поглощается в `EndPos` следующего терминала и отдельным узлом не представляется (`ContentLength < EndPos - StartPos`).
-- Подсчёт recovery-узлов: `CostCalculator.CountRecoveryNodes(root)` (дешёвый обход по `IsRecovery`, без `Parser`).
-- **I6 — безвредность:** на корректном коде (Success до EOF без recovery) дерево в точности совпадает с до-recovery (recovery латентен, 0 recovery-узлов).
-
-### Диагностика
+## Choose the result contract
 
 ```csharp
-public enum RecoveryKind { Inserted, Skipped, Unrecovered }
-
-public sealed record RecoveryDiagnostic(
-    int StartPos, int EndPos, RecoveryKind Kind,
-    string Message, Terminal? Terminal, string? RuleName);
-
-public IReadOnlyList<RecoveryDiagnostic> RecoveryDiagnostics { get; } // накапливается за все итерации
+parser.Profile = RecoveryProfile.Ide;      // repaired syntax for an editor
+parser.Profile = RecoveryProfile.Compiler; // stop after the initial unsuccessful parse
 ```
 
-| Kind | Стратегия | Сообщение |
-|---|---|---|
-| `Inserted` | S1 (вставка ожидаемого) | `expected {kind}, found {preview}` |
-| `Inserted` | S2 (нулевые вставки в resync-точке) | `insert at resync point {S}` |
-| `Inserted` | S4 (достроение в EOF) | `insert {kind} at EOF` |
-| `Skipped` | S2 (resync, `S > e`) | `skip to resync point {S}` |
-| `Skipped` | S3 (panic до терминатора) | `skip to terminator {kind}` |
-| `Skipped` | S5 (хвостовой мусор) | `trailing garbage: {n} chars` |
+`RecoveryProfile.Test` disables the cooperative time budget for deterministic tests.
+In IDE/Test mode, reaching EOF does **not** mean the source was valid. Read `RecoveryDiagnostics`
+and inspect recovery nodes before semantic compilation. A recovered `Success` or `Partial` may cover
+all input while containing holes or absorbers. Coarse fallback emits `Unrecovered`; a depth guard emits
+one `InsufficientStack` marker. A fatal result exposes `ErrorInfo`.
 
-`Unrecovered` — в enum, но текущим движком не порождается (запасной). Одна диагностика на регион пропуска (остальное — молча, как у Roslyn).
+Compiler mode does not generate repairs or accept an incomplete `Partial@EOF` as clean syntax.
+The CsNitra grammar AST, JSON AST, DOT, and simplified C++ wrappers use this mode because their semantic
+result APIs do not carry recovery diagnostics. The simplified C++ grammar still deliberately skips
+uninteresting lines; compiler mode does not make it a full C++ validator.
+`ParseSubRule` measures a raw subrule without top-level recovery; it is not a whole-file validity check.
 
-### Финальные состояния (`Parse`, §3.6)
+## Annotate the grammar
 
-| Итог | Значение |
-|---|---|
-| Success, `NewPos == EOF` | чистый успех, `ErrorInfo = null` |
-| Partial, `NewPos == EOF` | **восстановлено с дырами**: дерево полное (I4), `ErrorInfo = null`, дыры — в `RecoveryDiagnostics`/дереве |
-| Success `< EOF` / Failure / Partial `< EOF` (после исчерпания кандидатов) | **невосстановлено**: `ErrorInfo = FatalError` в последней неотвратимой точке `e`, `RecoveryDiagnostics` — принятые восстановления до неё |
+```csharp
+var statement = new RecoveryRule(new Ref("Statement"), new RecoveryOptions
+{
+    Terminators = new Terminal[] { new Literal(";"), new Literal("}") },
+    Anchors = new Rule[] { new Ref("Statement") },
+    CanStart = new Rule[] { new Literal("if"), new Literal("return") },
+    TryInsert = new Terminal[] { new Literal(";") },
+    MaxSkip = 256,
+    SoftDepth = 2
+});
+```
 
-> Примечание (реализация, чек-лист 1.4): финальный Partial@EOF с непустой диагностикой недостижим — любой принятый кандидат достраивает дыру до `Success@EOF`. Partial@EOF как финал возникает, когда ни один кандидат не принят (diag пуст, дыры описаны Partial-узлами дерева).
+- `Terminators` overrides computed FOLLOW targets at that frame.
+- `Anchors` supplies structural resynchronization rules; reference anchors can be speculatively validated.
+- `CanStart` supplies declarative soft starts. The engine also derives selected probe predicates from context;
+  explicit author hints remain authoritative for the local-garbage shortcut.
+- `TryInsert` supplies preferred inserted terminals.
+- `MaxSkip` bounds ordinary scans in characters. S6 remains the coarse bottom tier and is exempt from it.
+- `SoftDepth` configures the bounded token-count probe used for soft acceptance.
+- `Recoverable = false` suppresses ordinary repairs in that region. IDE mode still permits S6 coarse
+  source-preserving fallback with `Unrecovered`; it does not imply compiler bail.
 
-### Приоритет кандидатов
+`OftenMissed` permits a missing token during recovery. These implicit insertions receive an `Inserted`
+diagnostic. `SeparatedList(..., SoftSeparator: terminal)` accepts a foreign separator with a `Skipped`
+diagnostic; its default `null` leaves ordinary separator behavior intact.
 
-Полная сортировка `(Rank, Cost, Pos, RuleName, TerminalKind)` (§3.4.3, I5 — детерминизм):
+## Register lexical and nesting boundaries
 
-| Стратегия | Ранг | Что |
-|---|---|---|
-| **S0** | неявный, всегда первый | re-parse как есть: `RecoveryPrefix`/`RecoveryPostfix` + `OftenMissed` (инлайн, ε-принятие) — легаси-путь |
-| **S1** | 0 / 1 | вставка терминала: `TryInsert` (ранг 0) / FailedTerminal·Expected·FollowSet (ранг 1) |
-| **S2** | 2 | resync к known-good точке: T1 (якоря) / T2 (`CanStart`) |
-| **S3** | 3 | panic-скан до токен-терминатора |
-| **S4** | 4 | достроение в EOF (суффиксные обязательства) |
-| **S5** | 5 | хвостовой мусор (абсорбер `[e..EOF)`) |
+S3 and S6 share a nesting-aware scanner. With no registrations, `()`, `[]`, and `{}` are used.
+The first custom pair switches to the registered set; register conventional pairs too if they remain
+part of your language. Registrations are idempotent. The longest opener wins; equally long openers
+contribute all their closers. A matching closer wins a tie with an opener. Zero-width events are ignored.
+Unmatched nesting can force scanning to EOF rather than exposing an internal terminator.
 
-Акцепт кандидата — только при **E2 > E** (I1, прогресс), иначе откат.
+```csharp
+parser.AddBracketPair(new Literal("("), new Literal(")"));
+parser.AddBracketPair(new Literal("<"), new Literal(">"));
+parser.AddRecoveryOpaqueTerminal(completeQuotedLiteral);
+```
 
-**S0 > S2 (важно).** S0 — самый точный/дешёвый, всегда первый. Если S0 делает прогресс (ε-принял OftenMissed-терминал), S2 (T1/T2) **вообще не пробуется**. Следовательно, `Anchors`/`CanStart` (T1/T2) exercised **только** когда ошибка не чинится S0/S1 (не OftenMissed, не вставляемый терминал). Для E2E-тестов T1/T2 нужны входы, которые S0/S1 не чинят (миним. грамматика без OftenMissed). См. чек-лист 3.1.2b.
+An opaque terminal must consume an entire string or other lexical region, including a defined malformed
+extent. Do not register fragment terminals such as string text. Trivia already hides comments when the
+language's trivia matcher consumes them. At depth zero, an opaque token may itself be a stop/anchor;
+its interior remains hidden. The C# host registers complete character and string extents, selects the
+string family by its opener, and observes host grammar replacements and rebuilt TDOPP rules.
+Malformed C# regular strings fall back to the line boundary; malformed raw/verbatim families consume
+to EOF conservatively. Custom lexical extensions should supply equally explicit malformed extents.
 
-## (в) Известные ограничения
+## Source and diagnostics
 
-1. **Follow-set на regex-терминалах неточен.** First терминала = он сам, а regex матчит множество форм → цели skip неточные. Митигация: `Terminators` (переопределение автором), ограниченный скан (`MaxSkip`), неверный skip отклоняется механикой I1 (E2 не продвинулся → откат).
-2. **Cost — эвристики** (`CostCalculator`): вставка = 1; skip = число небелых «слов» + число переводов строк; tier-penalty T1:0 / T2:1. Это сравнительная оценка, а не точная стоимость.
-3. **S0 > S2 (T2 preemption)** — открытый дизайн-вопрос: не должен ли T2 (`CanStart`) иметь приоритет над S0 в отдельных случаях (напр. следующая конструкция — известный якорь)? S0 ε-принимает «лёгкий» OftenMissed, даже если resync к якорю дал бы чище дерево. См. план §5 / чек-лист 3.1.2b.
-4. **`MaxRecoveryAttemptsPerPosition` (default 3) — предохранитель**, а не рабочий бюджет. S1 генерирует до `|FollowSet|+2` ≈ 9–12 кандидатов и выедает бюджет раньше, чем дойдут S2/S3/S5. Глубокие сценарии (resync/panic/trailing) ставят бюджет явно (E2E: `= 16`).
+Inserted tokens have zero-width source spans. Absorbers preserve skipped source in `RawElements`;
+list delimiters and trivia remain part of source coverage. A visitor that filters recovery nodes can
+hide that text, so use raw children when checking coverage or retaining damaged input.
+
+Tree-attached diagnostics use canonical positions. A missing token at a line start is displayed at the
+end of the previous line; its syntax node keeps its original zero-width span. The public diagnostic
+list and `DeriveRecoveryDiagnostics(root/subtree)` share the same attached diagnostic instances.
+`Unrecovered` and `InsufficientStack` are result-level markers and are not subtree-derived.
+Kinds are `Inserted`, `Skipped`, `Extraneous`, `Unrecovered`, and `InsufficientStack`.
+
+## Budgets and optional policy
+
+S0 is tried first. A bounded local repair can then absorb unknown input at the start of an actual
+Ref-owned repeating item, stopping before that item's recognized FIRST token or a lexical/nesting
+boundary. It scans at most 64 characters, consumes input, uses the S2 budget/mask, and is disabled by
+explicit `Anchors`/`CanStart`. Set `EnableLocalGarbageRecovery = false` for differential checks.
+This is context-local vocabulary, not a global lexer or a claim that skipped text was valid.
+
+S1–S5 use the effective strategy mask and tier budgets. S0 and S6 remain exempt. The legacy
+`MaxRecoveryAttemptsPerPosition` is not the active tier budget. `TimeBudget` causes cooperative
+degradation, not a hard deadline: an individual matcher, probe, or bottom-tier scan can overrun it.
+
+Clustering is off by default. To evaluate it on a representative corpus:
+
+```csharp
+parser.Profile = RecoveryProfile.Ide with
+{
+    EnableRecoveryClustering = true,
+    ClusterDistance = 32,
+    ClusterWorkThreshold = 16
+};
+```
+
+The policy counts candidate work and probe misses at accepted skips, then uses coarse tiers nearby.
+It resets across distance gaps or intact repeating items and defers at recognized item prefixes.
+It does not suppress diagnostics or guarantee linear scaling. Do not enable it solely from EOF counts;
+compare retained constructs, diagnostic spans, time distributions, and allocations.
+
+Depth metrics expose initial/effective limits, observed host/probe depth, and guard firings. Available
+thread stack can stop parsing below the absolute 400-frame cap. Rejected repair patches and snapshots
+roll back; consumed depth/work budget remains session-wide to prevent retry loops. Use separate parser
+instances for concurrent parses; sequential reuse resets session state.
