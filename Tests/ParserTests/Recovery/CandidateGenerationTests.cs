@@ -171,7 +171,8 @@ public sealed class CandidateGenerationTests
     {
         var parser = NewParser();
         var input = "abQ";
-        var result = parser.Parse(input, "Start", out _);
+        // A8: Parse() теперь абсорбирует хвостовой мусор до EOF (end=3) — setup-парс без recovery-цикла.
+        var result = parser.ParseSubRule(input, "Start", 0);
         Assert.IsTrue(result.TryGetSuccess(out _, out var end));
         Assert.AreEqual(2, end);
 

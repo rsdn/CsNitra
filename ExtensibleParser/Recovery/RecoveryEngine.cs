@@ -5,6 +5,18 @@ namespace ExtensibleParser.Recovery;
 /// порождает детерминированный отсортированный список патчей (S1..S5).
 /// Интеграция в цикл (apply/rollback при ре-парсинге) — 1.3.
 /// </summary>
+/// <remarks>
+/// Инварианты (структурно под кодогенерацию — сохранять при рефакторинге):
+/// <list type="number">
+/// <item><see cref="Generate"/> чистый: читает <see cref="Parser"/>, <see cref="Parser.Rules"/>,
+/// <see cref="Parser.FollowCalculator"/> — не мутирует их. Все изменения состояния — только через
+/// Apply/Rollback кандидата.</item>
+/// <item><see cref="Injection"/> + <see cref="MemoPatch"/> — единственные единицы патча. Третьи не вводить.</item>
+/// <item>«Re-pass префикса дёшев»: ре-парс не пересчитывает неизменённый префикс — опора на
+/// memo-проверку до <c>PushRuleFrame</c> (Parser.cs:299-310, кадр пушится на :329). Сохранять при рефакторинге.</item>
+/// <item>Глобальный чарт/fixpoint по ценам не вводить: recovery итеративный, кандидат валидируется re-парсом.</item>
+/// </list>
+/// </remarks>
 public static class RecoveryEngine
 {
     // A5-1 D3 (5b.4.3): потолок глубины derived-probe parse'а — лимит РАБОТЫ (насколько глубоко
@@ -663,19 +675,158 @@ public static class RecoveryEngine
         return scratch;
     }
 
+    // A11: ФИКСИРОВАННЫЙ критерий catch-all regex-терминалов — Kind'ы, которые НЕ добавляются в
+    // стоп-наборы S3/S6 (union терминаторов в GenerateS3, union терминаторов/anchor-First в GenerateS6,
+    // AddSuffixObligations). Catch-all regex (идентификатороподобный) совпадает почти на каждой позиции
+    // и срывает остановку скана на настоящем терминаторе. Фильтруются ТОЛЬКО эти два Kind'а:
+    // Literal-терминалы (даже односимвольные), regex-литералы чисел/real/hex/binary/char/строк,
+    // пунктуация и Trivia НЕ фильтруются НИКОГДА; при сомнениях — НЕ фильтровать.
+    private static readonly HashSet<string> CatchAllRegexTerminalKinds = new() { "Identifier", "Ident" };
+
+    private static bool IsCatchAllRegexTerminal(Terminal t) => CatchAllRegexTerminalKinds.Contains(t.Kind);
+
+    // A10: все терминалы грамматики (Rules ∪ TdoppRules) — для токен-прыжка сканов S3/S6: если
+    // стоп-набор в позиции не совпал, скан прыгает через самый длинный токен грамматики, начинающийся
+    // в этой позиции. Обход деревьев правил (GetSubRules<Terminal>) — один раз на вызов
+    // GenerateS3/GenerateS6; Ref'ы разрешать не нужно — все именованные правила обходятся напрямую
+    // из Rules. Дедуп по TerminalComparer.Instance; EOF/ε-синглтоны исключены (нулевая длина).
+    private static List<Terminal> CollectGrammarTerminals(Parser parser)
+    {
+        var terminals = new List<Terminal>();
+
+        void Collect(Rule rule)
+        {
+            foreach (var sub in rule.GetSubRules<Terminal>())
+            {
+                if (sub is not Terminal t || t is EofTerminal or EpsilonTerminal)
+                    continue;
+                if (!terminals.Contains(t, TerminalComparer.Instance))
+                    terminals.Add(t);
+            }
+        }
+
+        foreach (var alternatives in parser.Rules.Values)
+            foreach (var alternative in alternatives)
+                Collect(alternative);
+        foreach (var tdopp in parser.TdoppRules.Values)
+            Collect(tdopp);
+
+        return terminals;
+    }
+
     // R2 (5b.5): расширение стоп-набора First-терминалами суффиксных обязательств Seq-кадров снимка
     // (A4-7, respectAltIndex: true — Seq активной альтернативы). Парсер возобновляется ПОСЛЕ упавшего
     // элемента и ждёт суффикс, поэтому S3/S6 могут остановиться на старте ожидаемого продолжения, а не
     // на слабом терминаторе/EOF. snapshot.Expected (First упавшего элемента) НЕ добавляется — ложные
-    // остановки. EOF/ε не добавляются (в S3 EOF вынесен в hasEof).
+    // остановки. EOF/ε не добавляются (в S3 EOF вынесен в hasEof). A11: catch-all regex не добавляется.
     private static void AddSuffixObligations(FailureSnapshot? snapshot, Parser parser, List<Terminal> stopSet)
     {
         if (snapshot is null)
             return;
         var seen = new HashSet<Terminal>(stopSet, TerminalComparer.Instance);
         foreach (var (t, _) in GetSuffixObligationFirsts(snapshot, parser, snapshot.Stack.Length - 1, respectAltIndex: true))
-            if (t is not EofTerminal and not EpsilonTerminal && seen.Add(t))
+            if (t is not EofTerminal and not EpsilonTerminal && !IsCatchAllRegexTerminal(t) && seen.Add(t))
                 stopSet.Add(t);
+    }
+
+    // A10 + общий механизм границ (RecoveryScan): скан S3/S6 с токен-прыжком. Границы вложенности
+    // берутся из общего механизма границ парсера — parser.BracketPairs / parser.RecoveryOpaqueTerminals
+    // (тот же механизм, что у RecoveryScan.Find): вложенный регион пропускается целиком, чужая
+    // закрывающая внутри региона скан не останавливает; trivia-бег и opaque-регион (строки/комментарии)
+    // перепрыгиваются целиком. A10: если стоп-набор в позиции не совпал НИ ОДНИМ терминалом, скан
+    // прыгает через самый длинный токен грамматики, начинающийся в этой позиции (иначе — посимвольный
+    // сдвиг); позиции внутри токена не проверяются. Кэш совпадений (pos, terminal) общий для
+    // стоп-набора, границ и токенов грамматики. Возвращает (-1, EOF), если стоп в (start..limit] не
+    // найден; EOF совпадает только при position == input.Length и наличии EofTerminal в stops.
+    private static (int Position, Terminal Terminal) FindStopWithTokenJump(Parser parser, string input, int start, int limit,
+        IReadOnlyList<Terminal> stops, IReadOnlyList<Terminal> grammarTerminals, Action? notePosition = null)
+    {
+        var matchCache = new Dictionary<(int Pos, Terminal Terminal), int>(TerminalComparer.KeyComparer);
+
+        int Match(Terminal term, int pos)
+        {
+            var cacheKey = (pos, term);
+            if (matchCache.TryGetValue(cacheKey, out var len))
+                return len;
+            len = term.TryMatch(input, pos);
+            matchCache[cacheKey] = len;
+            return len;
+        }
+
+        var pairs = parser.BracketPairs;
+        var opaque = parser.RecoveryOpaqueTerminals;
+        var nesting = new Stack<Terminal[]>();
+        limit = Math.Min(limit, input.Length);
+
+        var position = start;
+        while (position <= limit)
+        {
+            if (position > start)
+                notePosition?.Invoke();
+            if (position == input.Length)
+                return position > start && stops.Any(t => t is EofTerminal) ? (position, EofTerminal.Instance) : (-1, EofTerminal.Instance);
+
+            var triviaLen = parser.Trivia.TryMatch(input, position);
+            if (triviaLen > 0)
+            {
+                // 5a.2.3 (решение (б)): trivia-бег [position..position+triviaLen) (включая // и /* */) не
+                // содержит терминаторов — пропуск; скобки внутри бег'а не учитываются (парсер их игнорирует).
+                position += triviaLen;
+                continue;
+            }
+            if (position > start && nesting.Count == 0)
+                foreach (var t in stops)
+                    if (t is not EofTerminal && Match(t, position) > 0)
+                        return (position, t);
+
+            var opaqueLen = 0;
+            foreach (var t in opaque)
+                opaqueLen = Math.Max(opaqueLen, Match(t, position));
+            if (opaqueLen > 0)
+            {
+                position += opaqueLen;
+                continue;
+            }
+
+            var closeLen = 0;
+            if (nesting.Count > 0)
+                foreach (var closer in nesting.Peek())
+                    closeLen = Math.Max(closeLen, Match(closer, position));
+            var openLen = 0;
+            foreach (var pair in pairs)
+                openLen = Math.Max(openLen, Match(pair.Open, position));
+            if (closeLen > 0 && closeLen >= openLen)
+            {
+                nesting.Pop();
+                position += closeLen;
+            }
+            else if (openLen > 0)
+            {
+                // Все одинаково длинные открывающие дают допустимые закрывающие; порядок регистрации не важен.
+                var closers = pairs.Where(p => Match(p.Open, position) == openLen)
+                    .Select(p => p.Close).Distinct(TerminalComparer.Instance).ToArray();
+                nesting.Push(closers);
+                position += openLen;
+            }
+            else if (position > start)
+            {
+                // A10: токен-прыжок — стоп-набор в position не совпал НИ ОДНИМ терминалом: скан прыгает
+                // через самый длинный токен грамматики, начинающийся в position (следующая итерация
+                // становится ровно следующей токен-границей). Ни один терминал грамматики не совпал —
+                // обычный посимвольный сдвиг.
+                var tokenLen = 0;
+                foreach (var t in grammarTerminals)
+                {
+                    var len = Match(t, position);
+                    if (len > tokenLen)
+                        tokenLen = len;
+                }
+                position += tokenLen > 0 ? tokenLen : 1;
+            }
+            else
+                position++;
+        }
+        return (-1, EofTerminal.Instance);
     }
 
     // S3: пропуск до токен-терминатора (panic mode): скан от e+1 до MaxSkip с учётом
@@ -684,10 +835,16 @@ public static class RecoveryEngine
     {
         var terminators = parser.GetTerminators(snapshot.Stack);
         // R2 (5b.5): стоп-набор = терминаторы ∪ First-терминалы суффиксных обязательств (AddSuffixObligations).
-        var stopSet = new List<Terminal>(terminators);
+        // A11: catch-all regex-терминалы (CatchAllRegexTerminalKinds) из стоп-набора исключаются.
+        var stopSet = new List<Terminal>();
+        foreach (var t in terminators)
+            if (!IsCatchAllRegexTerminal(t))
+                stopSet.Add(t);
         AddSuffixObligations(snapshot, parser, stopSet);
         var maxSkip = GetMaxSkip(snapshot) ?? parser.EffectiveMaxSkip;
         var maxS = Math.Min(e + maxSkip, input.Length);
+        // A10: терминалы всей грамматики — для токен-прыжка (см. CollectGrammarTerminals).
+        var grammarTerminals = CollectGrammarTerminals(parser);
         // Оптимизация (2.4): дешёвые терминаторы первыми. Детерминированный порядок:
         // стабильная сортировка по (категория стоимости, позиция в исходном агрегате GetTerminators):
         //   0 — single-char Literal (StartsWith на 1 символ), 1 — остальные Literal, 2 — regex/остальные (DFA).
@@ -710,7 +867,7 @@ public static class RecoveryEngine
         var scanStops = ordered.Select(x => x.T).ToList();
         if (hasEof)
             scanStops.Add(EofTerminal.Instance);
-        var (foundS, foundT) = new RecoveryScan(parser, input).Find(e, maxS, scanStops, parser.NoteS3ScanPosition);
+        var (foundS, foundT) = FindStopWithTokenJump(parser, input, e, maxS, scanStops, grammarTerminals, parser.NoteS3ScanPosition);
 
         if (foundS < 0)
             return;
@@ -896,6 +1053,7 @@ public static class RecoveryEngine
         var terminators = parser.GetTerminators(snapshot?.Stack ?? Array.Empty<StackFrame>());
 
         // стоп-набор = anchor-First (First-терминалы якорей из Loop-кадров снимка) ∪ терминаторы ∪ суффиксные обязательства (R2).
+        // A11: catch-all regex-терминалы (CatchAllRegexTerminalKinds) из стоп-набора исключаются.
         var stopSet = new List<Terminal>();
         var seen = new HashSet<Terminal>(TerminalComparer.Instance);
         if (snapshot is not null)
@@ -907,20 +1065,23 @@ public static class RecoveryEngine
                     continue;
                 foreach (var anchor in DeriveLoopAnchors(parser, frame.RuleName))
                     foreach (var t in FirstSets.Get(anchor, calculator))
-                        if (t is not EofTerminal and not EpsilonTerminal && seen.Add(t))
+                        if (t is not EofTerminal and not EpsilonTerminal && !IsCatchAllRegexTerminal(t) && seen.Add(t))
                             stopSet.Add(t);
             }
         }
         foreach (var t in terminators)
-            if (seen.Add(t))
+            if (!IsCatchAllRegexTerminal(t) && seen.Add(t))
                 stopSet.Add(t);
         // R2 (5b.5): + First-терминалы суффиксных обязательств (no-op при snapshot == null).
         AddSuffixObligations(snapshot, parser, stopSet);
 
+        // A10: терминалы всей грамматики — для токен-прыжка (см. CollectGrammarTerminals).
+        var grammarTerminals = CollectGrammarTerminals(parser);
+
         // скан от e+1 до EOF (без MaxSkip): S — следующая позиция > e, где совпадает стоп-набор, либо EOF.
         var s = input.Length;
         Terminal foundT = EofTerminal.Instance;
-        var scanned = new RecoveryScan(parser, input).Find(e, input.Length, stopSet);
+        var scanned = FindStopWithTokenJump(parser, input, e, input.Length, stopSet, grammarTerminals);
         if (scanned.Position >= 0)
         {
             s = scanned.Position;

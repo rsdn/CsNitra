@@ -28,30 +28,39 @@ public class ParseContextTests
     public void Test_Context_InPartial()
     {
         var parser = CreateSimpleParser();
+        parser.MaxRecoveryIterations = 1000; // A8: без лимита-0 — вход восстанавливается до EOF
 
-        // "ab" — missing "c" — should parse "a" and "b" successfully but fail on "c"
+        // "ab" — missing "c" — под нормальным recovery-бюджетом 'c' вставляется и парс доходит до EOF.
         var result = parser.Parse("ab", "Module", out _);
 
-        // The parse should fail (input not fully consumed), but partial results have context
-        Assert.IsFalse(result.IsSuccess);
+        Assert.IsTrue(result.TryGetSuccess(out _, out var end) && end == 2,
+            $"expected recovery to EOF, got {result.ResultKind}@{result.NewPos}");
+        // Контекст (ParseContext) всё ещё создаётся при падении на 'c' — фиксируется в LastPartial.
+        Assert.IsNotNull(parser.LastPartial);
+        Assert.IsTrue(parser.LastPartial!.Value.TryGetPartial(out _, out _, out var ctx));
+        Assert.IsNotNull(ctx, "a context-bearing partial must be produced for the failing 'c'");
     }
 
     [TestMethod]
     public void Test_PartialResult_HasContext()
     {
         var parser = new Parser(new EmptyTerminal("Trivia"));
-        parser.MaxRecoveryIterations = 0;
+        parser.MaxRecoveryIterations = 1000; // A8: без лимита-0 — вход восстанавливается до EOF
         parser.Rules["Expr"] = new Rule[]
         {
             new Seq(new Rule[] { new Literal("x"), new Literal("y") }, "Expr"),
         };
         parser.BuildTdoppRules();
 
-        // "xz" — 'y' is missing — Seq will fail on 'y'
+        // "xz" — 'y' is missing — под recovery-бюджетом 'y' вставляется и парс доходит до EOF.
         var result = parser.Parse("xz", "Expr", out _);
 
-        // Parse fails, but a Partial should have been produced with context
-        Assert.IsFalse(result.IsSuccess);
+        Assert.IsTrue(result.TryGetSuccess(out _, out var end) && end == 2,
+            $"expected recovery to EOF, got {result.ResultKind}@{result.NewPos}");
+        // Контекст (ParseContext) создаётся при падении на 'y' — фиксируется в LastPartial.
+        Assert.IsNotNull(parser.LastPartial);
+        Assert.IsTrue(parser.LastPartial!.Value.TryGetPartial(out _, out _, out var ctx));
+        Assert.IsNotNull(ctx, "a context-bearing partial must be produced for the failing 'y'");
     }
 
     [TestMethod]
@@ -232,7 +241,7 @@ public class ParseContextTests
         var parser = new Parser(new EmptyTerminal("Trivia"));
 
         // Grammar: Expr = "x" "y" "z"
-        parser.MaxRecoveryIterations = 0;
+        parser.MaxRecoveryIterations = 1000; // A8: без лимита-0 — Partial-with-context остаётся наблюдаемым
         parser.Rules["Expr"] = new Rule[]
         {
             new Seq(new Rule[] { new Literal("x"), new Literal("y"), new Literal("z") }, "Expr"),
@@ -240,12 +249,15 @@ public class ParseContextTests
 
         parser.BuildTdoppRules();
 
-        // "x!missing!z" — "x" matches, "y" fails at "!", error at position 1
+        // "x!missing!z" — под recovery-бюджетом пропуск мусора + вставка 'y' доводят парс до EOF.
         var result = parser.Parse("x!missing!z", "Expr", out _);
 
-        // Parse will fail, but partial results should exist
-        Assert.IsFalse(result.IsSuccess);
-        Assert.IsTrue(parser.ErrorPos >= 0);
+        Assert.IsTrue(result.TryGetSuccess(out _, out var end) && end == 11,
+            $"expected recovery to EOF, got {result.ResultKind}@{result.NewPos}");
+        // Контекст (ParseContext) создаётся при падении на 'y' — фиксируется в LastPartial.
+        Assert.IsNotNull(parser.LastPartial);
+        Assert.IsTrue(parser.LastPartial!.Value.TryGetPartial(out _, out _, out var ctx));
+        Assert.IsNotNull(ctx, "a context-bearing partial must be produced for the failing 'y'");
     }
 
     [TestMethod]
@@ -253,7 +265,7 @@ public class ParseContextTests
     {
         var parser = new Parser(new EmptyTerminal("Trivia"));
 
-        parser.MaxRecoveryIterations = 0;
+        parser.MaxRecoveryIterations = 1000; // A8: без лимита-0 — Partial-with-context остаётся наблюдаемым
         parser.Rules["Expr"] = new Rule[]
         {
             new Seq(new Rule[] {
@@ -268,9 +280,15 @@ public class ParseContextTests
         var result = parser.Parse("xxy", "Expr", out _);
         Assert.IsTrue(result.IsSuccess);
 
-        // "xxz" — "xx" from OneOrMany, then "y" fails on "z"
+        // "xxz" — "xx" from OneOrMany, then "y" fails on "z"; recovery вставляет 'y' и доходит до EOF.
         var result2 = parser.Parse("xxz", "Expr", out _);
-        Assert.IsFalse(result2.IsSuccess);
+
+        Assert.IsTrue(result2.TryGetSuccess(out _, out var end2) && end2 == 3,
+            $"expected recovery to EOF, got {result2.ResultKind}@{result2.NewPos}");
+        // Контекст (ParseContext) создаётся при падении на 'y' — фиксируется в LastPartial.
+        Assert.IsNotNull(parser.LastPartial);
+        Assert.IsTrue(parser.LastPartial!.Value.TryGetPartial(out _, out _, out var ctx));
+        Assert.IsNotNull(ctx, "a context-bearing partial must be produced for the failing 'y'");
     }
 
     [TestMethod]

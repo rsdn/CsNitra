@@ -57,6 +57,7 @@ Ref-кадра). Нумерация не пересекается.
 | A1 (база) | Kандидат последней инстанции **S6** «гарантированный прогресс»: генерируется всегда при `E < EOF`, **включая `snapshot == null`**; абсорбер `[E..S)` до known-good точки или EOF; при падении в `Ref` — memo-патч, на уровне цикла — абсорбер цикла, иначе — Absorb-инъекция; при `snapshot == null` — синтетический кадр start-правила | `Recovery/RecoveryEngine.cs` (новый `GenerateS6`, ранг 6), `Parser.Recovery.cs` (цикл `Recover`, 261-357) | Тест: `Module := Expr Expr`, вход `12 34 56 78` → Success@EOF, хвост покрыт; единственный выход с `FatalError` — `Recoverable: false` |
 | **A5-7** | **S6 = паник-дно** (уточнение A1, решение §9): стоп-набор S6 = **терминаторы** (FOLLOW-объединение по стеку — см. A5-6; fallback rule-level) ∪ anchor-First (текущий дешёвый First-скан A1); **без требования snapshot**; **без MaxSkip** (или предел из профиля); строгие регионы — исключение (C1) | `Recovery/RecoveryEngine.cs` (S6), `FollowSetCalculator.cs:230-247` | Тест: хвостовой мусор без mismatch на границе (snapshot==null) → дно работает; регион > 1000 символов → дно работает; `}` внутри строки не ломает скан (связка с R1/B3) |
 | **A4-2** | **«Отчёт и продолжить»**: при исчерпании лимитов (64 итерации / 3 попытки на точку, `Parser.Recovery.cs:286-290`) — не `FatalError`-стоп, а: (1) `RecoveryDiagnostic(Kind.Unrecovered, E, ...)` (значение enum уже есть, `Recovery/RecoveryDiagnostic.cs`, просто не генерируется), (2) дно S6, (3) продолжение итераций — следующие ошибки файла обрабатываются так же. Итог: **список** diagnostics + дерево по всему вводу | `Parser.Recovery.cs` (`Recover`, `FinalizeResult` 238-258), `Recovery/RecoveryDiagnostic.cs` | Тест: файл с 3+ ошибками, вторая «неспастимая» в пределах лимитов → обе отчитаны, разбор дошёл до EOF; `Unrecovered` присутствует; **корпус D1.1 (100+ ошибок) завершается в IDE-профиле** — дефолт `MaxRecoveryIterations=64` (`Parser.Recovery.cs:32`) мал (100 ошибок × ≥1 итерация > 64) → вынести в `RecoveryProfile` (A3) / поднять для IDE |
+| **A8** | **Форсированное дно при исчерпании `MaxIterations`**: при `iter >= Profile.MaxIterations` — не `break` с текущим результатом (→ `FatalError`), а прямой `Success@EOF` в `FinishRecovery`: absorber `[e..input.Length)` + `RecoveryDiagnostic(Kind.Unrecovered, e, ...)`. Аналог super-literal Roslyn (>200 BadToken → остаток одним). Реализуется прямым return в `FinishRecovery`, не через `TryCandidate`. Compiler-профиль не затронут (bail by design). Отличается от A4-2 (S6 выбран победившим кандидатом в обычном потоке) и от B4.4 (`ForceS6` по `DegradationLevel`) — независимый триггер, работает и на `DegradationLevel=0`. C1 сохраняется: единственный `FatalError`-выход — `Recoverable:false` (там S6 emitted, тоже `Success@EOF`). | `Parser.Recovery.cs` (`Recover`, ветка `iter >= MaxRecoveryIterations`; `FinishRecovery`) | Тест: вход с N > `MaxIterations` разломанных точек → `Success@EOF` + `Unrecovered` в диагностике; C1/A4-2 зелёные |
 | **A5-4** | **Дно-контракт результата**: в IDE-профиле итог = `Success<T>` с деревом, покрывающим весь ввод (абсорберы по I4), а не `Failed(FatalError)` (`ParseResult.cs:14-16`); `Failed` остаётся только в Compiler-профиле (A3/A4-5); диагностика `Unrecovered`/`InsufficientStack` на дереве (A5-2). Триггеры дна: исчерпание recovery, срабатывание depth-guard (R3 — *предварительное* `InsufficientExecutionStackException`; реальный stack overflow неперехватываем и является багом, устраняемым калибровкой guard'а) | `Parser.Recovery.cs` (`FinalizeResult`), `ParseResult.cs`, консьюмеры (`CsNitraParser.cs:140-153` — убрать `InvalidOperationException` на Partial@EOF) | Контракт-тесты (C1): для любого входа IDE-профиль возвращает `Success<T>`; корневой узел start-правила всегда есть |
 | C1 (база) | Аудит гарантии прогресса (I1): из `Recover` с `FatalError` возможен выход только при `Recoverable: false`; взаимодействия S6+MaxSkip (S6 игнорирует MaxSkip — дно), S6+вложенные строгие регионы | тесты | Зелёные контракт-тесты |
 | C2 (база) | Семантика Partial после recovery: S6-абсорберы дают `Success@EOF` (не Partial); зафиксировать | тесты | Partial@EOF с диагностикой недостижим (или имеет явный смысл) |
@@ -80,11 +81,18 @@ memo-hit'ами; время на D1-корпусе не хуже до-волны
 
 ### Волна 3 — класс «ничего не совпало» (база R1)
 
-| # | Что | Где | Приёмка |
-|---|---|---|---|
-| R1 (база) | **Мусорный терминал** (аналог `BadToken` Roslyn): встроенный `Garbage`, `TryMatch(p)` = «ни один терминал набора не совпал в p», потребляет до первой позиции, где кто-то совпадает, или до лимита (64 символа / 16 токенов). Класс сценариев «битые символы, чужой синтаксис, обрезанный файл» — из Failure в локальный «съел мусор» (уровень S0/S1) | `Rules.cs` (новый терминал), `Parser.cs` (`ParseTerminal` 754-791) | Тест: вход с подряд идущими несуществующими символами → локальный абсорбер, не взрывной S2/S3/S6 |
+**R1 — ЗАКРЫТ: покрыт author-driven `RecoveryTerminal`.**
 
-**Критерий волны:** сценарии D1 с «битыми» регионами не доходят до S3/S6.
+Механизм `BadToken` из Roslyn специфичен для лексерной архитектуры: у лексера есть обязательство «всегда вернуть токен», поэтому нужна заглушка для «ничего не совпало». В CsNitra лексерного потока нет — парсер работает с символами через `TryMatch`, обязательства «вернуть токен» нет, `Failure` на позиции достаточно.
+
+Author-driven аналог уже реализован в грамматике:
+- `RecoveryTerminal` (база, `Rules.cs`) + `EmptyTerminal` (TryMatch → 0).
+- В MiniC: `ErrorOperator` (regex `[^\w\s]+`) как postfix-альтернатива `RecoveryOperator` — мусорный бинарный оператор в позиции оператора (`1 ### 2` → `1 [###] 2`); `ErrorEmpty` в `RecoveryEmptyOperator` и в bare-prefix `RecoveryRule(ErrorEmpty())`.
+- Движок распознаёт их через `IsRecoveryTerminal`.
+
+Это правильнее `BadToken` для расширяемого языка: автор грамматики (в т.ч. автор DSL-макроса) сам размечает, где мусор может встретиться, а не полагается на эвристику движка. Страховка снизу — S3/S6 (region-scan до терминаторов/First).
+
+Engine-driven `BadToken` не добавлять. Пункт «R1 мусорный терминал» из RecoveryImprovementProposal.md считать реализованным через существующий механизм.
 
 ---
 
@@ -742,3 +750,95 @@ cold-start.
 ### F3+. F3 — тестовый сценарий
 
 К текущему описанию F3 (`ActiveAltIndex` возвращает `null`, когда `RuleFrame` не прямо под `SeqFrame`; `FindSeq`/`GetSuffixObligationFirsts` идут упрощённым путём и могут подмешать терминалы неактивной альтернативы) добавить конкретный вход: грамматика с двумя альтернативами правила, разные суффиксы; проверить, что R2 (S3/S6-стоп-набор) и 7.5.2 (`FatalError`/`Unrecovered` expected) не подмешивают терминалы неактивной альтернативы. **R2 повысил приоритет F3**: теперь F3 влияет не только на финальное сообщение, но и на стоп-набор S3/S6. Вынести как отдельную подзадачу Wave 7+ (не смешивать с A6/A7).
+
+---
+
+### A10. Token-wise scan для S3/S6
+
+Проблема: S3/S6 скан идёт по одному символу. На позиции внутри `using` (`using static ...`) `Identifier [_\l]\w*` матчит `sing`, и скан останавливается mid-word вместо того, чтобы пройти дальше и остановиться на `namespace` (позиция 845 вместо 767). На V1/9.1c даёт absorberFraction=100%.
+
+Форма: скан идёт токенами, не символами.
+
+```
+pos = e + 1
+while pos <= maxS:
+    // 1. trivia
+    k = trivia.TryMatch(input, pos)
+    if k > 0: pos += k; continue
+
+    // 2. найти начало следующего токена
+    while pos <= maxS && !AnyTokenStartsAt(input, pos): pos++
+    if pos > maxS: break
+
+    // 3. на границе токена
+    t = FirstTokenAt(input, pos)
+    if t in stopSet: return pos
+    pos += t.MatchLength(input, pos)   // прыжок через весь токен
+```
+
+`AnyTokenStartsAt`/`FirstTokenAt` — по всем терминалам грамматики (можно кэшировать как множество стартовых символов для быстрой проверки, полный `TryMatch` только при попадании).
+
+Не путать с 5a.2.3 trivia-jump: там прыжок через trivia, здесь — прыжок через токен.
+
+Связь с A11: A10 без A11 не отличим от старого поведения на тестовом входе (Identifier ловит любое слово). A11 без A10 даёт стоп на 845, но mid-word остановки остаются в другом месте. Делать вместе.
+
+Тест: `### garbage ### using static Foo.Bar; namespace N; class C {}` с грамматикой Cs1-подобной. Ожидание: absorberFraction < 50%, структурный узел NamespaceDeclaration в дереве. Падает без правки (absorberFraction=100%).
+
+Место: после A11 или вместе.
+
+---
+
+### A11. Фильтр catch-all regex из stop-set S3/S6
+
+Проблема: в stop-set попадает `Identifier [_\l]\w*` — через R2 suffix `First(TypeName)` (alias-name в ExternAliasDirective). Любой Identifier матчится, скан останавливается на первом же слове. Правильный стоп — `namespace` (Literal), а не `static` (Identifier).
+
+Форма: при построении stop-set в `GenerateS3`/`GenerateS6` (и в `AddSuffixObligations`) фильтровать терминалы, чей `TryMatch` — catch-all regex (матчит почти любое слово: `Identifier`, `InterpolatedText`, подобные). Оставить только `Literal`-терминалы и узкие regex (числа, строки, пунктуация).
+
+Критерий «catch-all» — конкретный список, зафиксировать до реализации. Кандидаты: `Identifier [_\l]\w*`. Не фильтровать: `DecimalIntegerLiteral`, `StringLiteral`, `CharLiteral`, `Literal("namespace")` и т.д.
+
+Не фильтровать `Literal` даже если он короткий и матчит часть слова (`Literal("=")` — 1 символ). Это граница: regex — фильтруем, Literal — нет.
+
+Риск: R2/A5-6 могут давать и другие regex в stop-set. Пройти все пути формирования и убедиться, что не ломаем `S6BottomTests`, `A42AcceptanceTests`, `R2ExpectedStopTests`, `V2IterationLimitScaleTests`.
+
+Связь с A10: делать вместе.
+
+Тест: тот же вход, что в A10. Ожидание то же. Плюс регресс-прогон трёх сюит.
+
+Место: после A10.
+
+## Волна 9 — масштабная валидация (V1, V2)
+
+Эмпирическая проверка «100% до EOF» и производительности на реальных данных. Не правки кода — измерение и отчёт. После Wave 7 и A8.
+
+### V1. Прогон C#-грамматики на валидных .cs из Roslyn
+
+**Цель.** Узнать реальные пределы C#-грамматики CsNitra: успевает ли распарсить, время, память, доходит ли до EOF. Отчёт — сырые числа, без ассертов на тайминги. Не часть обычного suite.
+
+**Путь к Roslyn.** Env var `CSNITRA_ROSLYN_ROOT`. Если не задан — от `AppContext.BaseDirectory` вверх до каталога с `Directory.Build.props`, взять соседний каталог `roslyn` (то есть `c:\RSDN\roslyn` при `c:\RSDN\CsNitra`). Если не найден — Trace «Roslyn root not found, skipping V1», выход без падения.
+
+**Корпус.** Топ-10 крупнейших `.cs` из Roslyn (6.44 MB `NullableReferenceTypesTests.cs` … 1.27 MB `ExtensionIndexersTests.cs`; полный список путей — в `docs/RecoveryImprovementPlan-progress5b.4.md`-стиле или в самом тесте). Отсутствующие файлы — пропускать с Trace.
+
+**Что логировать** по каждому файлу: имя, размер, время парсинга (Stopwatch, один прогон), `Success@EOF`, `RecoveryPasses`, `EngineGenerateCalls`, `Memo.Count`, `GC.GetTotalMemory(true)` до/после. Если парсинг > 60s — прервать по этому файлу, залогировать, идти дальше.
+
+**Форма.** `Tests/ParserTests/Recovery/CSharpCorpusProbeTests.cs`, один `[TestMethod]`, `[TestCategory("Probe")]`, `[Ignore("Manual diagnostic: require CSNITRA_ROSLYN_ROOT; not part of the normal suite")]`. Парсер C# — скопировать создание из существующих `CSharpGrammarTests`. Ассертов нет, только `Trace.WriteLine`.
+
+**Что не делать.** Не оптимизировать по результатам в этой же подзадаче. Только числа.
+
+### V2. Проверка A8 на дефолтном профиле (N > 1000 ошибок)
+
+**Цель.** Проверить, что A8 работает на дефолтном IDE-профиле (`MaxIterations = 1000`) при N ошибок, превышающем лимит. `A8IterationLimitTests` проверяет механизм с малым лимитом (N=5, лимит 2); V2 — на реальном масштабе.
+
+**Корпус.** MiniC (грамматика `RecoveryCorpusTests`): `Module = ZeroOrMany(Function)`, `Function = "int" Ident "(" ")" Block`, `Block = "{" Statement* "}"`, `Statement = "int" Ident ";"` — без `OftenMissed` для `;`. Вход: N=1200 функций, в каждой пропущена `;` между двумя `int`. Профиль Ide, `MaxRecoveryIterations` = дефолт (1000).
+
+**Ассерты.** `Success@EOF`; `ErrorInfo == null`; `RecoveryDiagnostics` содержит `Unrecovered`. Логировать: время парсинга, `RecoveryPasses`, `EngineGenerateCalls`.
+
+**Форма.** `Tests/ParserTests/Recovery/V2IterationLimitScaleTests.cs`, один `[TestMethod]`, `[TestCategory("Probe")]`, `[Ignore("Manual diagnostic: heavy; not part of the normal suite")]`.
+
+**Итог Wave 9.** V1 (10 самых больших Roslyn .cs) показал absorberFraction=100% на всех файлах: recovery корректно работает по своему контракту (Success@EOF, Unrecovered, absorber-coverage честно измеряется после 9.1d), но C#-грамматика Cs1..Cs14 не покрывает реальные Roslyn .cs (starting с `using static`, `#pragma`, многих CS8–14 конструкций). Триггер первого absorber'а — отсутствие `using static` в грамматике; дальше recovery не находит resync-точку (S2 отвергается, потому что anchor-конструкция тоже не полностью в грамматике), S3/S6 дают absorber до EOF. Это ограничение грамматики, не дефект recovery.
+
+Побочные находки: F7 (S6 при e==0 не принимается), F8 (S6 — skip-to-good, не resync), A10 (token-wise scan), A11 (фильтр catch-all regex из stop-set). Реальный recovery-корпус надо строить в грамматике, которая покрывает вход; измерение на сырых Roslyn .cs требует полной C#-грамматики — отдельный трек, не часть Wave 9.
+
+## Follow-ups / tech-debt
+
+- **F7. S6 при e==0 не принимается.** `GenerateS6` патчит memo с `MaxFailPos = 0` (комментарий «чтобы IsRecoveryPosition(MaxFailPos) == false при e == S»). При `e == 0` это `0 == 0` — `IsRecoveryPosition(cached.MaxFailPos)` возвращает true, `ParseRule` (Parser.cs:299-309) отбрасывает патч как «stale memo in recovery mode», re-parse падает идентично, S6-кандидат отвергается. Recovery не вытягивает файлы, начинающиеся с мусора (position 0). Триггер: любой вход с непонятной конструкцией в самом начале. Фикс: отличать «maxFailPos=0 потому что не было падения» от «maxFailPos=0 потому что e==0» — например, отдельный sentinel или доп. флаг в `Result`.
+- **F8. S6 — skip-to-known-good, не resync.** Принятый S6 кандидат memo-патчит start-rule `Success@S`, re-parse читает этот memo и останавливается на S. Следующая итерация S6 сканирует с S+1 — ключевое слово в S никогда не парсится, поглощается следующим absorber'ом. Цепочка absorber'ов до EOF, absorberFraction=100%. Единственный настоящий resync — S2 (skip-to-anchor + continuation). При неполной грамматике S2 отвергается (спекулятивный парс anchor'а падает), absorberFraction не падает. Фикс: S6 должен после absorber'а возвращать управление в разбор с S (не только патчить memo, а позволять re-parse входить в содержимое с S). Это архитектурное изменение `Recover`/`Apply`.

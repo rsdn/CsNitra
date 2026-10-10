@@ -1,6 +1,7 @@
 #nullable enable
 
 using ExtensibleParser;
+using ExtensibleParser.Recovery;
 
 namespace Recovery;
 
@@ -100,22 +101,25 @@ public sealed class IterativeRecoveryTests
     public void Test_MaxRecoveryIterations_StopsWithoutHanging()
     {
         // Пять ошибок оператора: каждая итерация восстанавливает одну и двигает E вперёд;
-        // при лимите 4 итераций последняя остаётся невосстановленной.
+        // при лимите 4 итераций A8 форсирует дно: Success@EOF (абсорбер до EOF) + Unrecovered, без FatalError.
         var input = "int f() { z = x $^ 5; z = a $^ 6; z = b $^ 7; z = c $^ 8; z = d $^ 9; }";
         _parser.MaxRecoveryIterations = 4;
         var result = _parser.Parse(input, "Module", out _);
-        Assert.IsFalse(result.TryGetSuccess(out _, out var end) && end == input.Length);
-        Assert.IsNotNull(_parser.ErrorInfo);
+        Assert.IsTrue(result.TryGetSuccess(out _, out var end) && end == input.Length, "A8: iteration limit must force Success@EOF");
+        Assert.IsNull(_parser.ErrorInfo, "A8: no FatalError on forced bottom");
+        Assert.IsTrue(_parser.RecoveryDiagnostics.Any(d => d.Kind == RecoveryKind.Unrecovered), "A8: Unrecovered diagnostic expected");
     }
 
     [TestMethod]
     public void Test_ZeroIterations_StopsImmediately()
     {
+        // A8: лимит 0 — recovery не выполняется, но дно форсирует Success@EOF + Unrecovered (без FatalError).
         var input = "int f() { int x int y; }";
         _parser.MaxRecoveryIterations = 0;
         var result = _parser.Parse(input, "Module", out _);
-        Assert.IsFalse(result.TryGetSuccess(out _, out var end) && end == input.Length);
-        Assert.IsNotNull(_parser.ErrorInfo);
+        Assert.IsTrue(result.TryGetSuccess(out _, out var end) && end == input.Length, "A8: zero-iteration limit must force Success@EOF");
+        Assert.IsNull(_parser.ErrorInfo, "A8: no FatalError on forced bottom");
+        Assert.IsTrue(_parser.RecoveryDiagnostics.Any(d => d.Kind == RecoveryKind.Unrecovered), "A8: Unrecovered diagnostic expected");
     }
 
     // ============ 4. Корректный код без recovery ============

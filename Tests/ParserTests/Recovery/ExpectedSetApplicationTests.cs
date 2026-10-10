@@ -36,28 +36,27 @@ public sealed class ExpectedSetApplicationTests
         return parser;
     }
 
-    // ============ 1. FatalError: полный контекстный expected-набор (снимок в E) ============
+    // ============ 1. A8: исчерпание лимита (limit 0) — Success@EOF + Unrecovered в точке e ============
 
     [TestMethod]
     public void Test_FatalError_WithSnapshotAtE_FullExpectedSet()
     {
         var parser = NewParser();
-        parser.MaxRecoveryIterations = 0; // без кандидатов — финальное состояние невосстановлено в e
+        parser.MaxRecoveryIterations = 0; // A8: лимит исчерпан сразу — форс-дно до EOF + Unrecovered
         var result = parser.Parse("abX", "Start", out _);
 
-        Assert.IsFalse(result.TryGetSuccess(out _, out var end) && end == 3,
-            $"expected an unrecovered result, got {result.ResultKind}@{result.NewPos}");
-        var error = parser.ErrorInfo;
-        Assert.IsNotNull(error, "expected FatalError (unrecovered below EOF)");
-        Assert.AreEqual(2, error.Pos, "FatalError must be at the recovery point e=2");
+        Assert.IsTrue(result.TryGetSuccess(out _, out var end) && end == 3,
+            $"A8 limit-exhaustion must reach EOF, got {result.ResultKind}@{result.NewPos}");
+        Assert.IsNull(parser.ErrorInfo, "recovered to EOF → ErrorInfo = null (A8)");
 
-        // Полный контекстный набор: Expected топ-кадра («m»), терминатор («EOF»), First суффиксного
-        // обязательства («z») — не только самая дальняя терминальная точка.
-        var kinds = error.Expecteds.Select(t => t.Kind).ToList();
-        CollectionAssert.AreEquivalent(new[] { "EOF", "c", "m", "z" }, kinds);
-        Assert.IsTrue(kinds.Contains("m"), "set must contain the top-frame Expected 'm'");
-        Assert.IsTrue(kinds.Contains("EOF"), "set must contain the terminator EOF");
-        Assert.IsTrue(kinds.Contains("z"), "set must contain the suffix-obligation First 'z'");
+        // A8: исчерпание лимита — ровно один Unrecovered в точке восстановления e=2 с фиксированным
+        // сообщением о лимите. Полный контекстный expected-набор в сообщении покрывает sibling
+        // Test_Unrecovered_WithSnapshotAtE_FullExpectedSetInMessage (S6-путь).
+        var unrecovered = parser.RecoveryDiagnostics.Where(d => d.Kind == RecoveryKind.Unrecovered).ToList();
+        Assert.AreEqual(1, unrecovered.Count, $"expected exactly 1 Unrecovered, got: {Describe(parser.RecoveryDiagnostics)}");
+        Assert.AreEqual(2, unrecovered[0].StartPos, "Unrecovered must be at the recovery point e=2");
+        Assert.AreEqual("iteration limit reached (0), absorbed to EOF", unrecovered[0].Message,
+            "A8 limit-exhaustion message");
     }
 
     // ============ 2. Контроль: снимка в E нет — старое поведение _expected (один терминал) ============
@@ -68,7 +67,9 @@ public sealed class ExpectedSetApplicationTests
         var parser = new Parser(new SpaceTrivia("Trivia"));
         parser.Rules["Start"] = [new Literal("a")];
         parser.BuildTdoppRules();
-        parser.MaxRecoveryIterations = 0; // без кандидатов — финальное состояние невосстановлено в e
+        // Compiler profile: bail on first failure — FatalError с no-snapshot fallback остаётся наблюдаемым
+        // (снимка в e=0 нет, т.к. mismatch == ErrorPos).
+        parser.Profile = RecoveryProfile.Compiler;
         var result = parser.Parse("b", "Start", out _);
 
         Assert.IsFalse(result.IsSuccess);

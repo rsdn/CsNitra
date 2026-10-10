@@ -31,13 +31,17 @@ public sealed class SnapshotTests
     public void Test_Snapshot_At_Farthest_Mismatch()
     {
         var parser = NewParser();
+        parser.MaxRecoveryIterations = 1000; // A8: без лимита-0 — снимок/ErrorInfo остаются наблюдаемыми
         var c = new Literal("c");
         parser.Rules["Start"] = [new Seq([new Literal("a"), new Literal("b"), c], "Start")];
         parser.BuildTdoppRules();
 
         var result = parser.Parse("ab", "Start", out _);
 
-        Assert.IsFalse(result.IsSuccess);
+        // A8/limit-1000: 'c' вставляется recovery-м и парс доходит до EOF; снимок самого дальнего
+        // mismatch (e=2) всё равно фиксируется и остаётся наблюдаемым.
+        Assert.IsTrue(result.TryGetSuccess(out _, out var end) && end == 2,
+            $"expected recovery to EOF, got {result.ResultKind}@{result.NewPos}");
         var snap = parser.LastSnapshot;
         Assert.IsNotNull(snap);
         Assert.AreEqual(parser.ErrorPos, snap.Pos);
@@ -54,6 +58,7 @@ public sealed class SnapshotTests
     public void Test_Snapshot_At_Farthest_Not_First()
     {
         var parser = NewParser();
+        parser.MaxRecoveryIterations = 1000; // A8: без лимита-0 — снимок/ErrorInfo остаются наблюдаемыми
         parser.Rules["Start"] =
         [
             new Seq([new Literal("x")], "AltX"),
@@ -63,7 +68,9 @@ public sealed class SnapshotTests
 
         var result = parser.Parse("abQ", "Start", out _);
 
-        Assert.IsFalse(result.IsSuccess);
+        // A8/limit-1000: recovery доводит парс до EOF; снимок самого дальнего mismatch (e=2) фиксируется.
+        Assert.IsTrue(result.TryGetSuccess(out _, out var end) && end == 3,
+            $"expected recovery to EOF, got {result.ResultKind}@{result.NewPos}");
         var snap = parser.LastSnapshot;
         Assert.IsNotNull(snap);
         Assert.AreEqual(2, snap.Pos);
@@ -94,10 +101,13 @@ public sealed class SnapshotTests
     public void Test_Speculative_AndPredicate_DoesNotMove_ErrorPos()
     {
         var parser = BuildAndPredicateParser();
+        parser.Profile = RecoveryProfile.Compiler;
 
         var result = parser.Parse("a b Q", "Start", out _);
 
+        // Compiler profile: bail on first failure — снимок/ErrorInfo фиксируются в точке первого mismatch (e=2).
         Assert.IsFalse(result.IsSuccess);
+        Assert.IsNotNull(parser.ErrorInfo);
         Assert.AreEqual(2, parser.ErrorPos);
         var snap = parser.LastSnapshot;
         Assert.IsNotNull(snap);
@@ -109,9 +119,12 @@ public sealed class SnapshotTests
     public void Test_Speculative_AndPredicate_DoesNotPollute_Expected()
     {
         var parser = BuildAndPredicateParser();
+        parser.Profile = RecoveryProfile.Compiler;
 
         var result = parser.Parse("a b Q", "Start", out _);
 
+        // Compiler profile: bail on first failure — ожидаемый набор читается из ErrorInfo первого
+        // mismatch (e=2). Спекулятивный &предикат не засоряет expected.
         Assert.IsFalse(result.IsSuccess);
         var error = parser.ErrorInfo;
         Assert.IsNotNull(error);
@@ -126,6 +139,7 @@ public sealed class SnapshotTests
     public void Test_Speculative_NotPredicate_DoesNotMove_ErrorPos()
     {
         var parser = NewParser();
+        parser.Profile = RecoveryProfile.Compiler;
         parser.Rules["Start"] =
         [
             new Seq(
@@ -140,7 +154,9 @@ public sealed class SnapshotTests
 
         var result = parser.Parse("a b Q", "Start", out _);
 
+        // Compiler profile: bail on first failure — снимок/ErrorInfo фиксируются в точке первого mismatch (e=2).
         Assert.IsFalse(result.IsSuccess);
+        Assert.IsNotNull(parser.ErrorInfo);
         Assert.AreEqual(2, parser.ErrorPos);
         var snap = parser.LastSnapshot;
         Assert.IsNotNull(snap);
