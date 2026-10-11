@@ -1139,7 +1139,7 @@ public partial class Parser
     //      Failure с MaxFailPos < E (целиком в доверенном префиксе) и Failure с pos >= E — не трогаем.
     //  (b) start-правило на currentStartPos ЛЮБОГО типа (Partial/Success < EOF): устаревший верхнеуровневый результат
     //      первого прохода — иначе re-парсинг читает его и не переиспытывает start-правило (тесты SeparatedList/ErrorEmpty).
-    // Success/Partial никогда не удаляются (I2: валидные факты префикса). Требует активный лог патчей.
+    // Success/Partial никогда не удаляются (I2: валидные факты префикса), кроме узкого исключения (s) ниже. Требует активный лог патчей.
     private void HygieneCore(int e, FailureSnapshot? snapshot, string startRule, int currentStartPos)
     {
         for (var p = currentStartPos; p <= e; p++)
@@ -1152,7 +1152,12 @@ public partial class Parser
                     continue;
                 var isStartRuleAtCurrentStart = key.pos == currentStartPos && key.rule == startRule;
                 var isInvalidFailure = value.ResultKind == Result.Kind.Failure && key.pos >= currentStartPos && key.pos <= e;
-                if (isStartRuleAtCurrentStart || isInvalidFailure)
+                // (s) Fix B (F9 plan Q3): Success с NewPos <= E и MaxFailPos >= E — НЕ факт префикса (I2 защищает
+                // факты префикса): он остановился ровно в точке ошибки, имея зафиксированное падение на E или глубже,
+                // т.е. это устаревший «остановился-на-ошибке» итог, зависевший от входа в окрестности E → удаляем,
+                // чтобы re-парсинг не перечитал его вместо патча на E. Широкий предикат (pos < E && NewPos < E) вреден.
+                var isStaleSuccessAtError = value.ResultKind == Result.Kind.Success && value.NewPos <= e && value.MaxFailPos >= e;
+                if (isStartRuleAtCurrentStart || isInvalidFailure || isStaleSuccessAtError)
                 {
                     RemoveMemo(key.rule, key.pos, key.precedence);
                     HygieneRemovals++;

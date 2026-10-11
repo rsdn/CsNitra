@@ -388,7 +388,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
 
                 node = node.AssertIsNonNull();
                 Log($"  Prefix at {newPos} success: {node.Kind} prefixResult: {prefixResult}");
-                var postfixResult = ContinueFromPartialPostfix(tdoppRule, node, minPrecedence, newPos, input);
+                var postfixResult = ContinueFromPartialPostfix(tdoppRule, node, minPrecedence, newPos, input, prefixResult.MaxFailPos);
 
                 // If prefix was partial, propagate partial status
                 if (gotPartial && postfixResult.ResultKind != Result.Kind.Partial)
@@ -443,11 +443,14 @@ public partial class Parser(Terminal trivia, Log? log = null)
         ISyntaxNode prefixNode,
         int minPrecedence,
         int startPos,
-        string input)
+        string input,
+        int prefixMaxFailPos)
     {
         var newPos = startPos;
         var currentResult = prefixNode;
-        var maxFailPos = startPos;
+        // Fix A (F9 plan Q2): MaxFailPos префикса наследуется (как во всех остальных комбинаторах),
+        // иначе Success-мемо теряет глубину падения префикса и equality-гейт стухлости его не отбрасывает.
+        var maxFailPos = Math.Max(startPos, prefixMaxFailPos);
         var isPartial = false;
 
         while (true)

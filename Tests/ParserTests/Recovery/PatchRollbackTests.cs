@@ -135,9 +135,11 @@ public sealed class PatchRollbackTests
         Assert.IsTrue(candidates.Count > 0);
 
         // Записи pos < e, кроме Failure и записи start-правила на currentStartPos (оба — задокументированные удаления Hygiene).
+        // Fix B (F9): Success memo with NewPos <= e && MaxFailPos >= e is an invalid state ("stopped at the error point"), not a prefix fact — legitimately removed by HygieneCore. Excluded from the I2 pin.
         var prefixBefore = parser.Memo
             .Where(k => k.Key.pos < e && k.Value.ResultKind != Result.Kind.Failure
-                && !(k.Key.pos == currentStartPos && k.Key.rule == startRule))
+                && !(k.Key.pos == currentStartPos && k.Key.rule == startRule)
+                && !(k.Value.ResultKind == Result.Kind.Success && k.Value.NewPos <= e && k.Value.MaxFailPos >= e))
             .OrderBy(k => k.Key.pos).ThenBy(k => k.Key.rule).ThenBy(k => k.Key.precedence)
             .Select(k => $"{k.Key.pos}|{k.Key.rule}|{k.Key.precedence}|{k.Value.ResultKind}|{k.Value.NewPos}|{k.Value.MaxFailPos}")
             .ToList();
@@ -146,7 +148,8 @@ public sealed class PatchRollbackTests
 
         var prefixAfter = parser.Memo
             .Where(k => k.Key.pos < e && k.Value.ResultKind != Result.Kind.Failure
-                && !(k.Key.pos == currentStartPos && k.Key.rule == startRule))
+                && !(k.Key.pos == currentStartPos && k.Key.rule == startRule)
+                && !(k.Value.ResultKind == Result.Kind.Success && k.Value.NewPos <= e && k.Value.MaxFailPos >= e))
             .OrderBy(k => k.Key.pos).ThenBy(k => k.Key.rule).ThenBy(k => k.Key.precedence)
             .Select(k => $"{k.Key.pos}|{k.Key.rule}|{k.Key.precedence}|{k.Value.ResultKind}|{k.Value.NewPos}|{k.Value.MaxFailPos}")
             .ToList();

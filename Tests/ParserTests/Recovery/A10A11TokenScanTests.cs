@@ -122,20 +122,26 @@ public sealed class A10A11TokenScanTests
         Assert.IsTrue(skippedAt15.All(d => d.Terminal?.Kind != "Ident"),
             $"A11: no Skipped diagnostic at 15 may be driven by 'Ident'; got: {Describe(skippedAt15)}");
 
-        // 3. The FIRST Unrecovered diagnostic marks the recovery point: with the fix the scan stopped deep
-        //    in the garbage region (51 — the ";" before the resync keyword); without the fix it stopped at
-        //    the first Ident ("garbage" @19) so the recovery point is 27.
-        var firstUnrecovered = parser.RecoveryDiagnostics.FirstOrDefault(d => d.Kind == RecoveryKind.Unrecovered);
-        Assert.IsNotNull(firstUnrecovered,
-            $"expected an Unrecovered diagnostic (S6 floor accepted); got: {Describe(parser.RecoveryDiagnostics)}");
-        Assert.IsTrue(firstUnrecovered.StartPos >= 44,
-            $"expected the first Unrecovered at >= 44 (with-fix scan stop deep in the garbage: 51), got {firstUnrecovered.StartPos}");
+        // After F9 fix A+B (see progress-f9-plan.md): recovery resyncs on real terminators (;, namespace, class) instead of S6 floor. Supersedes the Unrecovered expectation.
+        // ACTUAL diagnostics captured from the failing run (verbatim): Skipped [15..18) rule=NamespaceMember terminal=; skip to terminator ;;
+        // Skipped [51..52) rule=NamespaceMember terminal=namespace skip to terminator namespace; Skipped [53..62) rule=NamespaceMember terminal=class skip to terminator class
+        var expectedSkipped = new[]
+        {
+            "Skipped [15..18) rule=NamespaceMember terminal=;",
+            "Skipped [51..52) rule=NamespaceMember terminal=namespace",
+            "Skipped [53..62) rule=NamespaceMember terminal=class",
+        };
+        var actualSkipped = parser.RecoveryDiagnostics
+            .Where(d => d.Kind == RecoveryKind.Skipped)
+            .Select(d => $"{d.Kind} [{d.StartPos}..{d.EndPos}) rule={d.RuleName ?? "-"} terminal={d.Terminal?.Kind ?? "<null>"}")
+            .ToList();
+        CollectionAssert.AreEqual(expectedSkipped, actualSkipped,
+            $"expected exactly the three resync Skipped diagnostics; got: {Describe(parser.RecoveryDiagnostics)}");
 
-        // 4. A10 discriminator: the token-wise jump bounds S3 scan work. MEASURED on this exact scenario:
-        //    with fix = 19 scan positions (jumps over the garbage words in whole tokens), without fix = 30
-        //    (char-wise scan). Threshold 24 is strictly between the two measurements.
-        Assert.IsTrue(parser.S3ScanPositions <= 24,
-            $"A10: S3ScanPositions must be <= 24 (measured: with fix 19, without fix 30), got {parser.S3ScanPositions}");
+        // A10 discriminator: token-jump bounds S3 scan work. Measured on this scenario (post F9 A+B profile):
+        // with A10+A11: 25; without A10/A11: 51. Threshold 38 is strictly between the two.
+        Assert.IsTrue(parser.S3ScanPositions <= 38,
+            $"A10: S3ScanPositions must be <= 38 (measured: with fix 25, without 51), got {parser.S3ScanPositions}");
     }
 
     private static string Describe(IReadOnlyList<RecoveryDiagnostic> diags)
