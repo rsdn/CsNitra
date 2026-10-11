@@ -672,7 +672,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
         var elements = new List<ISyntaxNode>();
 
         // Parse at least one element
-        var firstResult = WithFrame(new LoopFrameLocation("OneOrMany", 0) { Element = oneOrMany.Element }, ExpectedFor(oneOrMany.Element), oneOrMany.Kind ?? "OneOrMany",
+        var firstResult = WithFrame(new LoopFrameLocation("OneOrMany", 0) { Element = oneOrMany.Element, IterationStartPos = currentPos }, ExpectedFor(oneOrMany.Element), oneOrMany.Kind ?? "OneOrMany",
             null, () => ParseAlternative(oneOrMany.Element, currentPos, input));
 
         // Try success first, then partial
@@ -693,7 +693,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
         int iteration = 1;
         while (true)
         {
-            var result = WithFrame(new LoopFrameLocation("OneOrMany", iteration) { Element = oneOrMany.Element }, ExpectedFor(oneOrMany.Element), oneOrMany.Kind ?? "OneOrMany",
+            var result = WithFrame(new LoopFrameLocation("OneOrMany", iteration) { Element = oneOrMany.Element, IterationStartPos = currentPos }, ExpectedFor(oneOrMany.Element), oneOrMany.Kind ?? "OneOrMany",
                 null, () => ParseAlternative(oneOrMany.Element, currentPos, input));
 
             if (result.MaxFailPos > maxFailPos)
@@ -721,7 +721,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
 
         var loopCtx = isPartial ? new ParseContext(
                 oneOrMany.Kind ?? "OneOrMany",
-                new LoopFrameLocation("OneOrMany", iteration) { Element = oneOrMany.Element },
+                new LoopFrameLocation("OneOrMany", iteration) { Element = oneOrMany.Element, IterationStartPos = currentPos },
                 ExpectedFor(oneOrMany.Element),
                 null)
             : null;
@@ -742,7 +742,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
         int iteration = 0;
         while (true)
         {
-            var result = WithFrame(new LoopFrameLocation("ZeroOrMany", iteration) { Element = zeroOrMany.Element }, ExpectedFor(zeroOrMany.Element), zeroOrMany.Kind ?? "ZeroOrMany",
+            var result = WithFrame(new LoopFrameLocation("ZeroOrMany", iteration) { Element = zeroOrMany.Element, IterationStartPos = currentPos }, ExpectedFor(zeroOrMany.Element), zeroOrMany.Kind ?? "ZeroOrMany",
                 null, () => ParseAlternative(zeroOrMany.Element, currentPos, input));
 
             if (result.MaxFailPos > maxFailPos)
@@ -770,7 +770,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
 
         var loopCtx = isPartial ? new ParseContext(
                 zeroOrMany.Kind ?? "ZeroOrMany",
-                new LoopFrameLocation("ZeroOrMany", iteration) { Element = zeroOrMany.Element },
+                new LoopFrameLocation("ZeroOrMany", iteration) { Element = zeroOrMany.Element, IterationStartPos = currentPos },
                 ExpectedFor(zeroOrMany.Element),
                 null)
             : null;
@@ -796,7 +796,7 @@ public partial class Parser(Terminal trivia, Log? log = null)
 
         for (var i = 0; i < count; i++)
         {
-            var result = WithFrame(new LoopFrameLocation("Repeat", i) { Element = repeat.Element }, ExpectedFor(repeat.Element), repeat.Kind ?? "Repeat",
+            var result = WithFrame(new LoopFrameLocation("Repeat", i) { Element = repeat.Element, IterationStartPos = currentPos }, ExpectedFor(repeat.Element), repeat.Kind ?? "Repeat",
                 null, () => ParseAlternative(repeat.Element, currentPos, input));
             if (result.MaxFailPos > maxFailPos)
                 maxFailPos = result.MaxFailPos;

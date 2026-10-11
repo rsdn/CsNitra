@@ -2,6 +2,7 @@
 
 using ExtensibleParser;
 using ExtensibleParser.Recovery;
+using System.Diagnostics;
 
 namespace Recovery;
 
@@ -50,7 +51,6 @@ public sealed class UsingStaticRecoveryTests
     }
 
     [TestMethod]
-    [Ignore("Known limitation: `using static` absent from Cs1..Cs14 grammar; recovery absorbs 75% of input. Expected to become Recovered once the grammar covers `using static`. Related: F8 in RecoveryImprovementPlan.")]
     public void Test_UsingStatic_GarbageNotAbsorbedToEof()
     {
         var parser = NewParser();
@@ -63,5 +63,64 @@ public sealed class UsingStaticRecoveryTests
 
         var health = ParseHealth.Analyze(node, input, end == input.Length, parser.Trivia);
         Assert.AreNotEqual(ParseVerdict.FalseGreen, health.Verdict, $"recovery absorbed the file: {health}");
+    }
+
+    // F9 fix C «в серии»: ДВА неграмматичных участка `using static`, разделённых валидными
+    // объявлениями. Ожидание от fix C: recovery пересинхронизируется на каждом якоре
+    // `namespace N;`, абсорберы остаются локальными (два маленьких), вердикт Recovered.
+    // Тест — маркер границы возможностей: ассерты не ослаблять, значения фиксировать как есть.
+    [TestMethod]
+    public void Test_UsingStaticSeries_TwoGarbageRegions()
+    {
+        var parser = NewParser();
+        var input = "namespace A; using static Foo; namespace B; using static Bar; namespace C; class D {}";
+        var result = parser.Parse(input, "Module", out _);
+
+        Assert.IsTrue(result.TryGetSuccess(out var node, out var end) && end == input.Length,
+            $"Expected Success@EOF, got {result.ResultKind}@{result.NewPos}/{result.MaxFailPos} len={input.Length} " +
+            $"ErrorInfo={parser.ErrorInfo?.Pos} passes={parser.RecoveryPasses}");
+
+        var health = ParseHealth.Analyze(node, input, end == input.Length, parser.Trivia);
+        Assert.IsTrue(health.CoversInput, $"tree does not cover the input (I4): {health}");
+        Assert.AreNotEqual(ParseVerdict.FalseGreen, health.Verdict, $"recovery absorbed the file: {health}");
+
+        Trace.WriteLine($"input=«{input}» len={input.Length} result={result.ResultKind}@{result.NewPos} " +
+            $"maxFailPos={result.MaxFailPos} passes={parser.RecoveryPasses}");
+
+        Trace.WriteLine("=== parse tree (all nodes) ===");
+        if (node is null)
+            Trace.WriteLine("(null tree)");
+        else
+            DumpTree(node, 0);
+
+        Trace.WriteLine("=== recovery diagnostics ===");
+        foreach (var diag in parser.RecoveryDiagnostics)
+            Trace.WriteLine($"{diag.Kind} [{diag.StartPos}..{diag.EndPos}) terminal={diag.Terminal?.Kind ?? "-"} rule={diag.RuleName ?? "-"}");
+
+        Trace.WriteLine($"health: verdict={health.Verdict} absorberBytes={health.AbsorberBytes} " +
+            $"absorberFraction={health.AbsorberFraction}% coversInput={health.CoversInput} " +
+            $"unionCoverage={health.UnionCoverage} recoveryNodes={health.RecoveryNodes}");
+
+        void DumpTree(ISyntaxNode n, int depth)
+        {
+            var absorber = n is TerminalNode { IsAbsorber: true } ? " IsAbsorber=true" : "";
+            Trace.WriteLine($"{new string(' ', depth * 2)}{n.Kind} [{n.StartPos}..{n.EndPos}){absorber}");
+            switch (n)
+            {
+                case SeqNode seq:
+                    foreach (var el in seq.RawElements)
+                        DumpTree(el, depth + 1);
+                    break;
+                case ListNode list:
+                    foreach (var el in list.RawElements)
+                        DumpTree(el, depth + 1);
+                    foreach (var delim in list.Delimiters)
+                        DumpTree(delim, depth + 1);
+                    break;
+                case SomeNode some:
+                    DumpTree(some.Value, depth + 1);
+                    break;
+            }
+        }
     }
 }

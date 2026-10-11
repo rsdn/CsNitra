@@ -61,7 +61,7 @@ public static class RecoveryEngine
                 if (mask.HasFlag(RecoveryStrategy.S1))
                     GenerateS1b(e, snapshot, input, parser, candidates); // S1b is part of S1 (same rank 1)
                 if (mask.HasFlag(RecoveryStrategy.S2))
-                    GenerateS2(e, snapshot, input, parser, candidates);
+                    GenerateS2(e, parseEnd, snapshot, input, parser, candidates);
                 if (mask.HasFlag(RecoveryStrategy.S3))
                     GenerateS3(e, snapshot, input, parser, candidates);
                 if (mask.HasFlag(RecoveryStrategy.S4))
@@ -215,7 +215,7 @@ public static class RecoveryEngine
     // T2 — мягкий CanStart-предикат (скан продолжается). Pre-filter по First-множеству.
     // Completion stack: абсорбер [e..S) упавшего элемента (S > e) или нулевая вставка (S == e)
     // + суффиксные обязательства внешних Seq-кадров в точке S.
-    private static void GenerateS2(int e, FailureSnapshot snapshot, string input, Parser parser, List<RecoveryCandidate> candidates)
+    private static void GenerateS2(int e, int parseEnd, FailureSnapshot snapshot, string input, Parser parser, List<RecoveryCandidate> candidates)
     {
         var calculator = parser.FollowCalculator;
         var maxSkip = GetMaxSkip(snapshot) ?? parser.EffectiveMaxSkip;
@@ -340,6 +340,7 @@ public static class RecoveryEngine
                 ? FindSeq(parser, top.RuleName, topIdx)?.Elements[topIdx]
                 : null;
             (Action<Parser> Apply, Action<Parser> Rollback)? memoPatch = null;
+            var regionStart = e;
 
             if (resyncPos > e)
             {
@@ -360,14 +361,29 @@ public static class RecoveryEngine
                     var memoOlds = CaptureMemo(parser, refRule.RuleName, e);
                     memoPatch = (p => p.PatchMemo(refRule.RuleName, e, value), p => RollbackMemo(p, refRule.RuleName, e, memoOlds));
                 }
+                else if (FindLoopReanchor(snapshot, top, parseEnd) is { } loopReanchor)
+                {
+                    // F9 fix C (Q4): падение ВНУТРИ элемента цикла (не в его начале — ветка 1 не сработала),
+                    // но неудачная итерация цикла НЕ потребила ничего (parseEnd == IterationStartPos —
+                    // восстановление действительно в начале итерации) → абсорбер на уровне цикла от НАЧАЛА
+                    // итерации: патч memo элемента цикла в IterationStartPos, чтобы цикл пропустил регион
+                    // [iterStart..resyncPos) целиком как одну итерацию и возобновился с resyncPos.
+                    var (loopRule, iterStart) = loopReanchor;
+                    var absorber = new TerminalNode("Skipped", iterStart, resyncPos, resyncPos - iterStart, IsRecovery: true, IsAbsorber: true);
+                    var value = Result.Success(absorber, resyncPos, resyncPos);
+                    var memoOlds = CaptureMemo(parser, loopRule, iterStart);
+                    memoPatch = (p => p.PatchMemo(loopRule, iterStart, value), p => RollbackMemo(p, loopRule, iterStart, memoOlds));
+                    regionStart = iterStart;
+                }
                 else
                 {
                     var t = failedElement as Terminal ?? snapshot.FailedTerminal;
                     insertions.Add((e, t, Injection.Absorb(t.Kind, resyncPos - e)));
                 }
-                // A5-3 (7.2.1/R5): the diagnostic spans the first word of the skipped region [e..resyncPos),
-                // not the whole region (IDE squiggle quality) — the absorber node keeps the full span.
-                var (skipStart, skipEnd) = FirstWordSpan(input, parser.Trivia, e, resyncPos);
+                // A5-3 (7.2.1/R5): the diagnostic spans the first word of the skipped region
+                // [regionStart..resyncPos), not the whole region (IDE squiggle quality) — the absorber
+                // node keeps the full span.
+                var (skipStart, skipEnd) = FirstWordSpan(input, parser.Trivia, regionStart, resyncPos);
                 diagnostics.Add(new RecoveryDiagnostic(skipStart, skipEnd, RecoveryKind.Skipped, $"skip to resync point {resyncPos}", null, top.RuleName));
             }
             else
@@ -644,6 +660,27 @@ public static class RecoveryEngine
             var first = DeriveLoopAnchors(parser, frame.RuleName).FirstOrDefault();
             if (first is { } r)
                 return r;
+        }
+        return null;
+    }
+
+    // F9 fix C (Q4): цель перепривязки абсорбера к началу итерации цикла — ближайший (от верхнего
+    // кадра) Loop-кадр в цепочке, окружающей top, чей элемент цикла — Ref имени упавшего верхнего
+    // правила (или имени самого loop-кадра), И неудачная итерация не потребила ничего
+    // (parseEnd == IterationStartPos — консервативный предикат: восстановление действительно в
+    // начале итерации; иначе абсорбер проглотит частично валидное содержимое итерации).
+    private static (string RuleName, int IterationStartPos)? FindLoopReanchor(FailureSnapshot snapshot, StackFrame top, int parseEnd)
+    {
+        for (var i = snapshot.Stack.Length - 1; i >= 0; i--)
+        {
+            var frame = snapshot.Stack[i];
+            if (frame.Location is not LoopFrameLocation loopLoc || loopLoc.Element is not Ref loopRef)
+                continue;
+            if (loopRef.RuleName != top.RuleName && loopRef.RuleName != frame.RuleName)
+                continue;
+            return loopLoc.IterationStartPos >= 0 && parseEnd == loopLoc.IterationStartPos
+                ? (loopRef.RuleName, loopLoc.IterationStartPos)
+                : null;
         }
         return null;
     }

@@ -53,3 +53,23 @@ Branch: `error-recovery-completion-2` (verified). Merge `grammar` (571794b, == o
 2. RecoveryEngine S3/S6: subagent introduced a private `FindStopWithTokenJump` (port of the PR `RecoveryScan.Find` boundary algorithm + grammar A10 token-jump) rather than editing `RecoveryScan.cs` (out of the one-file scope). Behavior preserved (A10A11TokenScanTests green); minor duplication, follow-up noted in progress2.1.md.
 3. ExpectedSetApplicationTests conflict was method-name-only; kept HEAD/PR name `Test_FatalError_EntryMismatchHasCompleteSnapshot` (body asserts snapshot retention). No test-name collision.
 4. docs checklist resolved as union of both sides (kept both R1 entries + both new sections), not "grammar wins" — both are additive historical log entries.
+
+## Research: S2 accept -> why valid 'namespace N; class C {}' at 37 got absorbed
+
+- [✅] 15. Research Q1-Q4: after the correct S2 resync patch (absorber [15..37)), why did the parser absorb [37..60) instead of parsing 'namespace N; class C {}'. Deliverable `MergeGrammarIntoRecoveryBranch/progress-s2-after.md`. Temp instrumentation + temp un-ignore of UsingStaticRecoveryTests, restore byte-exact; no commits.
+
+## Research: F9 fix plan (spurious-progress accept + stale Success-memo)
+
+- [✅] 16. Research Q1-Q5: done — minimal set A+B+C, Q1 accept-criterion change HARMFUL (7 regressions). how to correctly fix F9. Deliverable `MergeGrammarIntoRecoveryBranch/progress-f9-plan.md`. Temp experiments allowed with byte-exact restore; no commits.
+
+## Implement F9 fixes A+B (one commit)
+
+- [✅] 17. Implement A (propagate prefix MaxFailPos in `ContinueFromPartialPostfix`, Parser.cs) + B (narrow Success staleness in `HygieneCore`, Parser.Recovery.cs). Only these 2 files + `PatchRollbackTests.cs` if justified. Verify 495/0/5 + 1540/0/3, then ONE commit.
+
+## Implement F9 fix C (re-anchor S2 to loop-iteration start)
+
+- [✅] 18. Implement C: `IterationStartPos` in `LoopFrameLocation` + 6 push-sites in `Parser.cs` + new branch in `AddResyncCandidate` (`RecoveryEngine.cs`) with conservative predicate `parseEnd == loop.IterationStartPos`. Do NOT touch accept criterion `e2 > e`. Verify 495/0/5 + 1539/0/4 + UsingStaticRecoveryTests un-ignored green. NO commit in this subtask.
+
+## Experiment: fix C in series + probe after C
+
+- [✅] 19. Experiment (no commit, no new research files): (1) second [TestMethod] in UsingStaticRecoveryTests.cs - two `using static` garbage regions with valid code between; report actual values, no fudging. (2) corpus probe with [Ignore] temporarily off, record 10 verdicts vs baseline (all FalseGreen 99%), restore [Ignore] byte-exact.
